@@ -109,11 +109,6 @@ static OPTION_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(.*)\$(~?[\w\-]+(?:=[^,\s]+)?(?:,~?[\w\-]+(?:=[^,\s]+)?)*)$").unwrap()
 });
 
-static SELECTOR_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    // Note: Rust regex doesn't support lookbehind, using alternative pattern
-    Regex::new(r"[\s\[@]([a-zA-Z]*[A-Z][a-zA-Z0-9]*)").unwrap()
-});
-
 static PSEUDO_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(:[a-zA-Z\-]*[A-Z][a-zA-Z\-]*)").unwrap()
 });
@@ -136,10 +131,6 @@ static TREE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
 
 static UNICODE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap()
-});
-
-static BAD_LINE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[|*~@$%].{1,4}$").unwrap()
 });
 
 static TLD_ONLY_PATTERN: Lazy<Regex> = Lazy::new(|| {
