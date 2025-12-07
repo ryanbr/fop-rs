@@ -18,7 +18,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         
       - name: Configure git
         run: |
