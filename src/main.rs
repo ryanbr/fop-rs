@@ -31,6 +31,8 @@ struct Args {
     directories: Vec<PathBuf>,
     /// Skip repository commit (just sort)
     no_commit: bool,
+    /// Skip uBO to ABP option conversion
+    no_ubo_convert: bool,
     /// Show help
     help: bool,
     /// Show version
@@ -42,6 +44,7 @@ impl Args {
         let mut args = Args {
             directories: Vec::new(),
             no_commit: false,
+            no_ubo_convert: false,
             help: false,
             version: false,
         };
@@ -51,6 +54,7 @@ impl Args {
                 "-h" | "--help" => args.help = true,
                 "-V" | "--version" => args.version = true,
                 "-n" | "--no-commit" | "--just-sort" | "--justsort" => args.no_commit = true,
+                "--no-ubo-convert" => args.no_ubo_convert = true,
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -75,6 +79,7 @@ impl Args {
         println!("OPTIONS:");
         println!("    -n, --no-commit     Just sort files, skip Git commit prompts");
         println!("        --just-sort     Alias for --no-commit");
+        println!("        --no-ubo-convert  Skip uBO to ABP option conversion");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -102,8 +107,9 @@ static FILTER_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?:\$|,)domain=([^,\s]+)$").unwrap()
 });
 
+/// Pattern for element hiding rules (standard and uBO extended syntax)
 static ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^([^/|@"!]*?)(#[@?]?#)([^{}]+)$"#).unwrap()
+    Regex::new(r#"^([^/|@"!]*?)(##|#@#|#\?#|#@\?#|#\$#|#@\$#)(.+)$"#).unwrap()
 });
 
 static OPTION_PATTERN: Lazy<Regex> = Lazy::new(|| {
@@ -196,10 +202,18 @@ static IGNORE_DOMAINS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 /// Known Adblock Plus options (HashSet for O(1) lookup)
 static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
+        // Standard ABP options
         "collapse", "csp", "csp=frame-src", "csp=img-src", "csp=media-src",
         "csp=script-src", "csp=worker-src", "document", "elemhide", "font",
         "genericblock", "generichide", "image", "match-case", "media",
         "object-subrequest", "object", "other", "ping", "popup",
+        "script", "stylesheet", "subdocument", "third-party", "webrtc",
+        "websocket", "xmlhttprequest",
+        // uBO short options
+        "xhr", "css", "1p", "3p", "frame", "doc", "ghide",
+        // uBO/ABP specific
+        "all", "badfilter", "important", "popunder",
+        // ABP rewrite resources
         "rewrite=abp-resource:1x1-transparent-gif",
         "rewrite=abp-resource:2x2-transparent-png",
         "rewrite=abp-resource:32x32-transparent-png",
@@ -210,9 +224,6 @@ static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "rewrite=abp-resource:blank-mp3",
         "rewrite=abp-resource:blank-mp4",
         "rewrite=abp-resource:blank-text",
-        "script", "stylesheet", "subdocument", "third-party", "webrtc",
-        "websocket", "xhr", "xmlhttprequest", "css", "1p", "3p", "frame",
-        "doc", "ghide",
     ].into_iter().collect()
 });
 
@@ -337,7 +348,7 @@ fn remove_unnecessary_wildcards(filter_text: &str) -> String {
 }
 
 /// Sort and clean filter options
-fn filter_tidy(filter_in: &str) -> String {
+fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     let option_split = OPTION_PATTERN.captures(filter_in);
 
     match option_split {
@@ -348,7 +359,11 @@ fn filter_tidy(filter_in: &str) -> String {
             let option_list: Vec<String> = options_str.split(',').map(String::from).collect();
             
             // Convert uBO options
-            let option_list = convert_ubo_options(option_list);
+            let option_list = if convert_ubo {
+                convert_ubo_options(option_list)
+            } else {
+                option_list
+            };
 
             let mut domain_list: Vec<String> = Vec::new();
             let mut remove_entries: HashSet<String> = HashSet::new();
@@ -361,7 +376,19 @@ fn filter_tidy(filter_in: &str) -> String {
                     remove_entries.insert(option.clone());
                 } else {
                     let stripped = option.trim_start_matches('~');
-                    if !KNOWN_OPTIONS.contains(&stripped) {
+                    // Check if option is known (exact match or known prefix)
+                    let is_known = KNOWN_OPTIONS.contains(stripped)
+                        || stripped.starts_with("csp=")
+                        || stripped.starts_with("redirect=")
+                        || stripped.starts_with("redirect-rule=")
+                        || stripped.starts_with("rewrite=")
+                        || stripped.starts_with("replace=")
+                        || stripped.starts_with("header=")
+                        || stripped.starts_with("permissions=")
+                        || stripped.starts_with("to=")
+                        || stripped.starts_with("from=")
+                        || stripped.starts_with("method=");
+                    if !is_known {
                         eprintln!(
                             "Warning: The option \"{}\" used on the filter \"{}\" is not recognised by FOP",
                             option, filter_in
@@ -442,6 +469,27 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
         sort_domains(&mut valid_domains);
         valid_domains.dedup();
         domains = valid_domains.join(",");
+    }
+
+    // Skip selector processing for uBO/ABP extended syntax (preserve exactly as-is)
+    let is_extended = selector.starts_with("+js(")
+        || selector.starts_with("^")
+        || selector.contains(":style(")
+        || selector.contains(":has-text(")
+        || selector.contains(":remove(")
+        || selector.contains(":remove-attr(")
+        || selector.contains(":remove-class(")
+        || selector.contains(":matches-path(")
+        || selector.contains(":matches-css(")
+        || selector.contains(":upward(")
+        || selector.contains(":xpath(")
+        || selector.contains(":watch-attr(")
+        || selector.contains(":min-text-length(")
+        || separator == "#$#"
+        || separator == "#@$#";
+
+    if is_extended {
+        return format!("{}{}{}", domains, separator, selector);
     }
 
     // Mark selector boundaries
@@ -672,7 +720,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-fn fop_sort(filename: &Path) -> io::Result<()> {
+fn fop_sort(filename: &Path, convert_ubo: bool) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -824,7 +872,7 @@ fn fop_sort(filename: &Path) -> io::Result<()> {
             lines_checked += 1;
         }
 
-        let tidied = filter_tidy(&line);
+        let tidied = filter_tidy(&line, convert_ubo);
         section.push(tidied);
     }
 
@@ -1074,7 +1122,7 @@ fn commit_changes(
 // Main Processing
 // =============================================================================
 
-fn process_location(location: &Path, no_commit: bool) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1145,7 +1193,7 @@ fn process_location(location: &Path, no_commit: bool) -> io::Result<()> {
 
     // Process files in parallel
     txt_files.par_iter().for_each(|entry| {
-        if let Err(e) = fop_sort(entry.path()) {
+            if let Err(e) = fop_sort(entry.path(), convert_ubo) {
             eprintln!("Error processing {}: {}", entry.path().display(), e);
         }
     });
@@ -1200,7 +1248,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1216,7 +1264,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert) {
                 eprintln!("Error: {}", e);
             }
             println!();
@@ -1256,13 +1304,13 @@ mod tests {
     #[test]
     fn test_filter_tidy() {
         // Test option sorting
-        let result = filter_tidy("||example.com^$image,script,third-party");
+        let result = filter_tidy("||example.com^$image,script,third-party", true);
         assert!(result.contains("image"));
         assert!(result.contains("script"));
         assert!(result.contains("third-party"));
 
         // Test domain sorting
-        let result = filter_tidy("||ad.com^$domain=z.com|a.com|m.com");
+        let result = filter_tidy("||ad.com^$domain=z.com|a.com|m.com", true);
         assert!(result.contains("domain=a.com|m.com|z.com"));
     }
 
