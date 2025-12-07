@@ -73,7 +73,7 @@ impl Args {
         println!("    [DIRECTORIES]...    Directories to process (default: current directory)");
         println!();
         println!("OPTIONS:");
-        println!("    -n, --no-commit     Just sort files, skip Git/Hg commit prompts");
+        println!("    -n, --no-commit     Just sort files, skip Git commit prompts");
         println!("        --just-sort     Alias for --no-commit");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
@@ -294,45 +294,38 @@ fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
 /// Remove unnecessary wildcards from filter text
 fn remove_unnecessary_wildcards(filter_text: &str) -> String {
     let mut result = filter_text.to_string();
-    let mut allowlist = false;
-    let mut had_star = false;
+    let allowlist = result.starts_with("@@");
 
-    if result.starts_with("@@") {
-        allowlist = true;
+    if allowlist {
         result = result[2..].to_string();
     }
+    
+    let original_len = result.len();
 
     // Remove leading asterisks
-    while result.len() > 1 
-        && result.starts_with('*') 
-        && !result[1..].starts_with('|')
-        && !result[1..].starts_with('!') 
-    {
-        result = result[1..].to_string();
-        had_star = true;
+    while result.len() > 1 && result.starts_with('*')
+        && !result[1..].starts_with('|') && !result[1..].starts_with('!') {
+        result.remove(0);
     }
 
     // Remove trailing asterisks
-    while result.len() > 1 
-        && result.ends_with('*')
-        && !result[..result.len()-1].ends_with('|')
-        && !result[..result.len()-1].ends_with(' ')
-    {
-        result = result[..result.len()-1].to_string();
-        had_star = true;
+    while result.len() > 1 && result.ends_with('*')
+        && !result[..result.len()-1].ends_with('|') && !result[..result.len()-1].ends_with(' ') {
+        result.pop();
     }
 
     // Handle regex patterns
+    let had_star = result.len() != original_len;
     if had_star && result.starts_with('/') && result.ends_with('/') {
-        result = format!("{}*", result);
+        result.push('*');
     }
 
     if result == "*" {
-        result = String::new();
+        result.clear();
     }
 
     if allowlist {
-        result = format!("@@{}", result);
+        result.insert_str(0, "@@");
     }
 
     result
