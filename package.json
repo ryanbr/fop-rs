@@ -1,0 +1,45 @@
+{
+  "name": "fop-cli",
+  "version": "3.9.0",
+  "description": "Filter Orderer and Preener - A tool for sorting and cleaning ad-blocking filter lists",
+  "keywords": [
+    "adblock",
+    "easylist",
+    "filter",
+    "privacy",
+    "ublock",
+    "adblock-plus"
+  ],
+  "author": "EasyList Team",
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/easylist/easylist.git"
+  },
+  "homepage": "https://github.com/easylist/easylist",
+  "bugs": {
+    "url": "https://github.com/easylist/easylist/issues"
+  },
+  "bin": {
+    "fop": "bin/fop"
+  },
+  "files": [
+    "bin/fop",
+    "install.js",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
