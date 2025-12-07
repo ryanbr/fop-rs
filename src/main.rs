@@ -245,19 +245,7 @@ const GIT: RepoDefinition = RepoDefinition {
     push: &["push"],
 };
 
-const HG: RepoDefinition = RepoDefinition {
-    name: "hg",
-    directory: ".hg",
-    location_option: "-R",
-    repo_directory_option: None,
-    check_changes: &["stat", "-q"],
-    difference: &["diff"],
-    commit: &["commit", "-m"],
-    pull: &["pull"],
-    push: &["push"],
-};
-
-const REPO_TYPES: &[RepoDefinition] = &[GIT, HG];
+const REPO_TYPES: &[RepoDefinition] = &[GIT];
 
 // =============================================================================
 // UBO Option Conversion
