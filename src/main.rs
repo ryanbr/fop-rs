@@ -193,26 +193,28 @@ static IGNORE_DOMAINS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     set
 });
 
-/// Known Adblock Plus options
-const KNOWN_OPTIONS: &[&str] = &[
-    "collapse", "csp", "csp=frame-src", "csp=img-src", "csp=media-src",
-    "csp=script-src", "csp=worker-src", "document", "elemhide", "font",
-    "genericblock", "generichide", "image", "match-case", "media",
-    "object-subrequest", "object", "other", "ping", "popup",
-    "rewrite=abp-resource:1x1-transparent-gif",
-    "rewrite=abp-resource:2x2-transparent-png",
-    "rewrite=abp-resource:32x32-transparent-png",
-    "rewrite=abp-resource:3x2-transparent-png",
-    "rewrite=abp-resource:blank-css",
-    "rewrite=abp-resource:blank-html",
-    "rewrite=abp-resource:blank-js",
-    "rewrite=abp-resource:blank-mp3",
-    "rewrite=abp-resource:blank-mp4",
-    "rewrite=abp-resource:blank-text",
-    "script", "stylesheet", "subdocument", "third-party", "webrtc",
-    "websocket", "xhr", "xmlhttprequest", "css", "1p", "3p", "frame",
-    "doc", "ghide",
-];
+/// Known Adblock Plus options (HashSet for O(1) lookup)
+static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    [
+        "collapse", "csp", "csp=frame-src", "csp=img-src", "csp=media-src",
+        "csp=script-src", "csp=worker-src", "document", "elemhide", "font",
+        "genericblock", "generichide", "image", "match-case", "media",
+        "object-subrequest", "object", "other", "ping", "popup",
+        "rewrite=abp-resource:1x1-transparent-gif",
+        "rewrite=abp-resource:2x2-transparent-png",
+        "rewrite=abp-resource:32x32-transparent-png",
+        "rewrite=abp-resource:3x2-transparent-png",
+        "rewrite=abp-resource:blank-css",
+        "rewrite=abp-resource:blank-html",
+        "rewrite=abp-resource:blank-js",
+        "rewrite=abp-resource:blank-mp3",
+        "rewrite=abp-resource:blank-mp4",
+        "rewrite=abp-resource:blank-text",
+        "script", "stylesheet", "subdocument", "third-party", "webrtc",
+        "websocket", "xhr", "xmlhttprequest", "css", "1p", "3p", "frame",
+        "doc", "ghide",
+    ].into_iter().collect()
+});
 
 // =============================================================================
 // Repository Types
@@ -261,9 +263,9 @@ const REPO_TYPES: &[RepoDefinition] = &[GIT, HG];
 // UBO Option Conversion
 // =============================================================================
 
-/// Convert uBO-specific options to standard ABP options
-fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
-    let conversions: HashMap<&str, &str> = [
+/// uBO to ABP option conversions
+static UBO_CONVERSIONS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    [
         ("xhr", "xmlhttprequest"),
         ("~xhr", "~xmlhttprequest"),
         ("css", "stylesheet"),
@@ -280,13 +282,17 @@ fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
         ("~xml", "~xmlhttprequest"),
         ("iframe", "subdocument"),
         ("~iframe", "~subdocument"),
-    ].iter().cloned().collect();
+    ].into_iter().collect()
+});
+
+/// Convert uBO-specific options to standard ABP options
+fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
 
     options.into_iter().map(|option| {
         if option.starts_with("from=") {
             option.replacen("from=", "domain=", 1)
         } else {
-            conversions.get(option.as_str())
+            UBO_CONVERSIONS.get(option.as_str())
                 .map(|s| s.to_string())
                 .unwrap_or(option)
         }
