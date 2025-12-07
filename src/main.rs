@@ -112,6 +112,11 @@ static ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"^([^/|@"!]*?)(##|#@#|#\?#|#@\?#|#\$#|#@\$#)(.+)$"#).unwrap()
 });
 
+/// Pattern for regex domain element hiding rules (uBO specific)
+static REGEX_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"^(/[^#]+/)(##|#@#|#\?#|#@\?#|#\$#|#@\$#)(.+)$"#).unwrap()
+});
+
 static OPTION_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(.*)\$(~?[\w\-]+(?:=[^,\s]+)?(?:,~?[\w\-]+(?:=[^,\s]+)?)*)$").unwrap()
 });
@@ -387,7 +392,9 @@ fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("permissions=")
                         || stripped.starts_with("to=")
                         || stripped.starts_with("from=")
-                        || stripped.starts_with("method=");
+                        || stripped.starts_with("method=")
+                        || stripped.starts_with("denyallow=")
+                        || stripped.starts_with("removeparam=");
                     if !is_known {
                         eprintln!(
                             "Warning: The option \"{}\" used on the filter \"{}\" is not recognised by FOP",
@@ -797,6 +804,12 @@ fn fop_sort(filename: &Path, convert_ubo: bool) -> io::Result<()> {
 
         // Skip filters less than 3 characters
         if line.len() < 3 {
+            continue;
+        }
+
+        // Handle regex domain rules (uBO) - pass through unchanged
+        if REGEX_ELEMENT_PATTERN.is_match(&line) {
+            section.push(line.clone());
             continue;
         }
 
