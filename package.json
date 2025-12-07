@@ -1,6 +1,6 @@
 {
   "name": "fop-cli",
-  "version": "3.9.0",
+  "version": "3.9.1",
   "description": "Filter Orderer and Preener - A tool for sorting and cleaning ad-blocking filter lists",
   "keywords": [
     "adblock",
@@ -14,7 +14,7 @@
   "license": "GPL-3.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ryanbr/fop-rs"
+    "url": "git+https://github.com/ryanbr/fop-rs.git"
   },
   "homepage": "https://github.com/ryanbr/fop-rs",
   "bugs": {
