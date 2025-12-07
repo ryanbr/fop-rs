@@ -14,11 +14,11 @@
   "license": "GPL-3.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/easylist/easylist.git"
+    "url": "git+https://github.com/ryanbr/fop-rs"
   },
-  "homepage": "https://github.com/easylist/easylist",
+  "homepage": "https://github.com/ryanbr/fop-rs",
   "bugs": {
-    "url": "https://github.com/easylist/easylist/issues"
+    "url": "https://github.com/ryanbr/fop-rs/issues"
   },
   "bin": {
     "fop": "bin/fop"
