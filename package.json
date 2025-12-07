@@ -21,10 +21,10 @@
     "url": "https://github.com/ryanbr/fop-rs/issues"
   },
   "bin": {
-    "fop": "bin/fop"
+    "fop": "bin/fop.js"
   },
   "files": [
-    "bin/fop",
+    "bin/fop.js",
     "install.js",
     "README.md"
   ],
