@@ -107,14 +107,14 @@ static FILTER_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?:\$|,)domain=([^,\s]+)$").unwrap()
 });
 
-/// Pattern for element hiding rules (standard and uBO extended syntax)
+/// Pattern for element hiding rules (standard, uBO, and AdGuard extended syntax)
 static ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^([^/|@"!]*?)(##|#@#|#\?#|#@\?#|#\$#|#@\$#)(.+)$"#).unwrap()
+    Regex::new(r#"^([^/|@"!]*?)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
 });
 
-/// Pattern for regex domain element hiding rules (uBO specific)
+/// Pattern for regex domain element hiding rules (uBO/AdGuard specific)
 static REGEX_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^(/[^#]+/)(##|#@#|#\?#|#@\?#|#\$#|#@\$#)(.+)$"#).unwrap()
+    Regex::new(r#"^(/[^#]+/)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
 });
 
 static OPTION_PATTERN: Lazy<Regex> = Lazy::new(|| {
@@ -478,9 +478,10 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
         domains = valid_domains.join(",");
     }
 
-    // Skip selector processing for uBO/ABP extended syntax (preserve exactly as-is)
+    // Skip selector processing for uBO/ABP/AdGuard extended syntax (preserve exactly as-is)
     let is_extended = selector.starts_with("+js(")
         || selector.starts_with("^")
+        || selector.starts_with("//scriptlet(")
         || selector.contains(":style(")
         || selector.contains(":has-text(")
         || selector.contains(":remove(")
@@ -492,8 +493,14 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
         || selector.contains(":xpath(")
         || selector.contains(":watch-attr(")
         || selector.contains(":min-text-length(")
+        || selector.contains(":-abp-has(")
+        || selector.contains(":-abp-contains(")
+        || selector.contains(":-abp-properties(")
+        || selector.contains(" {")
         || separator == "#$#"
-        || separator == "#@$#";
+        || separator == "#@$#"
+        || separator == "#%#"
+        || separator == "#@%#";
 
     if is_extended {
         return format!("{}{}{}", domains, separator, selector);
