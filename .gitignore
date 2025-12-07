@@ -1,0 +1,13 @@
+# Rust build output
+target/
+
+# npm
+node_modules/
+bin/fop-binary
+
+# Backup files
+*.orig
+*.temp
+
+# macOS
+.DS_Store
