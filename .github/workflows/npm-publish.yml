@@ -1,0 +1,58 @@
+name: Manual Publish
+on:
+  workflow_dispatch:
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+      - name: Build binary
+        run: |
+          cargo build --release
+          cp target/release/fop fop-linux-x86_64
+          
+      - name: Bump version and sync install.js
+        id: version
+        run: |
+          npm version patch --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          sed -i "s/const VERSION = '.*'/const VERSION = '$NEW_VERSION'/" install.js
+          git add package.json install.js
+          git commit -m "v$NEW_VERSION"
+          git tag "v$NEW_VERSION"
+          
+      - name: Push changes
+        run: git push --follow-tags
+          
+      - name: Create GitHub Release with binary
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          files: fop-linux-x86_64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
