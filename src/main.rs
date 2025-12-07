@@ -287,6 +287,11 @@ fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
     }).collect()
 }
 
+/// Sort domains alphabetically, ignoring ~ prefix
+fn sort_domains(domains: &mut Vec<String>) {
+    domains.sort_by(|a, b| a.trim_start_matches('~').cmp(b.trim_start_matches('~')));
+}
+
 // =============================================================================
 // Filter Processing Functions
 // =============================================================================
@@ -398,9 +403,7 @@ fn filter_tidy(filter_in: &str) -> String {
                     .into_iter()
                     .collect();
 
-                unique_domains.sort_by(|a, b| {
-                    a.trim_start_matches('~').cmp(b.trim_start_matches('~'))
-                });
+                sort_domains(&mut unique_domains);
 
                 final_options.push(format!("domain={}", unique_domains.join("|")));
             }
@@ -436,9 +439,7 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
             );
         }
 
-        valid_domains.sort_by(|a, b| {
-            a.trim_start_matches('~').cmp(b.trim_start_matches('~'))
-        });
+        sort_domains(&mut valid_domains);
         valid_domains.dedup();
         domains = valid_domains.join(",");
     }
