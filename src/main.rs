@@ -16,6 +16,7 @@ use std::process::Command;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use walkdir::WalkDir;
+use rayon::prelude::*;
 
 // FOP version number
 const VERSION: &str = "3.9-rs";
@@ -1120,46 +1121,57 @@ fn process_location(location: &Path, no_commit: bool) -> io::Result<()> {
 
     println!("\nPrimary location: {}", location.display());
 
-    // Walk directory tree
-    for entry in WalkDir::new(location)
+    // Collect directories and files
+    let entries: Vec<_> = WalkDir::new(location)
         .min_depth(0)
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
             !name.starts_with('.') && !IGNORE_DIRS.contains(&name.as_ref())
         })
-    {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        .filter_map(|e| e.ok())
+        .collect();
+ 
+    // Print directories first (sequential for ordered output)
+    for entry in &entries {
 
         let path = entry.path();
-
         if path.is_dir() {
             println!("Current directory: {}", path.display());
-            continue;
         }
+    }
 
-        let filename = path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+    // Collect text files to process
+    let txt_files: Vec<_> = entries
+        .iter()
+        .filter(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                return false;
+            }
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            extension == "txt" && !IGNORE_FILES.contains(&filename)
+        })
+        .collect();
 
-        let extension = path.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+    // Process files in parallel
+    txt_files.par_iter().for_each(|entry| {
+        if let Err(e) = fop_sort(entry.path()) {
+            eprintln!("Error processing {}: {}", entry.path().display(), e);
+        }
+    });
 
-        // Sort text files that aren't ignored
-        if extension == "txt" && !IGNORE_FILES.contains(&filename) {
-            if let Err(e) = fop_sort(path) {
-                eprintln!("Error processing {}: {}", path.display(), e);
+    // Delete backup and temp files (sequential, usually few files)
+    for entry in &entries {
+        let path = entry.path();
+        if path.is_file() {
+            let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if extension == "orig" || extension == "temp" {
+                let _ = fs::remove_file(path);
             }
         }
 
-        // Delete backup and temp files
-        if extension == "orig" || extension == "temp" {
-            let _ = fs::remove_file(path);
-        }
     }
 
     // Offer to commit changes (skip if no_commit mode)
