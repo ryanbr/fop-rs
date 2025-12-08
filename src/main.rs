@@ -402,7 +402,10 @@ fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("from=")
                         || stripped.starts_with("method=")
                         || stripped.starts_with("denyallow=")
-                        || stripped.starts_with("removeparam=");
+                        || stripped.starts_with("removeparam=")
+                        || stripped.starts_with("urltransform=")
+                        || stripped.starts_with("responseheader=")
+                        || stripped.starts_with("urlskip=");
                     if !is_known {
                         eprintln!(
                             "Warning: The option \"{}\" used on the filter \"{}\" is not recognised by FOP",
@@ -492,11 +495,14 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
         || selector.starts_with("//scriptlet(")
         || selector.contains(":style(")
         || selector.contains(":has-text(")
+        || selector.contains(":has(")
         || selector.contains(":remove(")
         || selector.contains(":remove-attr(")
         || selector.contains(":remove-class(")
         || selector.contains(":matches-path(")
         || selector.contains(":matches-css(")
+        || selector.contains(":matches-media(")
+        || selector.contains(":matches-prop(")
         || selector.contains(":upward(")
         || selector.contains(":xpath(")
         || selector.contains(":watch-attr(")
@@ -504,6 +510,7 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
         || selector.contains(":-abp-has(")
         || selector.contains(":-abp-contains(")
         || selector.contains(":-abp-properties(")
+        || selector.contains(":others(")
         || selector.contains(" {")
         || separator == "#$#"
         || separator == "#@$#"
