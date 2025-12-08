@@ -181,11 +181,6 @@ static IP_ADDRESS_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\d+\.\d+\.\d+\.\d+").unwrap()
 });
 
-/// Pattern for easylist_adservers.txt validation - rules must start with | or /
-static EASYLIST_ADSERVERS_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\|+|/)").unwrap()
-});
-
 // =============================================================================
 // Constants
 // =============================================================================
@@ -764,13 +759,6 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()>
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
-    // Check if this is easylist_adservers.txt (special validation)
-    let is_easylist_adservers = filename
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|n| n == "easylist_adservers.txt")
-        .unwrap_or(false);
-
     let input = File::open(filename)?;
     let reader = BufReader::new(input);
     let mut output = File::create(&temp_file)?;
@@ -874,22 +862,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()>
         }
 
         // Process blocking rules
-        
-        // For easylist_adservers.txt, rules must start with | or /
-        if is_easylist_adservers {
-            // Remove filter options to check the base rule
-            let base_rule = if let Some(dollar_pos) = line.find('$') {
-                &line[..dollar_pos]
-            } else {
-                &line
-            };
-            
-            if !EASYLIST_ADSERVERS_PATTERN.is_match(base_rule) {
-                eprintln!("Skipped invalid easylist_adservers rule (must start with | or /): {}", line);
-                continue;
-            }
-        }
-        
+               
         // Skip short domain rules
         if line.len() <= 7 && SHORT_DOMAIN_PATTERN.is_match(&line) {
             if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(&line) {
