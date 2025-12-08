@@ -24,17 +24,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-      - name: Build binary
-        run: |
-          cargo build --release
-          cp target/release/fop fop-linux-x86_64
-
-          # Optimized for ~2015+ CPUs (Haswell, AVX2)
-          cargo clean
-          RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release
-          cp target/release/fop fop-linux-x86_64-v3
-          
+                   
       - name: Bump version and sync install.js
         id: version
         run: |
@@ -46,6 +36,18 @@ jobs:
           git commit -m "v$NEW_VERSION"
           git tag "v$NEW_VERSION"
           
+      - name: Build binaries
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          # Baseline - works on all x86_64
+          cargo build --release
+          cp target/release/fop "fop-${VERSION}-linux-x86_64"
+          
+          # Optimized for ~2015+ CPUs (AVX2)
+          cargo clean
+          RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release
+          cp target/release/fop "fop-${VERSION}-linux-x86_64-v3"
+
       - name: Push changes
         run: git push --follow-tags
           
@@ -54,8 +56,8 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           files: |
-            fop-linux-x86_64
-            fop-linux-x86_64-v3
+            fop-${{ steps.version.outputs.version }}-linux-x86_64
+            fop-${{ steps.version.outputs.version }}-linux-x86_64-v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           

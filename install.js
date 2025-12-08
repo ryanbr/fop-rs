@@ -13,10 +13,10 @@ const BINARY_NAME = 'fop';
 
 // Platform mapping
 const PLATFORMS = {
-  'darwin-x64': 'fop-macos-x86_64',
-  'darwin-arm64': 'fop-macos-arm64',
-  'linux-x64': 'fop-linux-x86_64',
-  'linux-arm64': 'fop-linux-arm64',
+  'darwin-x64': `-macos-x86_64`,
+  'darwin-arm64': `-macos-arm64`,
+  'linux-x64': `-linux-x86_64`,
+  'linux-arm64': `-linux-arm64`,
 };
 
 function getPlatformBinary() {
@@ -24,14 +24,14 @@ function getPlatformBinary() {
   const arch = process.arch;
   const key = `${platform}-${arch}`;
   
-  const binary = PLATFORMS[key];
-  if (!binary) {
+  const suffix = PLATFORMS[key];
+  if (!suffix) {
     console.error(`Unsupported platform: ${platform}-${arch}`);
     console.error('Supported platforms:', Object.keys(PLATFORMS).join(', '));
     process.exit(1);
   }
   
-  return binary;
+  return `fop-${VERSION}${suffix}`;
 }
 
 function getDownloadUrl(binaryName) {
