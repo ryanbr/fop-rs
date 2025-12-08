@@ -35,6 +35,8 @@ struct Args {
     no_ubo_convert: bool,
     /// Skip commit message format validation
     no_msg_check: bool,
+    /// Disable IGNORE_FILES and IGNORE_DIRS checks
+    disable_ignored: bool,
     /// Show help
     help: bool,
     /// Show version
@@ -48,6 +50,7 @@ impl Args {
             no_commit: false,
             no_ubo_convert: false,
             no_msg_check: false,
+            disable_ignored: false,
             help: false,
             version: false,
         };
@@ -59,6 +62,7 @@ impl Args {
                 "-n" | "--no-commit" | "--just-sort" | "--justsort" => args.no_commit = true,
                 "--no-ubo-convert" => args.no_ubo_convert = true,
                 "--no-msg-check" => args.no_msg_check = true,
+                "--disable-ignored" => args.disable_ignored = true,
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -85,6 +89,7 @@ impl Args {
         println!("        --just-sort     Alias for --no-commit");
         println!("        --no-ubo-convert  Skip uBO to ABP option conversion");
         println!("        --no-msg-check  Skip commit message format validation (M:/A:/P:)");
+        println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -1163,7 +1168,7 @@ fn commit_changes(
 // Main Processing
 // =============================================================================
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1204,7 +1209,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            !name.starts_with('.') && !IGNORE_DIRS.contains(&name.as_ref())
+            !name.starts_with('.') && (disable_ignored || !IGNORE_DIRS.contains(&name.as_ref()))
         })
         .filter_map(|e| e.ok())
         .collect();
@@ -1228,7 +1233,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
             }
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            extension == "txt" && !IGNORE_FILES.contains(&filename)
+            extension == "txt" && (disable_ignored || !IGNORE_FILES.contains(&filename))
         })
         .collect();
 
@@ -1289,7 +1294,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1305,7 +1310,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored) {
                 eprintln!("Error: {}", e);
             }
             println!();
