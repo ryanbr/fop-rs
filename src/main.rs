@@ -360,8 +360,16 @@ fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
         None => remove_unnecessary_wildcards(filter_in),
         Some(caps) => {
             let filter_text = remove_unnecessary_wildcards(&caps[1]);
-            let options_str = caps[2].to_lowercase().replace('_', "-");
-            let option_list: Vec<String> = options_str.split(',').map(String::from).collect();
+            let option_list: Vec<String> = caps[2].split(',').map(|opt| {
+                // Only replace underscores in option name, not in value
+                if let Some(eq_pos) = opt.find('=') {
+                    let name = opt[..eq_pos].to_lowercase().replace('_', "-");
+                    let value = &opt[eq_pos..]; // Keep value as-is (preserve case and underscores)
+                    format!("{}{}", name, value)
+                } else {
+                    opt.to_lowercase().replace('_', "-")
+                }
+            }).collect();
             
             // Convert uBO options
             let option_list = if convert_ubo {
