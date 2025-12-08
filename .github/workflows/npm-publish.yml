@@ -29,6 +29,11 @@ jobs:
         run: |
           cargo build --release
           cp target/release/fop fop-linux-x86_64
+
+          # Optimized for ~2015+ CPUs (Haswell, AVX2)
+          cargo clean
+          RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release
+          cp target/release/fop fop-linux-x86_64-v3
           
       - name: Bump version and sync install.js
         id: version
@@ -48,7 +53,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.version }}
-          files: fop-linux-x86_64
+          files: |
+            fop-linux-x86_64
+            fop-linux-x86_64-v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
