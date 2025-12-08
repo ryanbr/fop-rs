@@ -37,6 +37,8 @@ struct Args {
     no_msg_check: bool,
     /// Disable IGNORE_FILES and IGNORE_DIRS checks
     disable_ignored: bool,
+    /// Skip sorting (only combine rules)
+    no_sort: bool,
     /// Show help
     help: bool,
     /// Show version
@@ -51,6 +53,7 @@ impl Args {
             no_ubo_convert: false,
             no_msg_check: false,
             disable_ignored: false,
+            no_sort: false,
             help: false,
             version: false,
         };
@@ -63,6 +66,7 @@ impl Args {
                 "--no-ubo-convert" => args.no_ubo_convert = true,
                 "--no-msg-check" => args.no_msg_check = true,
                 "--disable-ignored" => args.disable_ignored = true,
+                "--no-sort" => args.no_sort = true,
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -90,6 +94,7 @@ impl Args {
         println!("        --no-ubo-convert  Skip uBO to ABP option conversion");
         println!("        --no-msg-check  Skip commit message format validation (M:/A:/P:)");
         println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
+        println!("        --no-sort       Skip sorting (only tidy and combine rules)");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -157,10 +162,6 @@ static UNICODE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
 
 static TLD_ONLY_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(\|\||[|])?\.([a-z]{2,})\^?$").unwrap()
-});
-
-static BLANK_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\s*$").unwrap()
 });
 
 static COMMIT_PATTERN: Lazy<Regex> = Lazy::new(|| {
@@ -673,7 +674,7 @@ fn combine_filters(
             || domains2.is_none() 
             || domain1_str.is_empty()
         {
-            combined.push(uncombined[i].clone());
+            combined.push(std::mem::take(&mut uncombined[i]));
             continue;
         }
 
@@ -683,7 +684,7 @@ fn combine_filters(
             .unwrap_or("");
 
         if domain2_str.is_empty() {
-            combined.push(uncombined[i].clone());
+            combined.push(std::mem::take(&mut uncombined[i]));
             continue;
         }
 
@@ -695,7 +696,7 @@ fn combine_filters(
         // Check if domain patterns are compatible (same structure except domain list)
         let pattern1_with_domain2 = domains1_full.replace(&domain1_str, domain2_str);
         if pattern1_with_domain2 != domains2_full {
-            combined.push(uncombined[i].clone());
+            combined.push(std::mem::take(&mut uncombined[i]));
             continue;
         }
 
@@ -704,7 +705,7 @@ fn combine_filters(
         let filter2_no_domain = domain_pattern.replace(&uncombined[i + 1], "");
 
         if filter1_no_domain != filter2_no_domain {
-            combined.push(uncombined[i].clone());
+            combined.push(std::mem::take(&mut uncombined[i]));
             continue;
         }
 
@@ -718,7 +719,7 @@ fn combine_filters(
         let domain2_only_excludes = domain2_exclude_count == domain2_total;
 
         if domain1_only_excludes != domain2_only_excludes {
-            combined.push(uncombined[i].clone());
+            combined.push(std::mem::take(&mut uncombined[i]));
             continue;
         }
 
@@ -759,7 +760,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-fn fop_sort(filename: &Path, convert_ubo: bool) -> io::Result<()> {
+fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -774,7 +775,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool) -> io::Result<()> {
     let reader = BufReader::new(input);
     let mut output = File::create(&temp_file)?;
 
-    let mut section: Vec<String> = Vec::new();
+    let mut section: Vec<String> = Vec::with_capacity(800);
     let mut lines_checked: usize = 1;
     let mut filter_lines: usize = 0;
     let mut element_lines: usize = 0;
@@ -782,27 +783,38 @@ fn fop_sort(filename: &Path, convert_ubo: bool) -> io::Result<()> {
     let write_filters = |section: &mut Vec<String>, 
                          output: &mut File, 
                          element_lines: usize, 
-                         filter_lines: usize| -> io::Result<()> {
+                         filter_lines: usize,
+                         no_sort: bool| -> io::Result<()> {
         if section.is_empty() {
             return Ok(());
         }
 
-        let mut unique: Vec<String> = section.drain(..).collect::<HashSet<_>>().into_iter().collect();
+        // Remove duplicates while preserving order if no_sort
+        let mut unique: Vec<String> = if no_sort {
+            let mut seen = HashSet::new();
+            section.drain(..).filter(|x| seen.insert(x.clone())).collect()
+        } else {
+            section.drain(..).collect::<HashSet<_>>().into_iter().collect()
+        };
 
         if element_lines > filter_lines {
-            // Sort element hiding rules
-            unique.sort_by(|a, b| {
-                let a_key = ELEMENT_DOMAIN_PATTERN.replace(a, "");
-                let b_key = ELEMENT_DOMAIN_PATTERN.replace(b, "");
-                a_key.cmp(&b_key)
-            });
+            // Sort element hiding rules (unless no_sort)
+            if !no_sort {
+                unique.sort_by(|a, b| {
+                    let a_key = ELEMENT_DOMAIN_PATTERN.replace(a, "");
+                    let b_key = ELEMENT_DOMAIN_PATTERN.replace(b, "");
+                    a_key.cmp(&b_key)
+                });
+            }
             let combined = combine_filters(unique, &ELEMENT_DOMAIN_PATTERN, ",");
             for filter in combined {
                 writeln!(output, "{}", filter)?;
             }
         } else {
-            // Sort blocking rules
-            unique.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            // Sort blocking rules (unless no_sort)
+            if !no_sort {
+                unique.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            }
             let combined = combine_filters(unique, &FILTER_DOMAIN_PATTERN, "|");
             for filter in combined {
                 writeln!(output, "{}", filter)?;
@@ -815,7 +827,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool) -> io::Result<()> {
     for line in reader.lines() {
         let line = line?.trim().to_string();
 
-        if BLANK_PATTERN.is_match(&line) {
+        if line.is_empty() {
             continue;
         }
 
@@ -825,7 +837,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool) -> io::Result<()> {
             || (line.starts_with('[') && line.ends_with(']'))
         {
             if !section.is_empty() {
-                write_filters(&mut section, &mut output, element_lines, filter_lines)?;
+                write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort)?;
                 lines_checked = 1;
                 filter_lines = 0;
                 element_lines = 0;
@@ -923,7 +935,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool) -> io::Result<()> {
 
     // Write remaining filters
     if !section.is_empty() {
-        write_filters(&mut section, &mut output, element_lines, filter_lines)?;
+        write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort)?;
     }
 
     drop(output);
@@ -1168,7 +1180,7 @@ fn commit_changes(
 // Main Processing
 // =============================================================================
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1239,7 +1251,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
 
     // Process files in parallel
     txt_files.par_iter().for_each(|entry| {
-            if let Err(e) = fop_sort(entry.path(), convert_ubo) {
+            if let Err(e) = fop_sort(entry.path(), convert_ubo, no_sort) {
             eprintln!("Error processing {}: {}", entry.path().display(), e);
         }
     });
@@ -1294,7 +1306,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1310,7 +1322,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort) {
                 eprintln!("Error: {}", e);
             }
             println!();
