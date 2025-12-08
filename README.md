@@ -98,6 +98,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `-n, --no-commit` | Just sort files, skip Git commit prompts |
 | `--just-sort` | Alias for `--no-commit` |
 | `--no-ubo-convert` | Skip uBO to ABP option conversion (keep `xhr`, `3p`, `1p`, etc.) |
+| `--no-msg-check` | Skip commit message format validation (M:/A:/P:) |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
 

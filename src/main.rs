@@ -33,6 +33,8 @@ struct Args {
     no_commit: bool,
     /// Skip uBO to ABP option conversion
     no_ubo_convert: bool,
+    /// Skip commit message format validation
+    no_msg_check: bool,
     /// Show help
     help: bool,
     /// Show version
@@ -45,6 +47,7 @@ impl Args {
             directories: Vec::new(),
             no_commit: false,
             no_ubo_convert: false,
+            no_msg_check: false,
             help: false,
             version: false,
         };
@@ -55,6 +58,7 @@ impl Args {
                 "-V" | "--version" => args.version = true,
                 "-n" | "--no-commit" | "--just-sort" | "--justsort" => args.no_commit = true,
                 "--no-ubo-convert" => args.no_ubo_convert = true,
+                "--no-msg-check" => args.no_msg_check = true,
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -80,6 +84,7 @@ impl Args {
         println!("    -n, --no-commit     Just sort files, skip Git commit prompts");
         println!("        --just-sort     Alias for --no-commit");
         println!("        --no-ubo-convert  Skip uBO to ABP option conversion");
+        println!("        --no-msg-check  Skip commit message format validation (M:/A:/P:)");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -1072,6 +1077,7 @@ fn commit_changes(
     repo: &RepoDefinition,
     base_cmd: &[String],
     original_difference: bool,
+    no_msg_check: bool,
 ) -> io::Result<()> {
     let diff = match get_diff(base_cmd, repo) {
         Some(d) if !d.is_empty() => d,
@@ -1116,7 +1122,7 @@ fn commit_changes(
             return Ok(());
         }
 
-        if check_comment(comment, original_difference) {
+        if no_msg_check || check_comment(comment, original_difference) {
             println!("Comment \"{}\" accepted.", comment);
 
             // Execute commit
@@ -1157,7 +1163,7 @@ fn commit_changes(
 // Main Processing
 // =============================================================================
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1248,7 +1254,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool) -> io::
     // Offer to commit changes (skip if no_commit mode)
     if !no_commit {
         if let (Some(repo), Some(base_cmd)) = (repository, base_cmd) {
-            commit_changes(repo, &base_cmd, original_difference)?;
+            commit_changes(repo, &base_cmd, original_difference, no_msg_check)?;
         }
     }
 
@@ -1283,7 +1289,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1299,7 +1305,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check) {
                 eprintln!("Error: {}", e);
             }
             println!();
