@@ -1338,6 +1338,69 @@ mod tests {
     fn test_element_tidy() {
         let result = element_tidy("z.com,a.com,m.com", "##", ".ad");
         assert!(result.starts_with("a.com,m.com,z.com"));
+        
+        // Test uBO scriptlet - selector preserved exactly
+        let result = element_tidy("z.com,a.com", "##", "+js(nowoif)");
+        assert_eq!(result, "a.com,z.com##+js(nowoif)");
+        
+        // Test uBO :has-text() - selector preserved
+        let result = element_tidy("example.com", "##", "div:has-text(Sponsored)");
+        assert_eq!(result, "example.com##div:has-text(Sponsored)");
+        
+        // Test uBO :style() - selector preserved
+        let result = element_tidy("site.com", "##", "body:style(overflow: auto !important)");
+        assert_eq!(result, "site.com##body:style(overflow: auto !important)");
+        
+        // Test AdGuard scriptlet
+        let result = element_tidy("example.com", "#%#", "//scriptlet('set-cookie', 'a', 'b')");
+        assert_eq!(result, "example.com#%#//scriptlet('set-cookie', 'a', 'b')");
+        
+        // Test ABP extended selector
+        let result = element_tidy("site.com", "#?#", "div:-abp-has(span:-abp-contains(Ad))");
+        assert_eq!(result, "site.com#?#div:-abp-has(span:-abp-contains(Ad))");
+        
+        // Test ABP action syntax
+        let result = element_tidy("site.com", "##", ".ad {remove: true;}");
+        assert_eq!(result, "site.com##.ad {remove: true;}");
+        
+        // Test HTML filtering
+        let result = element_tidy("site.com", "##", "^script:has-text(ads)");
+        assert_eq!(result, "site.com##^script:has-text(ads)");
+    }
+
+    #[test]
+    fn test_filter_tidy_ubo_options() {
+        // Test redirect= is recognized
+        let result = filter_tidy("||ads.com^$script,redirect=noopjs", true);
+        assert!(result.contains("redirect=noopjs"));
+        
+        // Test denyallow= is recognized
+        let result = filter_tidy("*$script,3p,denyallow=cdn.com", true);
+        assert!(result.contains("denyallow=cdn.com"));
+        
+        // Test removeparam= is recognized
+        let result = filter_tidy("||site.com^$removeparam=utm_source", true);
+        assert!(result.contains("removeparam=utm_source"));
+        
+        // Test no-ubo-convert mode
+        let result = filter_tidy("||ads.com^$xhr,3p", false);
+        assert!(result.contains("xhr"));
+        assert!(result.contains("3p"));
+        
+        // Test ubo-convert mode (default)
+        let result = filter_tidy("||ads.com^$xhr,3p", true);
+        assert!(result.contains("xmlhttprequest"));
+        assert!(result.contains("third-party"));
+    }
+
+    #[test]
+    fn test_regex_element_pattern() {
+        // Regex domain rules should match
+        assert!(REGEX_ELEMENT_PATTERN.is_match("/tamilprint\\d+/##+js(nowoif)"));
+        assert!(REGEX_ELEMENT_PATTERN.is_match("/regex/##.selector"));
+        
+        // Normal rules should not match
+        assert!(!REGEX_ELEMENT_PATTERN.is_match("example.com##.ad"));
     }
 
     #[test]
