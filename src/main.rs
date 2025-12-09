@@ -49,6 +49,8 @@ struct Args {
     no_color: bool,
     /// Additional files to ignore (comma-separated, supports partial names)
     ignore_files: Vec<String>,
+    /// Git commit message (skip interactive prompt)
+    git_message: Option<String>,
     /// Show help
     help: bool,
     /// Show version
@@ -141,6 +143,7 @@ impl Args {
             localhost: parse_bool(&config, "localhost", false),
             no_color: parse_bool(&config, "no-color", false),
             ignore_files: parse_list(&config, "ignorefiles"),
+            git_message: None,
             help: false,
             version: false,
         };
@@ -167,6 +170,9 @@ impl Args {
                 _ if arg.starts_with("--config-file=") => {
                     // Already handled in first pass
                 }
+                _ if arg.starts_with("--git-message=") => {
+                    args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
+                 }
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -200,6 +206,7 @@ impl Args {
         println!("        --no-color      Disable colored output");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --config-file=  Custom config file path");
+        println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -212,6 +219,8 @@ impl Args {
         println!("                                 # Ignore specific files");
         println!("    fop --config-file=/path/to/.fopconfig -n .");
         println!("                                 # Use custom config file");
+        println!("    fop --git-message=\"M: Fixed typo\" .");
+        println!("                                 # Auto-commit with message");
         println!();
         println!("Config file (.fopconfig):");
         println!("    Place in current directory or home directory.");
@@ -1245,6 +1254,7 @@ fn commit_changes(
     original_difference: bool,
     no_msg_check: bool,
     no_color: bool,
+    git_message: &Option<String>,
 ) -> io::Result<()> {
     let diff = match get_diff(base_cmd, repo) {
         Some(d) if !d.is_empty() => d,
@@ -1256,6 +1266,36 @@ fn commit_changes(
 
     println!("\nThe following changes have been recorded by the repository:");
     print_diff(&diff, no_color);
+
+    // If git message provided via CLI, use it directly
+    if let Some(message) = git_message {
+        if message.trim().is_empty() {
+            eprintln!("Error: Empty commit message provided");
+            return Ok(());
+        }
+        if !no_msg_check && !check_comment(message, original_difference) {
+            eprintln!("Error: Invalid commit message format. Use M:/A:/P: prefix.");
+            return Ok(());
+        }
+        
+        println!("Committing with message: {}", message);
+        
+        let mut cmd = base_cmd.to_vec();
+        cmd.extend(repo.commit.iter().map(|s| s.to_string()));
+        cmd.push(message.clone());
+        
+        Command::new(&cmd[0]).args(&cmd[1..]).status()?;
+        
+        // Pull and push
+        for op in [repo.pull, repo.push].iter() {
+            let mut cmd = base_cmd.to_vec();
+            cmd.extend(op.iter().map(|s| s.to_string()));
+            let _ = Command::new(&cmd[0]).args(&cmd[1..]).status();
+        }
+        
+        println!("Completed commit process successfully.");
+        return Ok(());
+    }
 
     // Check for large changes
     if !original_difference && is_large_change(&diff) {
@@ -1340,7 +1380,7 @@ fn should_ignore_file(filename: &str, ignore_files: &[String]) -> bool {
     false
 }
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, ignore_files: &[String]) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, ignore_files: &[String], git_message: &Option<String>) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1433,7 +1473,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
     // Offer to commit changes (skip if no_commit mode)
     if !no_commit {
         if let (Some(repo), Some(base_cmd)) = (repository, base_cmd) {
-            commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color)?;
+            commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, git_message)?;
         }
     }
 
@@ -1468,7 +1508,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1484,7 +1524,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
             println!();

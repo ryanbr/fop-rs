@@ -13,28 +13,9 @@ const BINARY_NAME = 'fop';
 
 // Platform mapping
 const PLATFORMS = {
-  'darwin-x64': `-macos-x86_64`,
-  'darwin-arm64': `-macos-arm64`,
   'linux-x64': `-linux-x86_64`,
-  'linux-arm64': `-linux-arm64`,
   'win32-x64': `-windows-x86_64.exe`,
-  'win32-arm64': `-windows-arm64.exe`,
 };
-
-function getPlatformBinary() {
-  const platform = process.platform;
-  const arch = process.arch;
-  const key = `${platform}-${arch}`;
-  
-  const suffix = PLATFORMS[key];
-  if (!suffix) {
-    console.error(`Unsupported platform: ${platform}-${arch}`);
-    console.error('Supported platforms:', Object.keys(PLATFORMS).join(', '));
-    process.exit(1);
-  }
-  
-  return `fop-${VERSION}${suffix}`;
-}
 
 function getDownloadUrl(binaryName) {
   // GitHub releases URL pattern
@@ -81,6 +62,35 @@ function download(url, dest) {
   });
 }
 
+function buildFromSource(binaryPath) {
+  console.log('Building from source...');
+  console.log('This requires Rust to be installed (https://rustup.rs)');
+  
+  try {
+    execSync('cargo --version', { stdio: 'ignore' });
+  } catch (e) {
+    console.error('Error: Rust/Cargo not found.');
+    console.error('Please install Rust from https://rustup.rs and try again.');
+    process.exit(1);
+  }
+  
+  try {
+    const tempDir = path.join(__dirname, 'build-temp');
+    execSync(`git clone --depth 1 https://github.com/${GITHUB_REPO}.git "${tempDir}"`, { stdio: 'inherit' });
+    execSync('cargo build --release', { cwd: tempDir, stdio: 'inherit' });
+    
+    const builtBinary = path.join(tempDir, 'target', 'release', process.platform === 'win32' ? 'fop.exe' : 'fop');
+    fs.copyFileSync(builtBinary, binaryPath);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    
+    console.log('Build completed successfully!');
+    return true;
+  } catch (e) {
+    console.error('Build failed:', e.message);
+    return false;
+  }
+}
+
 async function install() {
   const binDir = path.join(__dirname, 'bin');
   const binaryPath = path.join(binDir, 'fop-binary');
@@ -96,10 +106,24 @@ async function install() {
     return;
   }
   
-  const platformBinary = getPlatformBinary();
-  const url = getDownloadUrl(platformBinary);
+  const platform = process.platform;
+  const arch = process.arch;
+  const key = `${platform}-${arch}`;
+  const suffix = PLATFORMS[key];
   
-  console.log(`Installing FOP v${VERSION} for ${process.platform}-${process.arch}...`);
+  console.log(`Installing FOP v${VERSION} for ${platform}-${arch}...`);
+  
+  if (!suffix) {
+    console.log(`No pre-built binary for ${platform}-${arch}, building from source...`);
+    if (buildFromSource(binaryPath)) {
+      fs.chmodSync(binaryPath, 0o755);
+    }
+    return;
+  }
+  
+  const platformBinary = `fop-${VERSION}${suffix}`;
+  const url = getDownloadUrl(platformBinary);
+
   
   try {
     await download(url, binaryPath);
