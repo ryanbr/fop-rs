@@ -6,7 +6,8 @@
 //! Copyright (C) 2011 Michael (original Python version)
 //! Rust port maintains GPL-3.0 license compatibility.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use ahash::AHashSet as HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
