@@ -2,10 +2,12 @@ name: Manual Publish
 on:
   workflow_dispatch:
 jobs:
-  publish:
+  build-linux-windows:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,18 +66,72 @@ jobs:
           RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
 
+      - name: Upload Linux/Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-windows-binaries
+          path: |
+            fop-*-linux-*
+            fop-*-windows-*.exe
+
       - name: Push changes
         run: git push --follow-tags
           
-      - name: Create GitHub Release with binary
+  build-macos:
+    runs-on: macos-latest
+    needs: build-linux-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build macOS binaries
+        run: |
+          VERSION=${{ needs.build-linux-windows.outputs.version }}
+          
+          # macOS x86_64 (Intel)
+          cargo build --release --target x86_64-apple-darwin
+          cp target/x86_64-apple-darwin/release/fop "fop-${VERSION}-macos-x86_64"
+          
+          # macOS ARM64 (Apple Silicon)
+          cargo build --release --target aarch64-apple-darwin
+          cp target/aarch64-apple-darwin/release/fop "fop-${VERSION}-macos-arm64"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: fop-*-macos-*
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-linux-windows, build-macos]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.build-linux-windows.outputs.version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.build-linux-windows.outputs.version }}
           files: |
-            fop-${{ steps.version.outputs.version }}-linux-x86_64
-            fop-${{ steps.version.outputs.version }}-linux-x86_64-v3
-            fop-${{ steps.version.outputs.version }}-windows-x86_64.exe
-            fop-${{ steps.version.outputs.version }}-windows-x86_64-v3.exe
+            linux-windows-binaries/*
+            macos-binaries/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
