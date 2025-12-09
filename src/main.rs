@@ -12,7 +12,6 @@ use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::collections::HashMap as StdHashMap;
 use std::process::Command;
 
 // ANSI color codes
@@ -61,8 +60,8 @@ struct Args {
 }
 
 /// Load configuration from .fopconfig file
-fn load_config(custom_path: Option<&PathBuf>) -> StdHashMap<String, String> {
-    let mut config = StdHashMap::new();
+fn load_config(custom_path: Option<&PathBuf>) -> HashMap<String, String> {
+    let mut config = HashMap::new();
     
     // If custom path provided, use that only
     let config_path: Option<PathBuf> = if let Some(path) = custom_path {
@@ -103,14 +102,14 @@ fn load_config(custom_path: Option<&PathBuf>) -> StdHashMap<String, String> {
 }
 
 /// Parse boolean value from config
-fn parse_bool(config: &StdHashMap<String, String>, key: &str, default: bool) -> bool {
+fn parse_bool(config: &HashMap<String, String>, key: &str, default: bool) -> bool {
     config.get(key).map(|v| {
         matches!(v.to_lowercase().as_str(), "true" | "yes" | "1")
     }).unwrap_or(default)
 }
 
 /// Parse string list from config (comma-separated)
-fn parse_list(config: &StdHashMap<String, String>, key: &str) -> Vec<String> {
+fn parse_list(config: &HashMap<String, String>, key: &str) -> Vec<String> {
     config.get(key).map(|v| {
         v.split(',')
             .map(|s| s.trim().to_string())
