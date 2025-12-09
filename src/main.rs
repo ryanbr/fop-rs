@@ -50,6 +50,8 @@ struct Args {
     localhost: bool,
     /// Disable colored output
     no_color: bool,
+    /// Additional files to ignore (comma-separated, supports partial names)
+    ignore_files: Vec<String>,
     /// Show help
     help: bool,
     /// Show version
@@ -68,6 +70,7 @@ impl Args {
             alt_sort: false,
             localhost: false,
             no_color: false,
+            ignore_files: Vec::new(),
             help: false,
             version: false,
         };
@@ -84,6 +87,12 @@ impl Args {
                 "--alt-sort" => args.alt_sort = true,
                 "--localhost" => args.localhost = true,
                 "--no-color" => args.no_color = true,
+                _ if arg.starts_with("--ignorefiles=") => {
+                    let files = arg.trim_start_matches("--ignorefiles=");
+                    args.ignore_files = files.split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                }
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -115,6 +124,7 @@ impl Args {
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --no-color      Disable colored output");
+        println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -123,6 +133,8 @@ impl Args {
         println!("    fop /path/to/easylist        # Sort filters in specified directory");
         println!("    fop --no-commit .            # Sort without commit prompt");
         println!("    fop -n ~/easylist ~/fanboy   # Sort multiple directories, no commit");
+        println!("    fop --ignorefiles=backup.txt,test.txt -n .");
+        println!("                                 # Ignore specific files");
     }
 
     fn print_version() {
@@ -1232,7 +1244,17 @@ fn commit_changes(
 // Main Processing
 // =============================================================================
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool) -> io::Result<()> {
+/// Check if filename matches any ignore pattern (exact or partial)
+fn should_ignore_file(filename: &str, ignore_files: &[String]) -> bool {
+    for pattern in ignore_files {
+        if filename == pattern || filename.contains(pattern) {
+            return true;
+        }
+    }
+    false
+}
+
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, ignore_files: &[String]) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1297,7 +1319,9 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
             }
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            extension == "txt" && (disable_ignored || !IGNORE_FILES.contains(&filename))
+            extension == "txt" 
+                && (disable_ignored || !IGNORE_FILES.contains(&filename))
+                && !should_ignore_file(filename, ignore_files)
         })
         .collect();
 
@@ -1358,7 +1382,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1374,7 +1398,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files) {
                 eprintln!("Error: {}", e);
             }
             println!();

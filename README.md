@@ -103,6 +103,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--no-sort` | Don't sort rulse, just combine |
 | `--alt-sort` | More correct sorting method |
 | `--localhost` | Sort hosts file entries (0.0.0.0/127.0.0.1 domain) |
+| `--ignorefiles=` | Additional files to ignore (comma-separated, partial names) |
 | `--no-color` | Disable colored output |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
