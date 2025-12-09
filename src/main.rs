@@ -13,6 +13,11 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// ANSI color codes
+const RED: &str = "\x1b[31m";
+const GREEN: &str = "\x1b[32m";
+const RESET: &str = "\x1b[0m";
+
 use once_cell::sync::Lazy;
 use regex::Regex;
 use walkdir::WalkDir;
@@ -43,6 +48,8 @@ struct Args {
     alt_sort: bool,
     /// Sort localhost/hosts file entries (0.0.0.0/127.0.0.1)
     localhost: bool,
+    /// Disable colored output
+    no_color: bool,
     /// Show help
     help: bool,
     /// Show version
@@ -60,6 +67,7 @@ impl Args {
             no_sort: false,
             alt_sort: false,
             localhost: false,
+            no_color: false,
             help: false,
             version: false,
         };
@@ -75,6 +83,7 @@ impl Args {
                 "--no-sort" => args.no_sort = true,
                 "--alt-sort" => args.alt_sort = true,
                 "--localhost" => args.localhost = true,
+                "--no-color" => args.no_color = true,
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -105,6 +114,7 @@ impl Args {
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
+        println!("        --no-color      Disable colored output");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -1113,11 +1123,30 @@ fn check_comment(comment: &str, user_changes: bool) -> bool {
     }
 }
 
+fn print_diff_line(line: &str, no_color: bool) {
+    if no_color {
+        println!("{}", line);
+    } else if line.starts_with('+') && !line.starts_with("+++") {
+        println!("{}{}{}", GREEN, line, RESET);
+    } else if line.starts_with('-') && !line.starts_with("---") {
+        println!("{}{}{}", RED, line, RESET);
+    } else {
+        println!("{}", line);
+    }
+}
+
+fn print_diff(diff: &str, no_color: bool) {
+    for line in diff.lines() {
+        print_diff_line(line, no_color);
+    }
+}
+
 fn commit_changes(
     repo: &RepoDefinition,
     base_cmd: &[String],
     original_difference: bool,
     no_msg_check: bool,
+    no_color: bool,
 ) -> io::Result<()> {
     let diff = match get_diff(base_cmd, repo) {
         Some(d) if !d.is_empty() => d,
@@ -1128,7 +1157,7 @@ fn commit_changes(
     };
 
     println!("\nThe following changes have been recorded by the repository:");
-    println!("{}", diff);
+    print_diff(&diff, no_color);
 
     // Check for large changes
     if !original_difference && is_large_change(&diff) {
@@ -1203,7 +1232,7 @@ fn commit_changes(
 // Main Processing
 // =============================================================================
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1294,7 +1323,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
     // Offer to commit changes (skip if no_commit mode)
     if !no_commit {
         if let (Some(repo), Some(base_cmd)) = (repository, base_cmd) {
-            commit_changes(repo, &base_cmd, original_difference, no_msg_check)?;
+            commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color)?;
         }
     }
 
@@ -1329,7 +1358,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1345,7 +1374,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color) {
                 eprintln!("Error: {}", e);
             }
             println!();
