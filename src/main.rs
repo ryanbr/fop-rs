@@ -41,6 +41,8 @@ struct Args {
     no_sort: bool,
     /// Use alternative sorting (sort by selector for all rule types)
     alt_sort: bool,
+    /// Sort localhost/hosts file entries (0.0.0.0/127.0.0.1)
+    localhost: bool,
     /// Show help
     help: bool,
     /// Show version
@@ -57,6 +59,7 @@ impl Args {
             disable_ignored: false,
             no_sort: false,
             alt_sort: false,
+            localhost: false,
             help: false,
             version: false,
         };
@@ -71,6 +74,7 @@ impl Args {
                 "--disable-ignored" => args.disable_ignored = true,
                 "--no-sort" => args.no_sort = true,
                 "--alt-sort" => args.alt_sort = true,
+                "--localhost" => args.localhost = true,
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -100,6 +104,7 @@ impl Args {
         println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
+        println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -145,6 +150,11 @@ static ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
 /// Pattern for regex domain element hiding rules (uBO/AdGuard specific)
 static REGEX_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"^(/[^#]+/)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
+});
+
+/// Pattern for localhost/hosts file entries
+static LOCALHOST_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(0\.0\.0\.0|127\.0\.0\.1)\s+(.+)$").unwrap()
 });
 
 static OPTION_PATTERN: Lazy<Regex> = Lazy::new(|| {
@@ -770,7 +780,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool) -> io::Result<()> {
+fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -788,7 +798,8 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool) -
                          element_lines: usize, 
                          filter_lines: usize,
                          no_sort: bool,
-                         alt_sort: bool| -> io::Result<()> {
+                         alt_sort: bool,
+                         localhost: bool| -> io::Result<()> {
         if section.is_empty() {
             return Ok(());
         }
@@ -801,8 +812,19 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool) -
             section.drain(..).collect::<HashSet<_>>().into_iter().collect()
         };
 
-        if element_lines > filter_lines {
-            // Sort element hiding rules (unless no_sort)
+        if localhost {
+            // Sort hosts file entries by domain
+            if !no_sort {
+                unique.sort_by(|a, b| {
+                    let a_domain = LOCALHOST_PATTERN.captures(a).map(|c| c[2].to_lowercase()).unwrap_or_else(|| a.to_lowercase());
+                    let b_domain = LOCALHOST_PATTERN.captures(b).map(|c| c[2].to_lowercase()).unwrap_or_else(|| b.to_lowercase());
+                    a_domain.cmp(&b_domain)
+                });
+            }
+            for filter in unique {
+                writeln!(output, "{}", filter)?;
+            }
+        } else if element_lines > filter_lines {
             if !no_sort {
                 let pattern = if alt_sort {
                     &*ELEMENT_DOMAIN_PATTERN
@@ -841,12 +863,14 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool) -
         }
 
         // Comments and special lines
-        if line.starts_with('!')
+        let is_comment = line.starts_with('!')
+            || (localhost && line.starts_with('#'));
+        if is_comment
             || line.starts_with("%include")
             || (line.starts_with('[') && line.ends_with(']'))
         {
             if !section.is_empty() {
-                write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, alt_sort)?;
+                write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, alt_sort, localhost)?;
                 lines_checked = 1;
                 filter_lines = 0;
                 element_lines = 0;
@@ -934,7 +958,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool) -
 
     // Write remaining filters
     if !section.is_empty() {
-        write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, alt_sort)?;
+        write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, alt_sort, localhost)?;
     }
 
     drop(output);
@@ -1179,7 +1203,7 @@ fn commit_changes(
 // Main Processing
 // =============================================================================
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1250,7 +1274,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
 
     // Process files in parallel
     txt_files.par_iter().for_each(|entry| {
-            if let Err(e) = fop_sort(entry.path(), convert_ubo, no_sort, alt_sort) {
+            if let Err(e) = fop_sort(entry.path(), convert_ubo, no_sort, alt_sort, localhost) {
             eprintln!("Error processing {}: {}", entry.path().display(), e);
         }
     });
@@ -1305,7 +1329,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1321,7 +1345,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost) {
                 eprintln!("Error: {}", e);
             }
             println!();
@@ -1463,5 +1487,35 @@ mod tests {
         assert!(check_comment("A: (filters) https://example.com/issue", true));
         assert!(!check_comment("Invalid comment", false));
         assert!(!check_comment("A: (filters) not-a-url", true));
+    }
+
+    #[test]
+    fn test_localhost_pattern() {
+        // Test 0.0.0.0 entries
+        assert!(LOCALHOST_PATTERN.is_match("0.0.0.0 domain.com"));
+        assert!(LOCALHOST_PATTERN.is_match("0.0.0.0 sub.domain.com"));
+        assert!(LOCALHOST_PATTERN.is_match("0.0.0.0 ads.example.org"));
+        
+        // Test 127.0.0.1 entries
+        assert!(LOCALHOST_PATTERN.is_match("127.0.0.1 domain.com"));
+        assert!(LOCALHOST_PATTERN.is_match("127.0.0.1 sub.domain.com"));
+        assert!(LOCALHOST_PATTERN.is_match("127.0.0.1 tracker.net"));
+        
+        // Test non-matching entries
+        assert!(!LOCALHOST_PATTERN.is_match("# comment"));
+        assert!(!LOCALHOST_PATTERN.is_match("192.168.1.1 domain.com"));
+        assert!(!LOCALHOST_PATTERN.is_match("domain.com"));
+    }
+
+    #[test]
+    fn test_localhost_domain_extraction() {
+        let caps = LOCALHOST_PATTERN.captures("0.0.0.0 z-ads.com").unwrap();
+        assert_eq!(&caps[2], "z-ads.com");
+        
+        let caps = LOCALHOST_PATTERN.captures("127.0.0.1 sub.domain.com").unwrap();
+        assert_eq!(&caps[2], "sub.domain.com");
+        
+        let caps = LOCALHOST_PATTERN.captures("0.0.0.0 a-tracker.net").unwrap();
+        assert_eq!(&caps[2], "a-tracker.net");
     }
 }
