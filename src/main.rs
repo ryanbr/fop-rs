@@ -39,6 +39,8 @@ struct Args {
     disable_ignored: bool,
     /// Skip sorting (only combine rules)
     no_sort: bool,
+    /// Match FOP.py sorting behavior
+    match_foppy_sort: bool,
     /// Show help
     help: bool,
     /// Show version
@@ -54,6 +56,7 @@ impl Args {
             no_msg_check: false,
             disable_ignored: false,
             no_sort: false,
+            match_foppy_sort: false,
             help: false,
             version: false,
         };
@@ -67,6 +70,7 @@ impl Args {
                 "--no-msg-check" => args.no_msg_check = true,
                 "--disable-ignored" => args.disable_ignored = true,
                 "--no-sort" => args.no_sort = true,
+                "--match-foppy-sort" => args.match_foppy_sort = true,
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -95,6 +99,7 @@ impl Args {
         println!("        --no-msg-check  Skip commit message format validation (M:/A:/P:)");
         println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
+        println!("        --match-foppy-sort  Match FOP.py sorting behavior");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -120,6 +125,16 @@ static ELEMENT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
 
 static FILTER_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?:\$|,)domain=([^,\s]+)$").unwrap()
+});
+
+/// Pattern for FOP.py compatible element matching (no {} in selector)
+static FOPPY_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"^([^/|@"!]*?)(#[@?]?#)([^{}]+)$"#).unwrap()
+});
+
+/// Pattern for FOP.py compatible sorting (only ## and #@#)
+static FOPPY_ELEMENT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"^[^/|@"!]*?#@?#"#).unwrap()
 });
 
 /// Pattern for element hiding rules (standard, uBO, and AdGuard extended syntax)
@@ -755,7 +770,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()> {
+fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, match_foppy_sort: bool) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -772,7 +787,8 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()>
                          output: &mut File, 
                          element_lines: usize, 
                          filter_lines: usize,
-                         no_sort: bool| -> io::Result<()> {
+                         no_sort: bool,
+                         match_foppy_sort: bool| -> io::Result<()> {
         if section.is_empty() {
             return Ok(());
         }
@@ -788,9 +804,14 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()>
         if element_lines > filter_lines {
             // Sort element hiding rules (unless no_sort)
             if !no_sort {
+                let pattern = if match_foppy_sort {
+                    &*FOPPY_ELEMENT_DOMAIN_PATTERN
+                } else {
+                    &*ELEMENT_DOMAIN_PATTERN
+                };
                 unique.sort_by(|a, b| {
-                    let a_key = ELEMENT_DOMAIN_PATTERN.replace(a, "");
-                    let b_key = ELEMENT_DOMAIN_PATTERN.replace(b, "");
+                    let a_key = pattern.replace(a, "");
+                    let b_key = pattern.replace(b, "");
                     a_key.cmp(&b_key)
                 });
             }
@@ -825,7 +846,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()>
             || (line.starts_with('[') && line.ends_with(']'))
         {
             if !section.is_empty() {
-                write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort)?;
+                write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, match_foppy_sort)?;
                 lines_checked = 1;
                 filter_lines = 0;
                 element_lines = 0;
@@ -846,7 +867,12 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()>
         }
 
         // Process element hiding rules
-        if let Some(caps) = ELEMENT_PATTERN.captures(&line) {
+        let element_caps = if match_foppy_sort {
+            FOPPY_ELEMENT_PATTERN.captures(&line)
+        } else {
+            ELEMENT_PATTERN.captures(&line)
+        };
+        if let Some(caps) = element_caps {
             let domains = caps[1].to_lowercase();
             let separator = &caps[2];
             let selector = &caps[3];
@@ -908,7 +934,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool) -> io::Result<()>
 
     // Write remaining filters
     if !section.is_empty() {
-        write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort)?;
+        write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, match_foppy_sort)?;
     }
 
     drop(output);
@@ -1153,7 +1179,7 @@ fn commit_changes(
 // Main Processing
 // =============================================================================
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, match_foppy_sort: bool) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1224,7 +1250,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
 
     // Process files in parallel
     txt_files.par_iter().for_each(|entry| {
-            if let Err(e) = fop_sort(entry.path(), convert_ubo, no_sort) {
+            if let Err(e) = fop_sort(entry.path(), convert_ubo, no_sort, match_foppy_sort) {
             eprintln!("Error processing {}: {}", entry.path().display(), e);
         }
     });
@@ -1279,7 +1305,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.match_foppy_sort) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1295,7 +1321,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.match_foppy_sort) {
                 eprintln!("Error: {}", e);
             }
             println!();
