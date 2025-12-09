@@ -49,6 +49,8 @@ struct Args {
     no_color: bool,
     /// Additional files to ignore (comma-separated, supports partial names)
     ignore_files: Vec<String>,
+    /// Additional directories to ignore (comma-separated, supports partial names)
+    ignore_dirs: Vec<String>,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
     /// Show help
@@ -143,6 +145,7 @@ impl Args {
             localhost: parse_bool(&config, "localhost", false),
             no_color: parse_bool(&config, "no-color", false),
             ignore_files: parse_list(&config, "ignorefiles"),
+            ignore_dirs: parse_list(&config, "ignoredirs"),
             git_message: None,
             help: false,
             version: false,
@@ -170,6 +173,12 @@ impl Args {
                 _ if arg.starts_with("--config-file=") => {
                     // Already handled in first pass
                 }
+                _ if arg.starts_with("--ignoredirs=") => {
+                    args.ignore_dirs = arg.trim_start_matches("--ignoredirs=")
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                 }
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
                  }
@@ -205,6 +214,7 @@ impl Args {
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --no-color      Disable colored output");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
+        println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --config-file=  Custom config file path");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("    -h, --help          Show this help message");
@@ -1380,7 +1390,21 @@ fn should_ignore_file(filename: &str, ignore_files: &[String]) -> bool {
     false
 }
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, ignore_files: &[String], git_message: &Option<String>) -> io::Result<()> {
+/// Check if directory path matches any ignore pattern
+fn should_ignore_dir(path: &Path, ignore_dirs: &[String]) -> bool {
+    for component in path.components() {
+        if let Some(name) = component.as_os_str().to_str() {
+            for pattern in ignore_dirs {
+                if name == pattern || name.contains(pattern) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, ignore_files: &[String], ignore_dirs: &[String], git_message: &Option<String>) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -1421,7 +1445,9 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            !name.starts_with('.') && (disable_ignored || !IGNORE_DIRS.contains(&name.as_ref()))
+            !name.starts_with('.')
+                && (disable_ignored || !IGNORE_DIRS.contains(&name.as_ref()))
+                && !should_ignore_dir(e.path(), ignore_dirs)
         })
         .filter_map(|e| e.ok())
         .collect();
@@ -1508,7 +1534,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files, &args.git_message) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files, &args.ignore_dirs, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1524,8 +1550,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files, &args.git_message) {
-                eprintln!("Error: {}", e);
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files, &args.ignore_dirs, &args.git_message) {                eprintln!("Error: {}", e);
             }
             println!();
         }

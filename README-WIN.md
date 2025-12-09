@@ -71,7 +71,9 @@ npm install -g fop-cli
 --localhost           Sort hosts file entries (0.0.0.0/127.0.0.1)
 --no-color            Disable colored output
 --ignorefiles=        Additional files to ignore (comma-separated)
+--ignoredirs=         Additional directories to ignore (comma-separated, partial names)
 --config-file=        Custom config file path
+--git-message=        Git commit message (skip interactive prompt)
 -h, --help            Show help message
 -V, --version         Show version number
 ```
