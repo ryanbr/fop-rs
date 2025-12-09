@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use ahash::AHashSet as HashSet;
 use std::env;
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::collections::HashMap as StdHashMap;
 use std::process::Command;
@@ -899,7 +899,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, l
 
     let input = File::open(filename)?;
     let reader = BufReader::new(input);
-    let mut output = File::create(&temp_file)?;
+    let mut output = BufWriter::with_capacity(64 * 1024, File::create(&temp_file)?);
 
     let mut section: Vec<String> = Vec::with_capacity(800);
     let mut lines_checked: usize = 1;
@@ -907,7 +907,7 @@ fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, l
     let mut element_lines: usize = 0;
 
     let write_filters = |section: &mut Vec<String>, 
-                         output: &mut File, 
+                         output: &mut BufWriter<File>,  
                          element_lines: usize, 
                          filter_lines: usize,
                          no_sort: bool,
