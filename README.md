@@ -99,6 +99,9 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--just-sort` | Alias for `--no-commit` |
 | `--no-ubo-convert` | Skip uBO to ABP option conversion (keep `xhr`, `3p`, `1p`, etc.) |
 | `--no-msg-check` | Skip commit message format validation (M:/A:/P:) |
+| `--disable-ignored` | Disable hardcoded ignored files and folders for testing |
+| `--no-sort` | Don't sort rulse, just combine |
+| `--match-foppy-sort` | Match fop.py sorting method for compatibility |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
 
