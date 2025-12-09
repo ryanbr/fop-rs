@@ -60,18 +60,27 @@ struct Args {
 }
 
 /// Load configuration from .fopconfig file
-fn load_config() -> StdHashMap<String, String> {
+fn load_config(custom_path: Option<&PathBuf>) -> StdHashMap<String, String> {
     let mut config = StdHashMap::new();
     
-    // Try ./.fopconfig first, then ~/.fopconfig
-    let config_paths = [
+    // If custom path provided, use that only
+    let config_path: Option<PathBuf> = if let Some(path) = custom_path {
+        if path.exists() {
+            Some(path.clone())
+        } else {
+            eprintln!("Warning: Config file not found: {}", path.display());
+            None
+        }
+    } else {
+        // Try ./.fopconfig first, then ~/.fopconfig
+        let config_paths = [
         PathBuf::from(".fopconfig"),
         dirs::home_dir().map(|h| h.join(".fopconfig")).unwrap_or_default(),
     ];
+        config_paths.into_iter().find(|p| p.exists())
+    };
     
-    let config_path = config_paths.iter().find(|p| p.exists());
-    
-    if let Some(path) = config_path {
+    if let Some(path) = config_path.as_ref() {
         if let Ok(content) = fs::read_to_string(path) {
             for line in content.lines() {
                 let line = line.trim();
@@ -111,8 +120,18 @@ fn parse_list(config: &StdHashMap<String, String>, key: &str) -> Vec<String> {
 
 impl Args {
     fn parse() -> Self {
-        // Load config file first
-        let config = load_config();
+        // First pass: look for --config-file argument
+        let mut config_file: Option<PathBuf> = None;
+        for arg in env::args().skip(1) {
+            if arg.starts_with("--config-file=") {
+                let path = arg.trim_start_matches("--config-file=");
+                config_file = Some(PathBuf::from(path));
+                break;
+            }
+        }
+        
+        // Load config file
+        let config = load_config(config_file.as_ref());
         
         // Start with config values (or defaults)
         let mut args = Args {
@@ -149,6 +168,9 @@ impl Args {
                         .map(|s| s.trim().to_string())
                         .collect();
                 }
+                _ if arg.starts_with("--config-file=") => {
+                    // Already handled in first pass
+                }
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -181,6 +203,7 @@ impl Args {
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --no-color      Disable colored output");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
+        println!("        --config-file=  Custom config file path");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -191,6 +214,8 @@ impl Args {
         println!("    fop -n ~/easylist ~/fanboy   # Sort multiple directories, no commit");
         println!("    fop --ignorefiles=backup.txt,test.txt -n .");
         println!("                                 # Ignore specific files");
+        println!("    fop --config-file=/path/to/.fopconfig -n .");
+        println!("                                 # Use custom config file");
         println!();
         println!("Config file (.fopconfig):");
         println!("    Place in current directory or home directory.");

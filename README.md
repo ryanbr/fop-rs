@@ -104,6 +104,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--alt-sort` | More correct sorting method |
 | `--localhost` | Sort hosts file entries (0.0.0.0/127.0.0.1 domain) |
 | `--ignorefiles=` | Additional files to ignore (comma-separated, partial names) |
+| `--config-file=` | Custom config file path |
 | `--no-color` | Disable colored output |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
