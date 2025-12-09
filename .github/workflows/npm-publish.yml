@@ -113,8 +113,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.build-linux-windows.outputs.version }}
 
       - uses: actions/setup-node@v4
         with:
