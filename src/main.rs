@@ -11,6 +11,7 @@ use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::collections::HashMap as StdHashMap;
 use std::process::Command;
 
 // ANSI color codes
@@ -58,23 +59,78 @@ struct Args {
     version: bool,
 }
 
+/// Load configuration from .fopconfig file
+fn load_config() -> StdHashMap<String, String> {
+    let mut config = StdHashMap::new();
+    
+    // Try ./.fopconfig first, then ~/.fopconfig
+    let config_paths = [
+        PathBuf::from(".fopconfig"),
+        dirs::home_dir().map(|h| h.join(".fopconfig")).unwrap_or_default(),
+    ];
+    
+    let config_path = config_paths.iter().find(|p| p.exists());
+    
+    if let Some(path) = config_path {
+        if let Ok(content) = fs::read_to_string(path) {
+            for line in content.lines() {
+                let line = line.trim();
+                // Skip comments and empty lines
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                // Parse key = value
+                if let Some(eq_pos) = line.find('=') {
+                    let key = line[..eq_pos].trim().to_string();
+                    let value = line[eq_pos + 1..].trim().to_string();
+                    config.insert(key, value);
+                }
+            }
+        }
+    }
+    
+    config
+}
+
+/// Parse boolean value from config
+fn parse_bool(config: &StdHashMap<String, String>, key: &str, default: bool) -> bool {
+    config.get(key).map(|v| {
+        matches!(v.to_lowercase().as_str(), "true" | "yes" | "1")
+    }).unwrap_or(default)
+}
+
+/// Parse string list from config (comma-separated)
+fn parse_list(config: &StdHashMap<String, String>, key: &str) -> Vec<String> {
+    config.get(key).map(|v| {
+        v.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }).unwrap_or_default()
+}
+
 impl Args {
     fn parse() -> Self {
+        // Load config file first
+        let config = load_config();
+        
+        // Start with config values (or defaults)
         let mut args = Args {
             directories: Vec::new(),
-            no_commit: false,
-            no_ubo_convert: false,
-            no_msg_check: false,
-            disable_ignored: false,
-            no_sort: false,
-            alt_sort: false,
-            localhost: false,
-            no_color: false,
-            ignore_files: Vec::new(),
+            no_commit: parse_bool(&config, "no-commit", false),
+            no_ubo_convert: parse_bool(&config, "no-ubo-convert", false),
+            no_msg_check: parse_bool(&config, "no-msg-check", false),
+            disable_ignored: parse_bool(&config, "disable-ignored", false),
+            no_sort: parse_bool(&config, "no-sort", false),
+            alt_sort: parse_bool(&config, "alt-sort", false),
+            localhost: parse_bool(&config, "localhost", false),
+            no_color: parse_bool(&config, "no-color", false),
+            ignore_files: parse_list(&config, "ignorefiles"),
             help: false,
             version: false,
         };
-
+        
+        // Command line args override config
         for arg in env::args().skip(1) {
             match arg.as_str() {
                 "-h" | "--help" => args.help = true,
@@ -135,6 +191,15 @@ impl Args {
         println!("    fop -n ~/easylist ~/fanboy   # Sort multiple directories, no commit");
         println!("    fop --ignorefiles=backup.txt,test.txt -n .");
         println!("                                 # Ignore specific files");
+        println!();
+        println!("Config file (.fopconfig):");
+        println!("    Place in current directory or home directory.");
+        println!("    Command line arguments override config file settings.");
+        println!();
+        println!("    # Example .fopconfig");
+        println!("    no-commit = true");
+        println!("    no-ubo-convert = false");
+        println!("    ignorefiles = .json,.backup,test.txt");
     }
 
     fn print_version() {
