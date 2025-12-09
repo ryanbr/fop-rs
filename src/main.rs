@@ -13,11 +13,7 @@ use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-// ANSI color codes
-const RED: &str = "\x1b[31m";
-const GREEN: &str = "\x1b[32m";
-const RESET: &str = "\x1b[0m";
+use colored::Colorize;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -1229,9 +1225,9 @@ fn print_diff_line(line: &str, no_color: bool) {
     if no_color {
         println!("{}", line);
     } else if line.starts_with('+') && !line.starts_with("+++") {
-        println!("{}{}{}", GREEN, line, RESET);
+        println!("{}", line.green());
     } else if line.starts_with('-') && !line.starts_with("---") {
-        println!("{}{}{}", RED, line, RESET);
+        println!("{}", line.red());
     } else {
         println!("{}", line);
     }

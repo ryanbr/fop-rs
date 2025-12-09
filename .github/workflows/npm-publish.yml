@@ -19,6 +19,12 @@ jobs:
           
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+          rustup target add x86_64-pc-windows-gnu
         
       - name: Configure git
         run: |
@@ -48,6 +54,16 @@ jobs:
           RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release
           cp target/release/fop "fop-${VERSION}-linux-x86_64-v3"
 
+          # Windows x86_64 baseline
+          cargo clean
+          cargo build --release --target x86_64-pc-windows-gnu
+          cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64.exe"
+          
+          # Windows x86_64-v3 (optimized for ~2015+ CPUs)
+          cargo clean
+          RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
+          cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
+
       - name: Push changes
         run: git push --follow-tags
           
@@ -58,6 +74,8 @@ jobs:
           files: |
             fop-${{ steps.version.outputs.version }}-linux-x86_64
             fop-${{ steps.version.outputs.version }}-linux-x86_64-v3
+            fop-${{ steps.version.outputs.version }}-windows-x86_64.exe
+            fop-${{ steps.version.outputs.version }}-windows-x86_64-v3.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           

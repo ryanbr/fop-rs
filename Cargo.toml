@@ -16,6 +16,7 @@ walkdir = "2.4"
 rayon = "1.11"
 dirs = "6.0"
 ahash = "0.8"
+colored = "3.0"
 
 [profile.release]
 lto = true
