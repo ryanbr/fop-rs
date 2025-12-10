@@ -878,13 +878,16 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
     Ok(())
 }
 
-fn print_greeting(no_commit: bool) {
+fn print_greeting(no_commit: bool, config_path: Option<&str>) {
     let mode = if no_commit { " (sort only)" } else { "" };
     let greeting = format!("FOP (Filter Orderer and Preener) version {}{}", VERSION, mode);
     let separator = "=".repeat(greeting.len());
     println!("{}", separator);
     println!("{}", greeting);
     println!("Copyright (C) 2025 FanboyNZ - https://github.com/ryanbr/fop-rs (Licensed under GPL-3.0)");
+    if let Some(path) = config_path {
+        println!("Using config file: {}", path);
+    }
     println!("{}", separator);
 }
 
@@ -907,7 +910,7 @@ fn main() {
         return;
     }
 
-    print_greeting(args.no_commit);
+    print_greeting(args.no_commit, config_path.as_deref());
 
     if args.directories.is_empty() {
         // Process current directory
