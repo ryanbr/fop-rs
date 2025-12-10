@@ -7,7 +7,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 // Configuration - UPDATE THESE FOR YOUR RELEASE
-const VERSION = '3.9.11';
+const VERSION = '3.9.12';
 const GITHUB_REPO = 'ryanbr/fop-rs'; // Change to your repo
 const BINARY_NAME = 'fop';
 
