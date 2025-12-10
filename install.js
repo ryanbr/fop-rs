@@ -101,13 +101,7 @@ async function install() {
   if (!fs.existsSync(binDir)) {
     fs.mkdirSync(binDir, { recursive: true });
   }
-  
-  // Check if already installed
-  if (fs.existsSync(binaryPath)) {
-    console.log('FOP binary already exists, skipping download.');
-    return;
-  }
-  
+   
   const platform = process.platform;
   const arch = process.arch;
   const key = `${platform}-${arch}`;
