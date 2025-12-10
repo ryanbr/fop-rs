@@ -348,20 +348,12 @@ pub(crate) static IP_ADDRESS_PATTERN: Lazy<Regex> = Lazy::new(|| {
 
 /// Files that should not be sorted
 const IGNORE_FILES: &[&str] = &[
-    "CC-BY-SA.txt", "easytest.txt", "GPL.txt", "MPL.txt",
-    "easylist_specific_hide_abp.txt", "easyprivacy_specific_uBO.txt",
-    "enhancedstats-addon.txt", "fanboy-tracking", "firefox-regional", "other",
-    "easylist_cookie_specific_uBO.txt", "fanboy_annoyance_specific_uBO.txt",
-    "fanboy_newsletter_specific_uBO.txt", "fanboy_notifications_specific_uBO.txt",
-    "fanboy_social_specific_uBO.txt", "fanboy_newsletter_shopping_specific_uBO.txt",
-    "fanboy_agegate_specific_uBO.txt", "config-clean2.json", "config-clean.json",
-    "config-clean.json.txt", "config-clean2.json.txt", "config-clean2.txt",
-    "config-clean.txt",
+    "test-files-to-ingore.txt",
 ];
 
 /// Directories to ignore
 const IGNORE_DIRS: &[&str] = &[
-    "fanboy-tracking", "firefox-regional", "other",
+    "folders-to-ingore",
 ];
 
 /// Domains that should ignore the 7 character size restriction
