@@ -63,6 +63,8 @@ struct Args {
     ignore_dirs: Vec<String>,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
+    /// Show applied configuration
+    show_config: bool,
     /// Show help
     help: bool,
     /// Show version
@@ -70,7 +72,7 @@ struct Args {
 }
 
 /// Load configuration from .fopconfig file
-fn load_config(custom_path: Option<&PathBuf>) -> HashMap<String, String> {
+fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Option<PathBuf>) {
     let mut config = HashMap::new();
     
     // If custom path provided, use that only
@@ -108,7 +110,7 @@ fn load_config(custom_path: Option<&PathBuf>) -> HashMap<String, String> {
         }
     }
     
-    config
+    (config, config_path)
 }
 
 /// Parse boolean value from config
@@ -129,7 +131,7 @@ fn parse_list(config: &HashMap<String, String>, key: &str) -> Vec<String> {
 }
 
 impl Args {
-    fn parse() -> Self {
+    fn parse() -> (Self, Option<String>) {
         // First pass: look for --config-file argument
         let mut config_file: Option<PathBuf> = None;
         for arg in env::args().skip(1) {
@@ -140,8 +142,10 @@ impl Args {
             }
         }
         
-        // Load config file
-        let config = load_config(config_file.as_ref());
+        // Load config file and track path
+        let (config, found_config_path) = load_config(config_file.as_ref());
+        // Store for --show-config
+        let config_path_str = found_config_path.as_ref().map(|p| p.display().to_string());
         
         // Start with config values (or defaults)
         let mut args = Args {
@@ -157,6 +161,7 @@ impl Args {
             ignore_files: parse_list(&config, "ignorefiles"),
             ignore_dirs: parse_list(&config, "ignoredirs"),
             git_message: None,
+            show_config: false,
             help: false,
             version: false,
         };
@@ -174,6 +179,7 @@ impl Args {
                 "--alt-sort" => args.alt_sort = true,
                 "--localhost" => args.localhost = true,
                 "--no-color" => args.no_color = true,
+                "--show-config" => args.show_config = true,
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
                     args.ignore_files = files.split(',')
@@ -201,7 +207,7 @@ impl Args {
             }
         }
 
-        args
+        (args, config_path_str)
     }
 
     fn print_help() {
@@ -227,6 +233,7 @@ impl Args {
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --config-file=  Custom config file path");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
+        println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -255,6 +262,42 @@ impl Args {
 
     fn print_version() {
         println!("FOP version {}", VERSION);
+    }
+    fn print_config(&self, config_path: Option<&str>) {
+        println!("FOP Configuration");
+        println!("=================");
+        println!();
+        if let Some(path) = config_path {
+            println!("Config file: {}", path);
+        } else {
+            println!("Config file: (none found, using defaults)");
+        }
+        println!();
+        println!("Settings:");
+        println!("  no-commit       = {}", self.no_commit);
+        println!("  no-ubo-convert  = {}", self.no_ubo_convert);
+        println!("  no-msg-check    = {}", self.no_msg_check);
+        println!("  disable-ignored = {}", self.disable_ignored);
+        println!("  no-sort         = {}", self.no_sort);
+        println!("  alt-sort        = {}", self.alt_sort);
+        println!("  localhost       = {}", self.localhost);
+        println!("  no-color        = {}", self.no_color);
+        println!();
+        if self.ignore_files.is_empty() {
+            println!("  ignorefiles     = (none)");
+        } else {
+            println!("  ignorefiles     = {}", self.ignore_files.join(","));
+        }
+        if self.ignore_dirs.is_empty() {
+            println!("  ignoredirs      = (none)");
+        } else {
+            println!("  ignoredirs      = {}", self.ignore_dirs.join(","));
+        }
+        println!();
+        print!("Press Enter to continue...");
+        io::stdout().flush().unwrap();
+        let mut input = String::new();
+        let _ = io::stdin().read_line(&mut input);
     }
 }
 
@@ -846,7 +889,7 @@ fn print_greeting(no_commit: bool) {
 }
 
 fn main() {
-    let args = Args::parse();
+    let (args, config_path) = Args::parse();
 
     // Handle help and version
     if args.help {
@@ -856,6 +899,11 @@ fn main() {
 
     if args.version {
         Args::print_version();
+        return;
+    }
+
+    if args.show_config {
+        args.print_config(config_path.as_deref());
         return;
     }
 
