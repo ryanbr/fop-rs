@@ -142,7 +142,12 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("removeparam=")
                         || stripped.starts_with("urltransform=")
                         || stripped.starts_with("responseheader=")
-                        || stripped.starts_with("urlskip=");
+                        || stripped.starts_with("sitekey=")
+                        || stripped.starts_with("app=")
+                        || stripped.starts_with("urlskip=")
+                        || stripped == "important"
+                        || stripped == "media"
+                        || stripped == "all";
                     if !is_known {
                         eprintln!(
                             "Warning: The option \"{}\" used on the filter \"{}\" is not recognised by FOP",
