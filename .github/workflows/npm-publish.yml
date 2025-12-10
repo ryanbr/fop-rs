@@ -83,6 +83,9 @@ jobs:
     needs: build-linux-windows
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Pull latest changes
+        run: git pull origin main
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
