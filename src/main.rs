@@ -31,7 +31,7 @@ use rayon::prelude::*;
 use fop_sort::fop_sort;
 
 // FOP version number
-const VERSION: &str = "3.9-rs";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // =============================================================================
 // Command Line Arguments
@@ -849,6 +849,7 @@ fn print_greeting(no_commit: bool) {
     let separator = "=".repeat(greeting.len());
     println!("{}", separator);
     println!("{}", greeting);
+    println!("Copyright (C) 2025 FanboyNZ - https://github.com/ryanbr/fop-rs (Licensed under GPL-3.0)");
     println!("{}", separator);
 }
 
