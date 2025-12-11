@@ -26,25 +26,43 @@ use colored::Colorize;
 
 use once_cell::sync::Lazy;
 /// Thread-safe warning output
+pub(crate) static WARNING_BUFFER: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::with_capacity(100)));
 pub(crate) static WARNING_OUTPUT: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 
-/// Write warning to file or stderr
+/// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
     let guard = WARNING_OUTPUT.lock().unwrap();
-    if let Some(ref path) = *guard {
-        use std::fs::OpenOptions;
-        use std::io::Write;
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-        {
-            let _ = writeln!(file, "{}", message);
-        }
+    if guard.is_some() {
+        drop(guard);  // Release lock before acquiring buffer lock
+        WARNING_BUFFER.lock().unwrap().push(message.to_string());
     } else {
         eprintln!("{}", message);
     }
 }
+
+/// Flush buffered warnings to file
+pub(crate) fn flush_warnings() {
+    let path_guard = WARNING_OUTPUT.lock().unwrap();
+    if let Some(ref path) = *path_guard {
+        let mut buffer = WARNING_BUFFER.lock().unwrap();
+        if !buffer.is_empty() {
+            use std::fs::OpenOptions;
+            use std::io::{BufWriter, Write};
+            if let Ok(file) = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)
+            {
+                let mut writer = BufWriter::new(file);
+                for msg in buffer.drain(..) {
+                    let _ = writeln!(writer, "{}", msg);
+                }
+            }
+        }
+    }
+}
+
 use regex::Regex;
 use walkdir::WalkDir;
 use rayon::prelude::*;
@@ -1076,4 +1094,6 @@ fn main() {
             println!();
         }
     }
+    // Flush any buffered warnings to file
+    flush_warnings();
 }
