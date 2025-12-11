@@ -101,8 +101,9 @@ jobs:
           cargo build --release --target x86_64-apple-darwin
           cp target/x86_64-apple-darwin/release/fop "fop-${VERSION}-macos-x86_64"
           
-          # macOS ARM64 (Apple Silicon)
-          cargo build --release --target aarch64-apple-darwin
+          # macOS ARM64 (Apple Silicon - optimized for M1+)
+          cargo clean
+          RUSTFLAGS="-C target-cpu=apple-m1" cargo build --release --target aarch64-apple-darwin
           cp target/aarch64-apple-darwin/release/fop "fop-${VERSION}-macos-arm64"
 
       - name: Upload macOS artifacts
