@@ -37,42 +37,20 @@ FOP preserves extended filter syntax from various adblockers:
 
 <img width="1850" height="855" alt="fop-graph" src="https://github.com/user-attachments/assets/ef9e1e24-5f40-4899-b21f-3e706261f5dd" />
 
-## Requirements
-
-- Rust 1.80+ (install from https://rustup.rs)
-
-## Building
-
-```bash
-# Clone or download the source
-cd fop-rs
-
-# Build release binary
-make
-
-# Or using cargo directly
-cargo build --release
-```
-
 ## Installation
-
-### From npm (recommended)
 
 ```bash
 npm install -g fop-cli
 ```
 
-### From source
+### Building from source (optional)
+
+Requires Rust 1.80+ (https://rustup.rs)
 
 ```bash
-# Install to /usr/local/bin (may need sudo)
-make install
-
-# Or install to custom location
-make PREFIX=~/.local install
-
-# Or manually copy the binary
-cp target/release/fop /usr/local/bin/
+cd fop-rs
+cargo build --release
+cp target/release/fop /usr/local/bin/  # or add to PATH
 ```
 
 ## Usage
@@ -104,36 +82,95 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--no-ubo-convert` | Skip uBO to ABP option conversion (keep `xhr`, `3p`, `1p`, etc.) |
 | `--no-msg-check` | Skip commit message format validation (M:/A:/P:) |
 | `--disable-ignored` | Disable hardcoded ignored files and folders for testing |
-| `--no-sort` | Don't sort rulse, just combine |
+| `--no-sort` | Don't sort rules, just combine |
 | `--alt-sort` | More correct sorting method |
 | `--localhost` | Sort hosts file entries (0.0.0.0/127.0.0.1 domain) |
+| `--no-color` | Disable colored output |
+| `--no-large-warning` | Disable large change warning prompt |
+| `--backup` | Create .backup files before modifying |
+| `--keep-empty-lines` | Keep empty lines in output |
+| `--ignore-dot-domains` | Don't skip rules without dot in domain |
 | `--ignorefiles=` | Additional files to ignore (comma-separated, partial names) |
 | `--ignoredirs=` | Additional directories to ignore (comma-separated, partial names) |
+| `--file-extensions=` | File extensions to process (default: .txt) |
+| `--comments=` | Comment line prefixes (default: !) |
+| `--disable-domain-limit=` | Files to skip short domain check (comma-separated) |
+| `--warning-output=` | Output warnings to file instead of stderr |
+| `--git-message=` | Git commit message (skip interactive prompt) |
 | `--config-file=` | Custom config file path |
-| `--no-color` | Disable colored output |
+| `--show-config` | Show applied configuration and exit |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
 
-## Makefile Targets
+## Configuration File
 
-| Target      | Description                          |
-|-------------|--------------------------------------|
-| `make`      | Build release binary (default)       |
-| `make debug`| Build debug binary                   |
-| `make test` | Run tests                            |
-| `make install` | Install to /usr/local/bin         |
-| `make uninstall` | Remove from /usr/local/bin      |
-| `make clean`| Remove build artifacts               |
-| `make dist` | Create distributable archive         |
-| `make info` | Show system and Rust info            |
-| `make help` | Show all available targets           |
+Create `.fopconfig` in your working directory or home directory:
+
+```ini
+# Skip commit prompt
+no-commit = false
+
+# Skip uBO to ABP option conversion
+no-ubo-convert = false
+
+# Skip commit message format validation
+no-msg-check = false
+
+# Skip sorting (only tidy and combine rules)
+no-sort = false
+
+# Alternative sorting method
+alt-sort = false
+
+# Sort hosts file entries
+localhost = false
+
+# Disable colored output
+no-color = false
+
+# Disable large change warning prompt
+no-large-warning = false
+
+# Create .backup files before modifying
+backup = false
+
+# Keep empty lines in output
+keep-empty-lines = false
+
+# Don't skip rules without dot in domain
+ignore-dot-domains = false
+
+# Comment line prefixes
+comments = !
+
+# Files to skip short domain check
+disable-domain-limit =
+
+# Output warnings to file
+warning-output =
+
+# Additional files to ignore
+ignorefiles = .json,.backup,.bak,.swp,.gz
+
+# Additional directories to ignore
+ignoredirs =
+
+# File extensions to process
+file-extensions = txt
+```
+
+Command line arguments override config file settings.
 
 ## Platform Support
 
-- Linux x86_64
-- Linux ARM64
-- macOS x86_64 (Intel)
-- macOS ARM64 (Apple Silicon)
+| Platform | Binary |
+|----------|--------|
+| Linux x86_64 | `fop-*-linux-x86_64` |
+| Linux x86_64 (AVX2) | `fop-*-linux-x86_64-v3` |
+| macOS Intel | `fop-*-macos-x86_64` |
+| macOS Apple Silicon | `fop-*-macos-arm64` |
+| Windows x86_64 | `fop-*-windows-x86_64.exe` |
+| Windows x86_64 (AVX2) | `fop-*-windows-x86_64-v3.exe` |
 
 ## Migrating from Python FOP
 
