@@ -137,6 +137,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("permissions=")
                         || stripped.starts_with("to=")
                         || stripped.starts_with("from=")
+                        || stripped.starts_with("ipaddress=")
                         || stripped.starts_with("method=")
                         || stripped.starts_with("denyallow=")
                         || stripped.starts_with("removeparam=")
@@ -145,6 +146,8 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("sitekey=")
                         || stripped.starts_with("app=")
                         || stripped.starts_with("urlskip=")
+                        || stripped.starts_with("uritransform=")
+                        || stripped.starts_with("reason=")
                         || stripped == "important"
                         || stripped == "media"
                         || stripped == "all";
@@ -212,7 +215,8 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
 
         for d in domain_list {
             let stripped = d.trim_start_matches('~');
-            if stripped.len() < 3 || !stripped.contains('.') {
+            // Allow * as wildcard for all domains
+            if stripped != "*" && (stripped.len() < 3 || !stripped.contains('.')) {
                 invalid_domains.push(d.to_string());
             } else {
                 valid_domains.push(d.to_string());
@@ -491,7 +495,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String], backup: bool, keep_empty_lines: bool) -> io::Result<()> {
+pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String], backup: bool, keep_empty_lines: bool, ignore_dot_domains: bool) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -654,7 +658,7 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
                 let is_ip = domain.starts_with('[') || IP_ADDRESS_PATTERN.is_match(domain);
                 let has_wildcard = domain.contains('*');
 
-                if !is_ip && !has_wildcard && !domain.contains('.') && !domain.starts_with('~') {
+                if !ignore_dot_domains && !is_ip && !has_wildcard && !domain.contains('.') && !domain.starts_with('~') {
                     eprintln!("Skipped network rule without dot in domain: {} (domain: {})", line, domain);
                     continue;
                 }
