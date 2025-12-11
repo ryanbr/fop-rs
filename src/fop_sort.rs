@@ -491,7 +491,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool) -> io::Result<()> {
+pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String]) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -574,8 +574,8 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         }
 
         // Comments and special lines
-        let is_comment = line.starts_with('!')
-            || (localhost && line.starts_with('#'));
+        let is_comment = comment_chars.iter().any(|c| line.starts_with(c))
+            || (localhost && line.starts_with('#') && !comment_chars.contains(&"#".to_string()));
         if is_comment
             || line.starts_with("%include")
             || (line.starts_with('[') && line.ends_with(']'))
