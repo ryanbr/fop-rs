@@ -479,9 +479,10 @@ pub(crate) static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "script", "stylesheet", "subdocument", "third-party", "webrtc",
         "websocket", "xmlhttprequest",
         // uBO short options
-        "xhr", "css", "1p", "3p", "frame", "doc", "ghide",
+        "xhr", "css", "1p", "3p", "frame", "doc", "ghide", "xml", "iframe",
+        "first-party", "strict1p", "strict3p",
         // uBO/ABP specific
-        "all", "badfilter", "important", "popunder",
+        "all", "badfilter", "important", "popunder", "empty",
         // ABP rewrite resources
         "rewrite=abp-resource:1x1-transparent-gif",
         "rewrite=abp-resource:2x2-transparent-png",
