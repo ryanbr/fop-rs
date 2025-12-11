@@ -491,7 +491,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String], backup: bool) -> io::Result<()> {
+pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String], backup: bool, keep_empty_lines: bool) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -570,6 +570,15 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         let line = line?.trim().to_string();
 
         if line.is_empty() {
+            if keep_empty_lines {
+                if !section.is_empty() {
+                    write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, alt_sort, localhost)?;
+                    lines_checked = 1;
+                    filter_lines = 0;
+                    element_lines = 0;
+                }
+                writeln!(output)?;
+            }
             continue;
         }
 

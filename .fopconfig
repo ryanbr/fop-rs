@@ -29,7 +29,7 @@ no-color = false
 no-large-warning = false
 
 # Additional files to ignore (comma-separated, partial names supported)
-ignorefiles = .json,.backup,.bak,.swp,.gz
+ignorefiles = .json,.backup,.bak,.swp,.gz,.sh,.mjs,.js
 
 # Supported file extensions for scanning
 file-extensions = txt

@@ -69,6 +69,8 @@ struct Args {
     comment_chars: Vec<String>,
     /// Create backup of files before modifying
     backup: bool,
+    /// Keep empty lines in output
+    keep_empty_lines: bool,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
     /// Show applied configuration
@@ -199,6 +201,7 @@ impl Args {
             file_extensions: parse_extensions(&config, "file-extensions"),
             comment_chars: parse_comment_chars(&config, "comments"),
             backup: parse_bool(&config, "backup", false),
+            keep_empty_lines: parse_bool(&config, "keep-empty-lines", false),
             help: false,
             version: false,
         };
@@ -238,6 +241,7 @@ impl Args {
                         .collect();
                 }
                 "--backup" => args.backup = true,
+                "--keep-empty-lines" => args.keep_empty_lines = true,
                 _ if arg.starts_with("--config-file=") => {
                     // Already handled in first pass
                 }
@@ -288,6 +292,7 @@ impl Args {
         println!("        --file-extensions=  File extensions to process (default: .txt)");
         println!("        --comments=     Comment line prefixes (default: !)");
         println!("        --backup        Create .backup files before modifying");
+        println!("        --keep-empty-lines  Keep empty lines in output");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
@@ -361,6 +366,7 @@ impl Args {
             println!("  comments        = {}", self.comment_chars.join(","));
         }
         println!("  backup          = {}", self.backup);
+        println!("  keep-empty-lines= {}", self.keep_empty_lines);
         println!();
         print!("Press Enter to continue...");
         io::stdout().flush().unwrap();
@@ -848,7 +854,7 @@ fn should_ignore_dir(path: &Path, ignore_dirs: &[String]) -> bool {
     false
 }
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, no_large_warning: bool, ignore_files: &[String], ignore_dirs: &[String], file_extensions: &[String], comment_chars: &[String], backup: bool, git_message: &Option<String>) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, no_large_warning: bool, ignore_files: &[String], ignore_dirs: &[String], file_extensions: &[String], comment_chars: &[String], backup: bool, keep_empty_lines: bool, git_message: &Option<String>) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -921,7 +927,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
 
     // Process files in parallel
     txt_files.par_iter().for_each(|entry| {
-        if let Err(e) = fop_sort(entry.path(), convert_ubo, no_sort, alt_sort, localhost, comment_chars, backup) {
+        if let Err(e) = fop_sort(entry.path(), convert_ubo, no_sort, alt_sort, localhost, comment_chars, backup, keep_empty_lines) {
             eprintln!("Error processing {}: {}", entry.path().display(), e);
         }
     });
@@ -984,7 +990,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.comment_chars, args.backup, &args.git_message) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.comment_chars, args.backup, args.keep_empty_lines, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1000,7 +1006,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.comment_chars, args.backup, &args.git_message) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.comment_chars, args.backup, args.keep_empty_lines, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
             println!();
