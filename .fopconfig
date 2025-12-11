@@ -30,3 +30,6 @@ no-large-warning = false
 
 # Additional files to ignore (comma-separated, partial names supported)
 ignorefiles = .json,.backup,.bak,.swp,.gz
+
+# Supported file extensions for scanning
+file-extensions = txt

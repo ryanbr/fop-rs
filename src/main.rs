@@ -63,6 +63,8 @@ struct Args {
     ignore_dirs: Vec<String>,
     /// Disable large change warning prompt
     no_large_warning: bool,
+    /// File extensions to process (default: .txt)
+    file_extensions: Vec<String>,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
     /// Show applied configuration
@@ -132,6 +134,21 @@ fn parse_list(config: &HashMap<String, String>, key: &str) -> Vec<String> {
     }).unwrap_or_default()
 }
 
+/// Normalize extension to exclude leading dot (for path.extension() comparison)
+fn normalize_extension(ext: &str) -> String {
+    ext.trim_start_matches('.').to_string()
+}
+
+/// Parse file extensions from config (comma-separated), default to txt
+fn parse_extensions(config: &HashMap<String, String>, key: &str) -> Vec<String> {
+    config.get(key).map(|v| {
+        v.split(',')
+            .map(|s| normalize_extension(s.trim()))
+            .filter(|s| !s.is_empty())
+            .collect()
+    }).unwrap_or_else(|| vec!["txt".to_string()])
+}
+
 impl Args {
     fn parse() -> (Self, Option<String>) {
         // First pass: look for --config-file argument
@@ -165,6 +182,7 @@ impl Args {
             git_message: None,
             show_config: false,
             no_large_warning: parse_bool(&config, "no-large-warning", false),
+            file_extensions: parse_extensions(&config, "file-extensions"),
             help: false,
             version: false,
         };
@@ -189,6 +207,12 @@ impl Args {
                     args.ignore_files = files.split(',')
                         .map(|s| s.trim().to_string())
                         .collect();
+                }
+                _ if arg.starts_with("--file-extensions=") => {
+                    args.file_extensions = arg.trim_start_matches("--file-extensions=")
+                        .split(',')
+                        .map(|s| normalize_extension(s.trim()))
+                         .collect();
                 }
                 _ if arg.starts_with("--config-file=") => {
                     // Already handled in first pass
@@ -237,6 +261,7 @@ impl Args {
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --config-file=  Custom config file path");
+        println!("        --file-extensions=  File extensions to process (default: .txt)");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
@@ -298,6 +323,11 @@ impl Args {
             println!("  ignoredirs      = (none)");
         } else {
             println!("  ignoredirs      = {}", self.ignore_dirs.join(","));
+        }
+        if self.file_extensions.is_empty() || (self.file_extensions.len() == 1 && self.file_extensions[0] == "txt") {
+            println!("  file-extensions = txt (default)");
+        } else {
+            println!("  file-extensions = {}", self.file_extensions.join(","));
         }
         println!();
         print!("Press Enter to continue...");
@@ -785,12 +815,11 @@ fn should_ignore_dir(path: &Path, ignore_dirs: &[String]) -> bool {
     false
 }
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, no_large_warning: bool, ignore_files: &[String], ignore_dirs: &[String], git_message: &Option<String>) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, no_large_warning: bool, ignore_files: &[String], ignore_dirs: &[String], file_extensions: &[String], git_message: &Option<String>) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
     }
-
     // Detect repository type (skip if no_commit mode)
     let mut repository: Option<&RepoDefinition> = None;
     if !no_commit {
@@ -851,7 +880,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
             }
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            extension == "txt" 
+            file_extensions.iter().any(|ext| ext == extension) 
                 && (disable_ignored || !IGNORE_FILES.contains(&filename))
                 && !should_ignore_file(filename, ignore_files)
         })
@@ -922,7 +951,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.git_message) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -938,7 +967,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.git_message) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
             println!();
