@@ -1,6 +1,6 @@
 {
   "name": "fop-cli",
-  "version": "3.9.14",
+  "version": "4.0.0",
   "description": "Filter Orderer and Preener - A tool for sorting and cleaning ad-blocking filter lists",
   "keywords": [
     "adblock",
