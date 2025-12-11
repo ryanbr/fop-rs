@@ -17,11 +17,27 @@ use crate::{
     ELEMENT_PATTERN, FOPPY_ELEMENT_PATTERN, ELEMENT_DOMAIN_PATTERN,
     FOPPY_ELEMENT_DOMAIN_PATTERN, FILTER_DOMAIN_PATTERN, OPTION_PATTERN,
     LOCALHOST_PATTERN, SHORT_DOMAIN_PATTERN, DOMAIN_EXTRACT_PATTERN,
-    TLD_ONLY_PATTERN, IP_ADDRESS_PATTERN, REGEX_ELEMENT_PATTERN,
+    IP_ADDRESS_PATTERN, REGEX_ELEMENT_PATTERN,
     ATTRIBUTE_VALUE_PATTERN, TREE_SELECTOR, REMOVAL_PATTERN,
     PSEUDO_PATTERN, UNICODE_SELECTOR,
     KNOWN_OPTIONS, IGNORE_DOMAINS, UBO_CONVERSIONS, write_warning,
 };
+
+/// Check if line is a TLD-only pattern (e.g. .com, ||.net^)
+/// Replaces regex: r"^(\|\||[|])?\.([a-z]{2,})\^?$"
+#[inline]
+fn is_tld_only(line: &str) -> bool {
+    let s = if line.starts_with("||") {
+        &line[2..]
+    } else if line.starts_with('|') {
+        &line[1..]
+    } else {
+        line
+    };
+    let s = s.strip_prefix('.').unwrap_or("");
+    let s = s.strip_suffix('^').unwrap_or(s);
+    s.len() >= 2 && s.bytes().all(|b| b.is_ascii_lowercase())
+}
 
 // =============================================================================
 // UBO Option Conversion
@@ -679,7 +695,7 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         }
 
         // Remove TLD-only patterns
-        if TLD_ONLY_PATTERN.is_match(&line) {
+        if is_tld_only(&line) {
             write_warning(&format!(
                 "Removed overly broad TLD-only rule: {}", line
             ));

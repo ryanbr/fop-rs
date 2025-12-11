@@ -373,12 +373,6 @@ impl Args {
         println!("Config file (.fopconfig):");
         println!("    Place in current directory or home directory.");
         println!("    Command line arguments override config file settings.");
-        println!();
-        println!("    # Example .fopconfig");
-        println!("    no-commit = true");
-        println!("    no-ubo-convert = false");
-        println!("    ignorefiles = .json,.backup,test.txt");
-        println!("    ignoredirs = backup,test");
     }
 
     fn print_version() {
@@ -508,10 +502,6 @@ pub(crate) static TREE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
 
 pub(crate) static UNICODE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap()
-});
-
-pub(crate) static TLD_ONLY_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\|\||[|])?\.([a-z]{2,})\^?$").unwrap()
 });
 
 static COMMIT_PATTERN: Lazy<Regex> = Lazy::new(|| {
