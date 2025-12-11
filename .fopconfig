@@ -25,11 +25,32 @@ localhost = false
 # Disable colored output
 no-color = false
 
+# Keep empty lines in output
+keep-empty-lines = false
+
+# uBO ||com/filter support
+ignore-dot-domains = false
+
 # Disable large change warning prompt
 no-large-warning = false
 
+# Create .backup files before modifying
+backup = false
+
+# Comment line prefixes (default: !)
+comments = !
+
+# Files to skip short domain check (comma-separated, partial names)
+disable-domain-limit =
+
+# Output warnings to file instead of stderr (leave empty for stderr)
+warning-output =
+
+# Additional directories to ignore (comma-separated)
+ignoredirs =
+
 # Additional files to ignore (comma-separated, partial names supported)
-ignorefiles = .json,.backup,.bak,.swp,.gz,.sh,.mjs,.js
+ignorefiles = .json,.backup,.bak,.swp,.gz,.sh,.mjs,.js,warnings.txt
 
 # Supported file extensions for scanning
 file-extensions = txt
