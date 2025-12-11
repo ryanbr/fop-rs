@@ -33,6 +33,10 @@ FOP preserves extended filter syntax from various adblockers:
 - Action syntax: `{remove: true;}`, `{height:...}`, `{display:...}`
 - Snippets: `#$#hide-if-contains`, `#$#simulate-mouse-event`
 
+## Speed Comparison (FOP.py vs FOP Rust)
+
+<img width="1850" height="855" alt="fop-graph" src="https://github.com/user-attachments/assets/ef9e1e24-5f40-4899-b21f-3e706261f5dd" />
+
 ## Requirements
 
 - Rust 1.80+ (install from https://rustup.rs)
