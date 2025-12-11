@@ -25,5 +25,8 @@ localhost = false
 # Disable colored output
 no-color = false
 
+# Disable large change warning prompt
+no-large-warning = false
+
 # Additional files to ignore (comma-separated, partial names supported)
 ignorefiles = .json,.backup,.bak,.swp,.gz

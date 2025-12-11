@@ -61,6 +61,8 @@ struct Args {
     ignore_files: Vec<String>,
     /// Additional directories to ignore (comma-separated, supports partial names)
     ignore_dirs: Vec<String>,
+    /// Disable large change warning prompt
+    no_large_warning: bool,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
     /// Show applied configuration
@@ -162,6 +164,7 @@ impl Args {
             ignore_dirs: parse_list(&config, "ignoredirs"),
             git_message: None,
             show_config: false,
+            no_large_warning: parse_bool(&config, "no-large-warning", false),
             help: false,
             version: false,
         };
@@ -179,6 +182,7 @@ impl Args {
                 "--alt-sort" => args.alt_sort = true,
                 "--localhost" => args.localhost = true,
                 "--no-color" => args.no_color = true,
+                "--no-large-warning" => args.no_large_warning = true,
                 "--show-config" => args.show_config = true,
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
@@ -229,6 +233,7 @@ impl Args {
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --no-color      Disable colored output");
+        println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --config-file=  Custom config file path");
@@ -282,6 +287,7 @@ impl Args {
         println!("  alt-sort        = {}", self.alt_sort);
         println!("  localhost       = {}", self.localhost);
         println!("  no-color        = {}", self.no_color);
+        println!("  no-large-warning= {}", self.no_large_warning);
         println!();
         if self.ignore_files.is_empty() {
             println!("  ignorefiles     = (none)");
@@ -638,6 +644,7 @@ fn commit_changes(
     original_difference: bool,
     no_msg_check: bool,
     no_color: bool,
+    no_large_warning: bool,
     git_message: &Option<String>,
 ) -> io::Result<()> {
     let diff = match get_diff(base_cmd, repo) {
@@ -682,7 +689,7 @@ fn commit_changes(
     }
 
     // Check for large changes
-    if !original_difference && is_large_change(&diff) {
+    if !no_large_warning && !original_difference && is_large_change(&diff) {
         println!("\nThis is a large change. Are you sure you want to proceed?");
         print!("Please type 'YES' to continue: ");
         io::stdout().flush()?;
@@ -778,7 +785,7 @@ fn should_ignore_dir(path: &Path, ignore_dirs: &[String]) -> bool {
     false
 }
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, ignore_files: &[String], ignore_dirs: &[String], git_message: &Option<String>) -> io::Result<()> {
+fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, no_large_warning: bool, ignore_files: &[String], ignore_dirs: &[String], git_message: &Option<String>) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -871,7 +878,7 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
     // Offer to commit changes (skip if no_commit mode)
     if !no_commit {
         if let (Some(repo), Some(base_cmd)) = (repository, base_cmd) {
-            commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, git_message)?;
+            commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, git_message)?;
         }
     }
 
@@ -915,7 +922,7 @@ fn main() {
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files, &args.ignore_dirs, &args.git_message) {
+            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -931,7 +938,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, &args.ignore_files, &args.ignore_dirs, &args.git_message) {
+            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
             println!();
