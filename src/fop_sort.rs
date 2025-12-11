@@ -210,22 +210,25 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     // Sort domain names alphabetically
     if domains.contains(',') {
         let domain_list: Vec<&str> = domains.split(',').collect();
-        let mut valid_domains: Vec<String> = Vec::new();
-        let mut invalid_domains: Vec<String> = Vec::new();
+        let cap = domain_list.len();
+        let mut valid_domains: Vec<String> = Vec::with_capacity(cap);
+        let mut invalid_domains: Vec<String> = Vec::with_capacity(4);
 
-        for d in domain_list {
+        for d in &domain_list {
             let stripped = d.trim_start_matches('~');
+            let len = stripped.len();
+            let has_dot = stripped.contains('.');
             // Allow:
             // - * (wildcard for all domains)
             // - TLDs without dots (pl, de, com, org) - must be 2+ chars
             // - Regular domains with dots (example.com) - must be 4+ chars
             let is_valid = stripped == "*" 
-                || (!stripped.contains('.') && stripped.len() >= 2)
-                || (stripped.contains('.') && stripped.len() >= 4);
+                || (!has_dot && len >= 2)
+                || (has_dot && len >= 4);
             if !is_valid {
-                invalid_domains.push(d.to_string());
+                invalid_domains.push((*d).to_string());
             } else {
-                valid_domains.push(d.to_string());
+                valid_domains.push((*d).to_string());
             }
         }
 
