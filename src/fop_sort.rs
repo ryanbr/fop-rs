@@ -20,7 +20,7 @@ use crate::{
     TLD_ONLY_PATTERN, IP_ADDRESS_PATTERN, REGEX_ELEMENT_PATTERN,
     ATTRIBUTE_VALUE_PATTERN, TREE_SELECTOR, REMOVAL_PATTERN,
     PSEUDO_PATTERN, UNICODE_SELECTOR,
-    KNOWN_OPTIONS, IGNORE_DOMAINS, UBO_CONVERSIONS,
+    KNOWN_OPTIONS, IGNORE_DOMAINS, UBO_CONVERSIONS, write_warning,
 };
 
 // =============================================================================
@@ -152,10 +152,10 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped == "media"
                         || stripped == "all";
                     if !is_known {
-                        eprintln!(
+                        write_warning(&format!(
                             "Warning: The option \"{}\" used on the filter \"{}\" is not recognised by FOP",
                             option, filter_in
-                        );
+                        ));
                     }
                 }
             }
@@ -215,8 +215,14 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
 
         for d in domain_list {
             let stripped = d.trim_start_matches('~');
-            // Allow * as wildcard for all domains
-            if stripped != "*" && (stripped.len() < 3 || !stripped.contains('.')) {
+            // Allow:
+            // - * (wildcard for all domains)
+            // - TLDs without dots (pl, de, com, org) - must be 2+ chars
+            // - Regular domains with dots (example.com) - must be 4+ chars
+            let is_valid = stripped == "*" 
+                || (!stripped.contains('.') && stripped.len() >= 2)
+                || (stripped.contains('.') && stripped.len() >= 4);
+            if !is_valid {
                 invalid_domains.push(d.to_string());
             } else {
                 valid_domains.push(d.to_string());
@@ -224,10 +230,10 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
         }
 
         if !invalid_domains.is_empty() {
-            eprintln!(
-                "Removed invalid domain(s) from cosmetic rule: {}",
-                invalid_domains.join(", ")
-            );
+            write_warning(&format!(
+                "Removed invalid domain(s) from cosmetic rule: {} | Rule: {}{}{}",
+                invalid_domains.join(", "), domains, separator, selector
+            ));
         }
 
         sort_domains(&mut valid_domains);
@@ -495,7 +501,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String], backup: bool, keep_empty_lines: bool, ignore_dot_domains: bool) -> io::Result<()> {
+pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String], backup: bool, keep_empty_lines: bool, ignore_dot_domains: bool, disable_domain_limit: bool) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -638,11 +644,13 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         // Process blocking rules
                
         // Skip short domain rules
-        if line.len() <= 7 && SHORT_DOMAIN_PATTERN.is_match(&line) {
+        if !disable_domain_limit && line.len() <= 7 && SHORT_DOMAIN_PATTERN.is_match(&line) {
             if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(&line) {
                 let domain = &caps[1];
                 if !IGNORE_DOMAINS.contains(domain) {
-                    eprintln!("Skipped short domain rule: {} (domain: {})", line, domain);
+                    write_warning(&format!(
+                        "Skipped short domain rule: {} (domain: {})", line, domain
+                    ));
                     continue;
                 }
             }
@@ -659,7 +667,9 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
                 let has_wildcard = domain.contains('*');
 
                 if !ignore_dot_domains && !is_ip && !has_wildcard && !domain.contains('.') && !domain.starts_with('~') {
-                    eprintln!("Skipped network rule without dot in domain: {} (domain: {})", line, domain);
+                    write_warning(&format!(
+                        "Skipped network rule without dot in domain: {} (domain: {})", line, domain
+                    ));
                     continue;
                 }
             }
@@ -667,7 +677,9 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
 
         // Remove TLD-only patterns
         if TLD_ONLY_PATTERN.is_match(&line) {
-            eprintln!("Removed overly broad TLD-only rule: {}", line);
+            write_warning(&format!(
+                "Removed overly broad TLD-only rule: {}", line
+            ));
             continue;
         }
 
