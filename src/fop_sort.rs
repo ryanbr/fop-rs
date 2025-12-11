@@ -491,7 +491,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String]) -> io::Result<()> {
+pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String], backup: bool) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -679,6 +679,11 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
     let new_content = fs::read(&temp_file)?;
 
     if original_content != new_content {
+        // Create backup if requested
+        if backup {
+            let backup_file = filename.with_extension("backup");
+            fs::copy(filename, &backup_file)?;
+        }
         fs::rename(&temp_file, filename)?;
         println!("Sorted: {}", filename.display());
     } else {
