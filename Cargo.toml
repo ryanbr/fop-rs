@@ -19,7 +19,7 @@ ahash = "0.8"
 colored = "3.0"
 
 [profile.release]
-lto = true
+lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
