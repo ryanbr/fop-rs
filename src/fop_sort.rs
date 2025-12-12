@@ -181,6 +181,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("urlskip=")
                         || stripped.starts_with("uritransform=")
                         || stripped.starts_with("reason=")
+                        || stripped.starts_with("addheader=")
                         || stripped == "important"
                         || stripped == "media"
                         || stripped == "all";
