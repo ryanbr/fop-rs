@@ -4,7 +4,8 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const binaryPath = path.join(__dirname, 'fop-binary');
+const isWindows = process.platform === 'win32';
+const binaryPath = path.join(__dirname, isWindows ? 'fop-binary.exe' : 'fop-binary');
 
 // Check if binary exists
 if (!fs.existsSync(binaryPath)) {

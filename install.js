@@ -95,7 +95,8 @@ function buildFromSource(binaryPath) {
 
 async function install() {
   const binDir = path.join(__dirname, 'bin');
-  const binaryPath = path.join(binDir, 'fop-binary');
+  const isWindows = process.platform === 'win32';
+  const binaryPath = path.join(binDir, isWindows ? 'fop-binary.exe' : 'fop-binary');
   
   // Create bin directory
   if (!fs.existsSync(binDir)) {
