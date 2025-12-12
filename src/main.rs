@@ -1096,28 +1096,27 @@ fn main() {
         disable_domain_limit: false,  // Set per-file in process_location
     };
 
-    if args.directories.is_empty() {
-        // Process current directory
-        if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.git_message) {
-                eprintln!("Error: {}", e);
-            }
-        }
+    // Build list of locations to process
+    let locations: Vec<PathBuf> = if args.directories.is_empty() {
+        env::current_dir().map(|cwd| vec![cwd]).unwrap_or_default()
     } else {
-        // Process specified directories
-        let mut unique_places: Vec<PathBuf> = args.directories
+        let mut unique: Vec<PathBuf> = args.directories
             .iter()
             .filter_map(|p| fs::canonicalize(p).ok())
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
+        unique.sort();
+        unique
+    };
 
-        unique_places.sort();
-
-        for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.git_message) {
-                eprintln!("Error: {}", e);
-            }
+    // Process all locations
+    for (i, location) in locations.iter().enumerate() {
+        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.git_message) {
+            eprintln!("Error: {}", e);
+        }
+        // Print blank line between multiple directories (preserve original behavior)
+        if locations.len() > 1 && i < locations.len() - 1 {
             println!();
         }
     }
