@@ -456,7 +456,7 @@ pub(crate) static ELEMENT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
 
 /// Pattern for FOP.py compatible element matching (no {} in selector)
 pub(crate) static FOPPY_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^([^/|@"!]*?)(#[@?]?#)([^{}]+)$"#).unwrap()
+    Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#)([^{}]+)$"#).unwrap()
 });
 
 /// Pattern for FOP.py compatible sorting (only ## and #@#)
