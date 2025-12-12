@@ -67,7 +67,7 @@ use regex::Regex;
 use walkdir::WalkDir;
 use rayon::prelude::*;
 
-use fop_sort::fop_sort;
+use fop_sort::{fop_sort, SortConfig};
 
 // FOP version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -917,7 +917,20 @@ fn should_ignore_dir(path: &Path, ignore_dirs: &[String]) -> bool {
     false
 }
 
-fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_check: bool, disable_ignored: bool, no_sort: bool, alt_sort: bool, localhost: bool, no_color: bool, no_large_warning: bool, ignore_files: &[String], ignore_dirs: &[String], file_extensions: &[String], comment_chars: &[String], backup: bool, keep_empty_lines: bool, ignore_dot_domains: bool, disable_domain_limit: &[String], git_message: &Option<String>) -> io::Result<()> {
+fn process_location(
+    location: &Path,
+    no_commit: bool,
+    no_msg_check: bool,
+    disable_ignored: bool,
+    no_color: bool,
+    no_large_warning: bool,
+    ignore_files: &[String],
+    ignore_dirs: &[String],
+    file_extensions: &[String],
+    disable_domain_limit: &[String],
+    sort_config: &SortConfig,
+    git_message: &Option<String>,
+) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
@@ -992,7 +1005,18 @@ fn process_location(location: &Path, no_commit: bool, convert_ubo: bool, no_msg_
     txt_files.par_iter().for_each(|entry| {
         let filename = entry.path().file_name().and_then(|n| n.to_str()).unwrap_or("");
         let skip_domain_limit = disable_domain_limit.iter().any(|f| filename.contains(f));
-        if let Err(e) = fop_sort(entry.path(), convert_ubo, no_sort, alt_sort, localhost, comment_chars, backup, keep_empty_lines, ignore_dot_domains, skip_domain_limit) {
+        let config = SortConfig {
+            convert_ubo: sort_config.convert_ubo,
+            no_sort: sort_config.no_sort,
+            alt_sort: sort_config.alt_sort,
+            localhost: sort_config.localhost,
+            comment_chars: sort_config.comment_chars,
+            backup: sort_config.backup,
+            keep_empty_lines: sort_config.keep_empty_lines,
+            ignore_dot_domains: sort_config.ignore_dot_domains,
+            disable_domain_limit: skip_domain_limit,
+        };
+        if let Err(e) = fop_sort(entry.path(), &config) {
             eprintln!("Error processing {}: {}", entry.path().display(), e);
         }
     });
@@ -1059,10 +1083,23 @@ fn main() {
         let _ = std::fs::write(path, "");
     }
 
+    // Build sort config
+    let sort_config = SortConfig {
+        convert_ubo: !args.no_ubo_convert,
+        no_sort: args.no_sort,
+        alt_sort: args.alt_sort,
+        localhost: args.localhost,
+        comment_chars: &args.comment_chars,
+        backup: args.backup,
+        keep_empty_lines: args.keep_empty_lines,
+        ignore_dot_domains: args.ignore_dot_domains,
+        disable_domain_limit: false,  // Set per-file in process_location
+    };
+
     if args.directories.is_empty() {
         // Process current directory
         if let Ok(cwd) = env::current_dir() {
-            if let Err(e) = process_location(&cwd, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.comment_chars, args.backup, args.keep_empty_lines, args.ignore_dot_domains, &args.disable_domain_limit, &args.git_message) {
+            if let Err(e) = process_location(&cwd, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -1078,7 +1115,7 @@ fn main() {
         unique_places.sort();
 
         for place in unique_places {
-            if let Err(e) = process_location(&place, args.no_commit, !args.no_ubo_convert, args.no_msg_check, args.disable_ignored, args.no_sort, args.alt_sort, args.localhost, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.comment_chars, args.backup, args.keep_empty_lines, args.ignore_dot_domains, &args.disable_domain_limit, &args.git_message) {
+            if let Err(e) = process_location(&place, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.git_message) {
                 eprintln!("Error: {}", e);
             }
             println!();

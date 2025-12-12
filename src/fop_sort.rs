@@ -40,6 +40,23 @@ fn is_tld_only(line: &str) -> bool {
 }
 
 // =============================================================================
+// Configuration
+// =============================================================================
+
+/// Configuration for sorting operations
+pub struct SortConfig<'a> {
+    pub convert_ubo: bool,
+    pub no_sort: bool,
+    pub alt_sort: bool,
+    pub localhost: bool,
+    pub comment_chars: &'a [String],
+    pub backup: bool,
+    pub keep_empty_lines: bool,
+    pub ignore_dot_domains: bool,
+    pub disable_domain_limit: bool,
+}
+
+// =============================================================================
 // UBO Option Conversion
 // =============================================================================
 
@@ -520,7 +537,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: bool, localhost: bool, comment_chars: &[String], backup: bool, keep_empty_lines: bool, ignore_dot_domains: bool, disable_domain_limit: bool) -> io::Result<()> {
+pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -599,9 +616,9 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         let line = line?.trim().to_string();
 
         if line.is_empty() {
-            if keep_empty_lines {
+            if config.keep_empty_lines {
                 if !section.is_empty() {
-                    write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, alt_sort, localhost)?;
+                    write_filters(&mut section, &mut output, element_lines, filter_lines, config.no_sort, config.alt_sort, config.localhost)?;
                     lines_checked = 1;
                     filter_lines = 0;
                     element_lines = 0;
@@ -612,14 +629,14 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         }
 
         // Comments and special lines
-        let is_comment = comment_chars.iter().any(|c| line.starts_with(c))
-            || (localhost && line.starts_with('#') && !comment_chars.contains(&"#".to_string()));
+        let is_comment = config.comment_chars.iter().any(|c| line.starts_with(c))
+            || (config.localhost && line.starts_with('#') && !config.comment_chars.contains(&"#".to_string()));
         if is_comment
             || line.starts_with("%include")
             || (line.starts_with('[') && line.ends_with(']'))
         {
             if !section.is_empty() {
-                write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, alt_sort, localhost)?;
+                write_filters(&mut section, &mut output, element_lines, filter_lines, config.no_sort, config.alt_sort, config.localhost)?;
                 lines_checked = 1;
                 filter_lines = 0;
                 element_lines = 0;
@@ -629,7 +646,7 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         }
         
         // Validate localhost entries when in localhost mode
-        if localhost {
+        if config.localhost {
             if !LOCALHOST_PATTERN.is_match(&line) {
                 write_warning(&format!(
                     "Removed invalid localhost entry: {}", line
@@ -650,7 +667,7 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         }
 
         // Process element hiding rules
-        let element_caps = if alt_sort {
+        let element_caps = if config.alt_sort {
             ELEMENT_PATTERN.captures(&line)
         } else {
             FOPPY_ELEMENT_PATTERN.captures(&line)
@@ -673,7 +690,7 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
         // Process blocking rules
                
         // Skip short domain rules
-        if !disable_domain_limit && line.len() <= 7 && SHORT_DOMAIN_PATTERN.is_match(&line) {
+        if !config.disable_domain_limit && line.len() <= 7 && SHORT_DOMAIN_PATTERN.is_match(&line) {
             if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(&line) {
                 let domain = &caps[1];
                 if !IGNORE_DOMAINS.contains(domain) {
@@ -695,7 +712,7 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
                 let is_ip = domain.starts_with('[') || IP_ADDRESS_PATTERN.is_match(domain);
                 let has_wildcard = domain.contains('*');
 
-                if !ignore_dot_domains && !is_ip && !has_wildcard && !domain.contains('.') && !domain.starts_with('~') {
+                if !config.ignore_dot_domains && !is_ip && !has_wildcard && !domain.contains('.') && !domain.starts_with('~') {
                     write_warning(&format!(
                         "Skipped network rule without dot in domain: {} (domain: {})", line, domain
                     ));
@@ -717,13 +734,13 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
             lines_checked += 1;
         }
 
-        let tidied = filter_tidy(&line, convert_ubo);
+        let tidied = filter_tidy(&line, config.convert_ubo);
         section.push(tidied);
     }
 
     // Write remaining filters
     if !section.is_empty() {
-        write_filters(&mut section, &mut output, element_lines, filter_lines, no_sort, alt_sort, localhost)?;
+        write_filters(&mut section, &mut output, element_lines, filter_lines, config.no_sort, config.alt_sort, config.localhost)?;
     }
 
     drop(output);
@@ -734,7 +751,7 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
 
     if original_content != new_content {
         // Create backup if requested
-        if backup {
+        if config.backup {
             let backup_file = filename.with_extension("backup");
             fs::copy(filename, &backup_file)?;
         }
