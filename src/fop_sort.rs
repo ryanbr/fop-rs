@@ -627,6 +627,16 @@ pub fn fop_sort(filename: &Path, convert_ubo: bool, no_sort: bool, alt_sort: boo
             writeln!(output, "{}", line)?;
             continue;
         }
+        
+        // Validate localhost entries when in localhost mode
+        if localhost {
+            if !LOCALHOST_PATTERN.is_match(&line) {
+                write_warning(&format!(
+                    "Removed invalid localhost entry: {}", line
+                ));
+                continue;
+            }
+        }
 
         // Skip filters less than 3 characters
         if line.len() < 3 {
