@@ -10,9 +10,9 @@ keywords = ["adblock", "easylist", "filter", "privacy"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-regex = "1.9"
-once_cell = "1.18"
-walkdir = "2.4"
+regex = "1.12"
+once_cell = "1.21"
+walkdir = "2.5"
 rayon = "1.11"
 dirs = "6.0"
 ahash = "0.8"
