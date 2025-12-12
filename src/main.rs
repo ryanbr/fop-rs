@@ -558,6 +558,8 @@ pub(crate) static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "all", "badfilter", "important", "popunder", "empty", "cname",
         "inline-script", "removeparam", "redirect-rule",
         "_____", "-----",
+        // Adguard
+        "network", "content", "extension", "jsinject", "stealth",
         // ABP rewrite resources
         "rewrite=abp-resource:1x1-transparent-gif",
         "rewrite=abp-resource:2x2-transparent-png",

@@ -124,6 +124,14 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> String {
 
 /// Sort and clean filter options
 pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
+
+    // Skip filters with regex values in options (contain =/.../ patterns)
+    // ||example.com$removeparam=/^\\$ja=/
+    // ||example.com$removeparam=/regex/
+    if filter_in.contains("=/") && filter_in.contains("$") {
+        return filter_in.to_string();
+    }
+    
     let option_split = OPTION_PATTERN.captures(filter_in);
 
     match option_split {
@@ -182,6 +190,11 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("uritransform=")
                         || stripped.starts_with("reason=")
                         || stripped.starts_with("addheader=")
+                        || stripped.starts_with("referrerpolicy=")
+                        || stripped.starts_with("cookie=")
+                        || stripped.starts_with("removeheader=")
+                        || stripped.starts_with("jsonprune=")
+                        || stripped.starts_with("stealth=")
                         || stripped == "important"
                         || stripped == "media"
                         || stripped == "all";
@@ -658,6 +671,13 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
 
         // Skip filters less than 3 characters
         if line.len() < 3 {
+            continue;
+        }
+
+        // [$path=/\/(dom|pro)/]rambler.ru##div[style^="order:"][style*="-1"]
+        // AdGuard cosmetic rule modifiers - pass through unchanged
+        if line.starts_with("[$") {
+            section.push(line.clone());
             continue;
         }
 
