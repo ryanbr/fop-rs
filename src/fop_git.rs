@@ -133,11 +133,9 @@ pub fn build_base_command(repo: &RepoDefinition, location: &Path) -> Vec<String>
 }
 
 pub fn check_repo_changes(base_cmd: &[String], repo: &RepoDefinition) -> Option<bool> {
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(repo.check_changes.iter().map(|s| s.to_string()));
-
-    let output = Command::new(&cmd[0])
-        .args(&cmd[1..])
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(repo.check_changes)
         .output()
         .ok()?;
 
@@ -145,11 +143,9 @@ pub fn check_repo_changes(base_cmd: &[String], repo: &RepoDefinition) -> Option<
 }
 
 pub fn get_diff(base_cmd: &[String], repo: &RepoDefinition) -> Option<String> {
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(repo.difference.iter().map(|s| s.to_string()));
-
-    let output = Command::new(&cmd[0])
-        .args(&cmd[1..])
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(repo.difference)
         .output()
         .ok()?;
 
@@ -199,11 +195,9 @@ fn print_diff(diff: &str, no_color: bool) {
 
 /// Get the remote URL for constructing PR link
 fn get_remote_url(base_cmd: &[String]) -> Option<String> {
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(["remote", "get-url", "origin"].iter().map(|s| s.to_string()));
-    
-    let output = Command::new(&cmd[0])
-        .args(&cmd[1..])
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["remote", "get-url", "origin"])
         .output()
         .ok()?;
     
@@ -212,11 +206,9 @@ fn get_remote_url(base_cmd: &[String]) -> Option<String> {
 
 /// Get current branch name
 fn get_current_branch(base_cmd: &[String]) -> Option<String> {
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(["rev-parse", "--abbrev-ref", "HEAD"].iter().map(|s| s.to_string()));
-    
-    let output = Command::new(&cmd[0])
-        .args(&cmd[1..])
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .ok()?;
     
