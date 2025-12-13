@@ -264,46 +264,52 @@ pub fn create_pull_request(
     println!("\nCreating PR branch '{}'...", pr_branch);
     
     // Create and checkout new branch
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(["checkout", "-b", &pr_branch].iter().map(|s| s.to_string()));
-    let status = Command::new(&cmd[0]).args(&cmd[1..]).status()?;
+    let status = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["checkout", "-b", &pr_branch])
+        .status()?;
     if !status.success() {
         eprintln!("Failed to create branch {}", pr_branch);
         return Ok(None);
     }
     
     // Commit changes
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(repo.commit.iter().map(|s| s.to_string()));
-    cmd.push(message.to_string());
-    let status = Command::new(&cmd[0]).args(&cmd[1..]).status()?;
+    let status = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(repo.commit)
+        .arg(message)
+        .status()?;
     if !status.success() {
         eprintln!("Failed to commit changes");
         // Switch back to original branch
-        let mut cmd = base_cmd.to_vec();
-        cmd.extend(["checkout", &base_branch].iter().map(|s| s.to_string()));
-        let _ = Command::new(&cmd[0]).args(&cmd[1..]).status();
+        let _ = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(["checkout", &base_branch])
+            .status();
         return Ok(None);
     }
     
     // Push branch
     println!("Pushing branch to origin...");
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(["push", "-u", "origin", &pr_branch].iter().map(|s| s.to_string()));
-    let status = Command::new(&cmd[0]).args(&cmd[1..]).status()?;
+    let status = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["push", "-u", "origin", &pr_branch])
+        .status()?;
     if !status.success() {
         eprintln!("Failed to push branch {}", pr_branch);
         // Switch back to original branch
-        let mut cmd = base_cmd.to_vec();
-        cmd.extend(["checkout", &base_branch].iter().map(|s| s.to_string()));
-        let _ = Command::new(&cmd[0]).args(&cmd[1..]).status();
+        let _ = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(["checkout", &base_branch])
+            .status();
         return Ok(None);
     }
     
     // Switch back to original branch
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(["checkout", &base_branch].iter().map(|s| s.to_string()));
-    let _ = Command::new(&cmd[0]).args(&cmd[1..]).status();
+    let _ = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["checkout", &base_branch])
+        .status();
     
     // Generate PR URL
     let pr_url = get_remote_url(base_cmd)
@@ -357,17 +363,18 @@ pub fn commit_changes(
         
         println!("Committing with message: {}", message);
         
-        let mut cmd = base_cmd.to_vec();
-        cmd.extend(repo.commit.iter().map(|s| s.to_string()));
-        cmd.push(message.clone());
-        
-        Command::new(&cmd[0]).args(&cmd[1..]).status()?;
+        Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(repo.commit)
+            .arg(message)
+            .status()?;
         
         // Pull and push
         for op in [repo.pull, repo.push].iter() {
-            let mut cmd = base_cmd.to_vec();
-            cmd.extend(op.iter().map(|s| s.to_string()));
-            let _ = Command::new(&cmd[0]).args(&cmd[1..]).status();
+            let _ = Command::new(&base_cmd[0])
+                .args(&base_cmd[1..])
+                .args(*op)
+                .status();
         }
         
         println!("Completed commit process successfully.");
@@ -410,12 +417,10 @@ pub fn commit_changes(
             println!("Comment \"{}\" accepted.", comment);
 
             // Execute commit
-            let mut cmd = base_cmd.to_vec();
-            cmd.extend(repo.commit.iter().map(|s| s.to_string()));
-            cmd.push(comment.to_string());
-
-            let status = Command::new(&cmd[0])
-                .args(&cmd[1..])
+            let status = Command::new(&base_cmd[0])
+                .args(&base_cmd[1..])
+                .args(repo.commit)
+                .arg(comment)
                 .status();
 
             if let Err(e) = status {
@@ -427,11 +432,9 @@ pub fn commit_changes(
             println!("\nConnecting to server. Please enter your password if required.");
 
             for op in [repo.pull, repo.push].iter() {
-                let mut cmd = base_cmd.to_vec();
-                cmd.extend(op.iter().map(|s| s.to_string()));
-
-                let _ = Command::new(&cmd[0])
-                    .args(&cmd[1..])
+                let _ = Command::new(&base_cmd[0])
+                    .args(&base_cmd[1..])
+                    .args(*op)
                     .status();
                 println!();
             }
