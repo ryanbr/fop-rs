@@ -51,28 +51,22 @@ pub fn valid_url(url_str: &str) -> bool {
         return true;
     }
 
-    if let Some(scheme_end) = url_str.find("://") {
-        let scheme = &url_str[..scheme_end];
-        if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return false;
-        }
+    let Some(scheme_end) = url_str.find("://") else {
+        return false;
+    };
 
-        let rest = &url_str[scheme_end + 3..];
-        if rest.is_empty() {
-            return false;
-        }
-
-        let host_end = rest.find('/').unwrap_or(rest.len());
-        let host = &rest[..host_end];
-
-        if host.is_empty() {
-            return false;
-        }
-
-        return true;
+    let scheme = &url_str[..scheme_end];
+    if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return false;
     }
 
-    false
+    let rest = &url_str[scheme_end + 3..];
+    if rest.is_empty() {
+        return false;
+    }
+
+    let host_end = rest.find('/').unwrap_or(rest.len());
+    !rest[..host_end].is_empty()
 }
 
 pub fn check_comment(comment: &str, user_changes: bool) -> bool {
@@ -133,6 +127,7 @@ pub fn build_base_command(repo: &RepoDefinition, location: &Path) -> Vec<String>
 }
 
 /// Check if git command is available
+#[inline]
 pub fn git_available() -> bool {
     Command::new("git")
         .arg("--version")
@@ -183,6 +178,7 @@ fn is_large_change(diff: &str) -> bool {
     changed_lines > LARGE_LINES_THRESHOLD
 }
 
+#[inline]
 fn print_diff_line(line: &str, no_color: bool) {
     if no_color {
         println!("{}", line);
@@ -243,6 +239,15 @@ fn remote_to_github_url(remote: &str) -> Option<String> {
     None
 }
 
+/// Switch to a branch
+fn checkout_branch(base_cmd: &[String], branch: &str) -> io::Result<bool> {
+    Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["checkout", branch])
+        .status()
+        .map(|s| s.success())
+}
+
 /// Create a pull request branch and return PR URL
 pub fn create_pull_request(
     repo: &RepoDefinition,
@@ -293,11 +298,7 @@ pub fn create_pull_request(
         .status()?;
     if !status.success() {
         eprintln!("Failed to commit changes");
-        // Switch back to original branch
-        let _ = Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
-            .args(["checkout", &base_branch])
-            .status();
+        let _ = checkout_branch(base_cmd, &base_branch);
         return Ok(None);
     }
     
@@ -310,18 +311,12 @@ pub fn create_pull_request(
     if !status.success() {
         eprintln!("Failed to push branch {}", pr_branch);
         // Switch back to original branch
-        let _ = Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
-            .args(["checkout", &base_branch])
-            .status();
+        let _ = checkout_branch(base_cmd, &base_branch);
         return Ok(None);
     }
     
     // Switch back to original branch
-    let _ = Command::new(&base_cmd[0])
-        .args(&base_cmd[1..])
-        .args(["checkout", &base_branch])
-        .status();
+    let _ = checkout_branch(base_cmd, &base_branch);
     
     // Generate PR URL
     let pr_url = get_remote_url(base_cmd)
