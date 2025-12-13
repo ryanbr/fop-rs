@@ -215,7 +215,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                 .into_iter()
                 .collect();
 
-            sorted_options.sort_by(|a, b| {
+            sorted_options.sort_unstable_by(|a, b| {
                 let key_a = if a.starts_with('~') {
                     format!("{}~", &a[1..])
                 } else {
@@ -523,7 +523,7 @@ fn combine_filters(
             .into_iter()
             .collect();
 
-        new_domains.sort_by(|a, b| {
+        new_domains.sort_unstable_by(|a, b| {
             a.trim_start_matches('~').cmp(b.trim_start_matches('~'))
         });
 
@@ -598,7 +598,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
         if localhost {
             // Sort hosts file entries by domain
             if !no_sort {
-                unique.sort_by(|a, b| {
+                unique.sort_unstable_by(|a, b| {
                     let a_domain = LOCALHOST_PATTERN.captures(a).map(|c| c[2].to_lowercase()).unwrap_or_else(|| a.to_lowercase());
                     let b_domain = LOCALHOST_PATTERN.captures(b).map(|c| c[2].to_lowercase()).unwrap_or_else(|| b.to_lowercase());
                     a_domain.cmp(&b_domain)
@@ -614,7 +614,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
                 } else {
                     &*FOPPY_ELEMENT_DOMAIN_PATTERN
                 };
-                unique.sort_by(|a, b| {
+                unique.sort_unstable_by(|a, b| {
                     let a_key = pattern.replace(a, "");
                     let b_key = pattern.replace(b, "");
                     a_key.cmp(&b_key)
@@ -627,7 +627,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
         } else {
             // Sort blocking rules (unless no_sort)
             if !no_sort {
-                unique.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                unique.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
             }
             let combined = combine_filters(unique, &FILTER_DOMAIN_PATTERN, "|");
             for filter in combined {
