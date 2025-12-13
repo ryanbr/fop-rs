@@ -10,6 +10,7 @@
 //! Rust port maintains GPL-3.0 license compatibility.
 
 mod fop_sort;
+mod fop_git;
 
 #[cfg(test)]
 mod tests;
@@ -22,8 +23,6 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use colored::Colorize;
 
 use once_cell::sync::Lazy;
 /// Thread-safe warning output
@@ -71,6 +70,8 @@ use walkdir::WalkDir;
 use rayon::prelude::*;
 
 use fop_sort::{fop_sort, SortConfig};
+use fop_git::{RepoDefinition, REPO_TYPES, build_base_command, check_repo_changes,
+              commit_changes, create_pull_request};
 
 // FOP version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -119,6 +120,8 @@ struct Args {
     disable_domain_limit: Vec<String>,
     /// Output warnings to file instead of stderr
     warning_output: Option<PathBuf>,
+    /// Create PR branch instead of committing to master (optional: PR title)
+    create_pr: Option<String>,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
     /// Show applied configuration
@@ -254,6 +257,7 @@ impl Args {
             ignore_dot_domains: parse_bool(&config, "ignore-dot-domains", false),
             disable_domain_limit: parse_list(&config, "disable-domain-limit"),
             warning_output: config.get("warning-output").map(|s| PathBuf::from(s)),
+            create_pr: config.get("create-pr").cloned(),
             help: false,
             version: false,
         };
@@ -312,6 +316,10 @@ impl Args {
                         .map(|s| s.trim().to_string())
                         .collect();
                 }
+                "--create-pr" => args.create_pr = Some(String::new()),
+                _ if arg.starts_with("--create-pr=") => {
+                    args.create_pr = Some(arg.trim_start_matches("--create-pr=").to_string());
+                }
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
                 }
@@ -358,6 +366,7 @@ impl Args {
         println!("        --disable-domain-limit=  Files to skip short domain check (comma-separated)");
         println!("        --warning-output=   Output warnings to file instead of stderr");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
+        println!("        --create-pr[=TITLE]  Create PR branch instead of committing to master");
         println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
@@ -436,6 +445,11 @@ impl Args {
         } else {
             println!("  warning-output  = (stderr)");
         }
+        if let Some(ref title) = self.create_pr {
+            println!("  create-pr       = {}", if title.is_empty() { "(prompt)" } else { title });
+        } else {
+            println!("  create-pr       = false");
+        }
         println!();
         print!("Press Enter to continue...");
         io::stdout().flush().unwrap();
@@ -506,10 +520,6 @@ pub(crate) static TREE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
 
 pub(crate) static UNICODE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap()
-});
-
-static COMMIT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(A|M|P):\s(\((.+)\)\s)?(.*)$").unwrap()
 });
 
 pub(crate) static SHORT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
@@ -601,301 +611,6 @@ pub(crate) static UBO_CONVERSIONS: Lazy<AHashMap<&'static str, &'static str>> = 
 });
 
 // =============================================================================
-// Repository Types
-// =============================================================================
-
-#[derive(Clone)]
-struct RepoDefinition {
-    name: &'static str,
-    directory: &'static str,
-    location_option: &'static str,
-    repo_directory_option: Option<&'static str>,
-    check_changes: &'static [&'static str],
-    difference: &'static [&'static str],
-    commit: &'static [&'static str],
-    pull: &'static [&'static str],
-    push: &'static [&'static str],
-}
-
-const GIT: RepoDefinition = RepoDefinition {
-    name: "git",
-    directory: ".git",
-    location_option: "--work-tree=",
-    repo_directory_option: Some("--git-dir="),
-    check_changes: &["status", "-s", "--untracked-files=no"],
-    difference: &["diff"],
-    commit: &["commit", "-a", "-m"],
-    pull: &["pull"],
-    push: &["push"],
-};
-
-const REPO_TYPES: &[RepoDefinition] = &[GIT];
-
-// =============================================================================
-// Repository Functions
-// =============================================================================
-
-fn build_base_command(repo: &RepoDefinition, location: &Path) -> Vec<String> {
-    let mut cmd = vec![repo.name.to_string()];
-
-    if repo.location_option.ends_with('=') {
-        cmd.push(format!("{}{}", repo.location_option, location.display()));
-    } else {
-        cmd.push(repo.location_option.to_string());
-        cmd.push(location.display().to_string());
-    }
-
-    if let Some(repo_opt) = repo.repo_directory_option {
-        let repo_dir = location.join(repo.directory);
-        if repo_opt.ends_with('=') {
-            cmd.push(format!("{}{}", repo_opt, repo_dir.display()));
-        } else {
-            cmd.push(repo_opt.to_string());
-            cmd.push(repo_dir.display().to_string());
-        }
-    }
-
-    cmd
-}
-
-fn check_repo_changes(base_cmd: &[String], repo: &RepoDefinition) -> Option<bool> {
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(repo.check_changes.iter().map(|s| s.to_string()));
-
-    let output = Command::new(&cmd[0])
-        .args(&cmd[1..])
-        .output()
-        .ok()?;
-
-    Some(!output.stdout.is_empty())
-}
-
-fn get_diff(base_cmd: &[String], repo: &RepoDefinition) -> Option<String> {
-    let mut cmd = base_cmd.to_vec();
-    cmd.extend(repo.difference.iter().map(|s| s.to_string()));
-
-    let output = Command::new(&cmd[0])
-        .args(&cmd[1..])
-        .output()
-        .ok()?;
-
-    String::from_utf8(output.stdout).ok()
-}
-
-fn is_large_change(diff: &str) -> bool {
-    const LARGE_LINES_THRESHOLD: usize = 25;
-
-    let changed_lines = diff
-        .lines()
-        .filter(|line| {
-            (line.starts_with('+') || line.starts_with('-'))
-                && !line.starts_with("+++")
-                && !line.starts_with("---")
-        })
-        .count();
-
-    changed_lines > LARGE_LINES_THRESHOLD
-}
-
-pub(crate) fn valid_url(url_str: &str) -> bool {
-    // Handle about: URLs specially
-    if url_str.starts_with("about:") {
-        return true;
-    }
-
-    // Simple URL validation: check for scheme://host/path pattern
-    if let Some(scheme_end) = url_str.find("://") {
-        let scheme = &url_str[..scheme_end];
-        if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return false;
-        }
-
-        let rest = &url_str[scheme_end + 3..];
-        if rest.is_empty() {
-            return false;
-        }
-
-        let host_end = rest.find('/').unwrap_or(rest.len());
-        let host = &rest[..host_end];
-
-        if host.is_empty() {
-            return false;
-        }
-
-        return true;
-    }
-
-    false
-}
-
-pub(crate) fn check_comment(comment: &str, user_changes: bool) -> bool {
-    match COMMIT_PATTERN.captures(comment) {
-        None => {
-            eprintln!("The comment \"{}\" is not in the recognised format.", comment);
-            false
-        }
-        Some(caps) => {
-            let indicator = &caps[1];
-            match indicator {
-                "M" => true,
-                "A" | "P" => {
-                    if !user_changes {
-                        eprintln!("You have indicated that you have added or removed a rule, but no changes were initially noted by the repository.");
-                        false
-                    } else {
-                        let address = &caps[4];
-                        if !valid_url(address) {
-                            eprintln!("Unrecognised address \"{}\".", address);
-                            false
-                        } else {
-                            true
-                        }
-                    }
-                }
-                _ => false,
-            }
-        }
-    }
-}
-
-fn print_diff_line(line: &str, no_color: bool) {
-    if no_color {
-        println!("{}", line);
-    } else if line.starts_with('+') && !line.starts_with("+++") {
-        println!("{}", line.green());
-    } else if line.starts_with('-') && !line.starts_with("---") {
-        println!("{}", line.red());
-    } else {
-        println!("{}", line);
-    }
-}
-
-fn print_diff(diff: &str, no_color: bool) {
-    for line in diff.lines() {
-        print_diff_line(line, no_color);
-    }
-}
-
-fn commit_changes(
-    repo: &RepoDefinition,
-    base_cmd: &[String],
-    original_difference: bool,
-    no_msg_check: bool,
-    no_color: bool,
-    no_large_warning: bool,
-    git_message: &Option<String>,
-) -> io::Result<()> {
-    let diff = match get_diff(base_cmd, repo) {
-        Some(d) if !d.is_empty() => d,
-        _ => {
-            println!("\nNo changes have been recorded by the repository.");
-            return Ok(());
-        }
-    };
-
-    println!("\nThe following changes have been recorded by the repository:");
-    print_diff(&diff, no_color);
-
-    // If git message provided via CLI, use it directly
-    if let Some(message) = git_message {
-        if message.trim().is_empty() {
-            eprintln!("Error: Empty commit message provided");
-            return Ok(());
-        }
-        if !no_msg_check && !check_comment(message, original_difference) {
-            eprintln!("Error: Invalid commit message format. Use M:/A:/P: prefix.");
-            return Ok(());
-        }
-        
-        println!("Committing with message: {}", message);
-        
-        let mut cmd = base_cmd.to_vec();
-        cmd.extend(repo.commit.iter().map(|s| s.to_string()));
-        cmd.push(message.clone());
-        
-        Command::new(&cmd[0]).args(&cmd[1..]).status()?;
-        
-        // Pull and push
-        for op in [repo.pull, repo.push].iter() {
-            let mut cmd = base_cmd.to_vec();
-            cmd.extend(op.iter().map(|s| s.to_string()));
-            let _ = Command::new(&cmd[0]).args(&cmd[1..]).status();
-        }
-        
-        println!("Completed commit process successfully.");
-        return Ok(());
-    }
-
-    // Check for large changes
-    if !no_large_warning && !original_difference && is_large_change(&diff) {
-        println!("\nThis is a large change. Are you sure you want to proceed?");
-        print!("Please type 'YES' to continue: ");
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        if input.trim() != "YES" {
-            println!("Commit aborted.");
-            return Ok(());
-        }
-    }
-
-    // Get commit comment
-    loop {
-        print!("Please enter a valid commit comment or quit:\n");
-        io::stdout().flush()?;
-
-        let mut comment = String::new();
-        if io::stdin().read_line(&mut comment).is_err() {
-            println!("\nCommit aborted.");
-            return Ok(());
-        }
-
-        let comment = comment.trim();
-        if comment.is_empty() {
-            println!("\nCommit aborted.");
-            return Ok(());
-        }
-
-        if no_msg_check || check_comment(comment, original_difference) {
-            println!("Comment \"{}\" accepted.", comment);
-
-            // Execute commit
-            let mut cmd = base_cmd.to_vec();
-            cmd.extend(repo.commit.iter().map(|s| s.to_string()));
-            cmd.push(comment.to_string());
-
-            let status = Command::new(&cmd[0])
-                .args(&cmd[1..])
-                .status();
-
-            if let Err(e) = status {
-                eprintln!("Unexpected error with commit: {}", e);
-                return Err(e);
-            }
-
-            // Pull and push
-            println!("\nConnecting to server. Please enter your password if required.");
-
-            for op in [repo.pull, repo.push].iter() {
-                let mut cmd = base_cmd.to_vec();
-                cmd.extend(op.iter().map(|s| s.to_string()));
-
-                let _ = Command::new(&cmd[0])
-                    .args(&cmd[1..])
-                    .status();
-                println!();
-            }
-
-            println!("Completed commit process successfully.");
-            return Ok(());
-        }
-        println!();
-    }
-}
-
-// =============================================================================
 // Main Processing
 // =============================================================================
 
@@ -935,6 +650,7 @@ fn process_location(
     file_extensions: &[String],
     disable_domain_limit: &[String],
     sort_config: &SortConfig,
+    create_pr: &Option<String>,
     git_message: &Option<String>,
 ) -> io::Result<()> {
     if !location.is_dir() {
@@ -1041,7 +757,21 @@ fn process_location(
     // Offer to commit changes (skip if no_commit mode)
     if !no_commit {
         if let (Some(repo), Some(base_cmd)) = (repository, base_cmd) {
+            if let Some(pr_title) = create_pr {
+                // Use provided title or prompt
+                let message = if !pr_title.is_empty() {
+                    pr_title.clone()
+                } else {
+                    print!("Enter PR commit message: ");
+                    io::stdout().flush().ok();
+                    let mut msg = String::new();
+                    io::stdin().read_line(&mut msg).ok();
+                    msg.trim().to_string()
+                };
+                create_pull_request(repo, &base_cmd, &message, no_color)?;
+            } else {
             commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, git_message)?;
+        }
         }
     }
 
@@ -1118,7 +848,7 @@ fn main() {
 
     // Process all locations
     for (i, location) in locations.iter().enumerate() {
-        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.git_message) {
+        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_message) {
             eprintln!("Error: {}", e);
         }
         // Print blank line between multiple directories (preserve original behavior)
