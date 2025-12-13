@@ -75,7 +75,7 @@ pub(crate) fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
 
 /// Sort domains alphabetically, ignoring ~ prefix
 pub(crate) fn sort_domains(domains: &mut Vec<String>) {
-    domains.sort_by(|a, b| a.trim_start_matches('~').cmp(b.trim_start_matches('~')));
+    domains.sort_unstable_by(|a, b| a.trim_start_matches('~').cmp(b.trim_start_matches('~')));
 }
 
 // =============================================================================
