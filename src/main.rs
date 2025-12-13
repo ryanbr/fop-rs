@@ -71,7 +71,7 @@ use rayon::prelude::*;
 
 use fop_sort::{fop_sort, SortConfig};
 use fop_git::{RepoDefinition, REPO_TYPES, build_base_command, check_repo_changes,
-              commit_changes, create_pull_request};
+              commit_changes, create_pull_request, git_available};
 
 // FOP version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -757,6 +757,10 @@ fn process_location(
     // Offer to commit changes (skip if no_commit mode)
     if !no_commit {
         if let (Some(repo), Some(base_cmd)) = (repository, base_cmd) {
+            if !git_available() {
+                eprintln!("Error: git not found in PATH");
+                return Ok(());
+            }
             if let Some(pr_title) = create_pr {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {

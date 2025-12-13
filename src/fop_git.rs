@@ -132,7 +132,19 @@ pub fn build_base_command(repo: &RepoDefinition, location: &Path) -> Vec<String>
     cmd
 }
 
+/// Check if git command is available
+pub fn git_available() -> bool {
+    Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 pub fn check_repo_changes(base_cmd: &[String], repo: &RepoDefinition) -> Option<bool> {
+    if base_cmd.is_empty() {
+        return None;
+    }
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
         .args(repo.check_changes)
