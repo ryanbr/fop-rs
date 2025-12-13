@@ -15,6 +15,7 @@ mod fop_sort;
 mod tests;
 
 use std::collections::HashMap;
+use ahash::AHashMap;
 use ahash::AHashSet as HashSet;
 use std::sync::Mutex;
 use std::env;
@@ -130,7 +131,8 @@ struct Args {
 
 /// Load configuration from .fopconfig file
 fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Option<PathBuf>) {
-    let mut config = HashMap::new();
+    // pre-allocated 18 .fopconfig settings + 4 future additions
+    let mut config = HashMap::with_capacity(22);
     
     // If custom path provided, use that only
     let config_path: Option<PathBuf> = if let Some(path) = custom_path {
@@ -577,7 +579,7 @@ pub(crate) static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 });
 
 /// uBO to ABP option conversions
-pub(crate) static UBO_CONVERSIONS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+pub(crate) static UBO_CONVERSIONS: Lazy<AHashMap<&'static str, &'static str>> = Lazy::new(|| {
     [
         ("xhr", "xmlhttprequest"),
         ("~xhr", "~xmlhttprequest"),
