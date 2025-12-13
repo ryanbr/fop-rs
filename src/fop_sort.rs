@@ -434,6 +434,10 @@ fn combine_filters(
     domain_pattern: &Regex,
     separator: &str,
 ) -> Vec<String> {
+    // No combining needed for single filter
+    if uncombined.len() <= 1 {
+        return uncombined;
+    }
     let mut combined: Vec<String> = Vec::new();
 
     for i in 0..uncombined.len() {
