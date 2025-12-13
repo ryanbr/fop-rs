@@ -689,13 +689,13 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
         // [$path=/\/(dom|pro)/]rambler.ru##div[style^="order:"][style*="-1"]
         // AdGuard cosmetic rule modifiers - pass through unchanged
         if line.starts_with("[$") {
-            section.push(line.clone());
+            section.push(line);
             continue;
         }
 
         // Handle regex domain rules (uBO) - pass through unchanged
         if REGEX_ELEMENT_PATTERN.is_match(&line) {
-            section.push(line.clone());
+            section.push(line);
             continue;
         }
 
