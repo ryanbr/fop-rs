@@ -34,7 +34,9 @@ pub(crate) fn write_warning(message: &str) {
     let guard = WARNING_OUTPUT.lock().unwrap();
     if guard.is_some() {
         drop(guard);  // Release lock before acquiring buffer lock
-        WARNING_BUFFER.lock().unwrap().push(message.to_string());
+        if let Ok(mut buffer) = WARNING_BUFFER.lock() {
+            buffer.push(message.to_string());
+        }
     } else {
         eprintln!("{}", message);
     }
@@ -557,9 +559,9 @@ pub(crate) static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         // uBO/ABP specific
         "all", "badfilter", "important", "popunder", "empty", "cname",
         "inline-script", "removeparam", "redirect-rule",
-        "_____", "-----",
+        "_____", "-----", 
         // Adguard
-        "network", "content", "extension", "jsinject", "stealth",
+        "network", "content", "extension", "jsinject", "stealth", "cookie",
         // ABP rewrite resources
         "rewrite=abp-resource:1x1-transparent-gif",
         "rewrite=abp-resource:2x2-transparent-png",

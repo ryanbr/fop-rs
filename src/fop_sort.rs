@@ -555,9 +555,21 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
-    let input = File::open(filename)?;
+    let input = match File::open(filename) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Cannot open {}: {}", filename.display(), e);
+            return Ok(());
+        }
+    };
     let reader = BufReader::new(input);
-    let mut output = BufWriter::with_capacity(64 * 1024, File::create(&temp_file)?);
+    let mut output = match File::create(&temp_file) {
+        Ok(f) => BufWriter::with_capacity(64 * 1024, f),
+        Err(e) => {
+            eprintln!("Cannot create temp file for {}: {}", filename.display(), e);
+            return Ok(());
+        }
+    };
 
     let mut section: Vec<String> = Vec::with_capacity(800);
     let mut lines_checked: usize = 1;
@@ -781,6 +793,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
     } else {
         fs::remove_file(&temp_file)?;
     }
+
 
     Ok(())
 }
