@@ -32,7 +32,7 @@ pub const GIT: RepoDefinition = RepoDefinition {
     check_changes: &["status", "-s", "--untracked-files=no"],
     difference: &["diff"],
     commit: &["commit", "-a", "-m"],
-    pull: &["pull"],
+    pull: &["pull", "--rebase"],
     push: &["push"],
 };
 
