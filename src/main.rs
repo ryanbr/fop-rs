@@ -125,6 +125,8 @@ struct Args {
     create_pr: Option<String>,
     /// Fix cosmetic typos in all processed files
     fix_typos: bool,
+    /// Base branch for PR (default: auto-detect main/master)
+    git_pr_branch: Option<String>,
     /// Check typos in git additions before commit
     fix_typos_on_add: bool,
     /// Auto-fix without prompting (use with --fix-typos or --fix-typos-on-add)
@@ -141,8 +143,8 @@ struct Args {
 
 /// Load configuration from .fopconfig file
 fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Option<PathBuf>) {
-    // pre-allocated 18 .fopconfig settings + 4 future additions
-    let mut config = HashMap::with_capacity(22);
+    // pre-allocated config settings
+    let mut config = HashMap::with_capacity(28);
     
     // If custom path provided, use that only
     let config_path: Option<PathBuf> = if let Some(path) = custom_path {
@@ -265,6 +267,7 @@ impl Args {
             disable_domain_limit: parse_list(&config, "disable-domain-limit"),
             warning_output: config.get("warning-output").map(|s| PathBuf::from(s)),
             create_pr: config.get("create-pr").cloned(),
+            git_pr_branch: config.get("git-pr-branch").cloned(),
             fix_typos: parse_bool(&config, "fix-typos", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
             auto_fix: parse_bool(&config, "auto-fix", false),
@@ -330,6 +333,9 @@ impl Args {
                 _ if arg.starts_with("--create-pr=") => {
                     args.create_pr = Some(arg.trim_start_matches("--create-pr=").to_string());
                 }
+                _ if arg.starts_with("--git-pr-branch=") => {
+                    args.git_pr_branch = Some(arg.trim_start_matches("--git-pr-branch=").to_string());
+                }
                 "--fix-typos" => args.fix_typos = true,
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
@@ -380,6 +386,7 @@ impl Args {
         println!("        --warning-output=   Output warnings to file instead of stderr");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --create-pr[=TITLE]  Create PR branch instead of committing to master");
+        println!("        --git-pr-branch=NAME   Base branch for PR (default: main/master)");
         println!("        --fix-typos      Fix cosmetic rule typos in all files");
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
         println!("        --auto-fix           Auto-fix typos without prompting");
@@ -667,6 +674,7 @@ fn process_location(
     disable_domain_limit: &[String],
     sort_config: &SortConfig,
     create_pr: &Option<String>,
+    git_pr_branch: &Option<String>,
     fix_typos: bool,
     fix_typos_on_add: bool,
     auto_fix: bool,
@@ -816,7 +824,7 @@ fn process_location(
                     io::stdin().read_line(&mut msg).ok();
                     msg.trim().to_string()
                 };
-                create_pull_request(repo, &base_cmd, &message, no_color)?;
+                create_pull_request(repo, &base_cmd, &message, git_pr_branch, no_color)?;
             } else {
             commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, git_message)?;
         }
@@ -897,7 +905,7 @@ fn main() {
 
     // Process all locations
     for (i, location) in locations.iter().enumerate() {
-        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, args.fix_typos, args.fix_typos_on_add, args.auto_fix, &args.git_message) {
+        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_pr_branch, args.fix_typos, args.fix_typos_on_add, args.auto_fix, &args.git_message) {
             eprintln!("Error: {}", e);
         }
         // Print blank line between multiple directories (preserve original behavior)

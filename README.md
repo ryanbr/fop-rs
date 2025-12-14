@@ -97,6 +97,11 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--disable-domain-limit=` | Files to skip short domain check (comma-separated) |
 | `--warning-output=` | Output warnings to file instead of stderr |
 | `--git-message=` | Git commit message (skip interactive prompt) |
+| `--create-pr[=TITLE]` | Create PR branch instead of committing to current branch |
+| `--git-pr-branch=NAME` | Base branch for PR (default: auto-detect main/master) |
+| `--fix-typos` | Fix cosmetic rule typos in all files during sort |
+| `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
+| `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
 | `--config-file=` | Custom config file path |
 | `--show-config` | Show applied configuration and exit |
 | `-h, --help` | Show help message |
@@ -157,6 +162,21 @@ ignoredirs =
 
 # File extensions to process
 file-extensions = txt
+
+# Create PR branch instead of committing
+create-pr =
+
+# Base branch for PR (default: auto-detect)
+git-pr-branch =
+
+# Fix cosmetic typos during sort
+fix-typos = false
+
+# Check typos in git additions
+fix-typos-on-add = false
+
+# Auto-fix without prompting
+auto-fix = false
 ```
 
 Command line arguments override config file settings.

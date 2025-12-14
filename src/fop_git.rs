@@ -292,11 +292,44 @@ pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addi
     Some(added)
 }
 
+/// Get the default branch name (main, master, etc.)
+fn get_default_branch(base_cmd: &[String]) -> Option<String> {
+    // Try to get from remote HEAD
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
+        .output()
+        .ok()?;
+    
+    if output.status.success() {
+        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return branch.strip_prefix("origin/").map(|s| s.to_string());
+    }
+    
+    // Fallback: check if main or master exists
+    for branch in &["main", "master"] {
+        let status = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(["show-ref", "--verify", &format!("refs/heads/{}", branch)])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .ok()?;
+        
+        if status.success() {
+            return Some(branch.to_string());
+        }
+    }
+    
+    None
+}
+
 /// Create a pull request branch and return PR URL
 pub fn create_pull_request(
     repo: &RepoDefinition,
     base_cmd: &[String],
     message: &str,
+    pr_branch_override: &Option<String>,
     no_color: bool,
 ) -> io::Result<Option<String>> {
     // Show diff first
@@ -311,9 +344,15 @@ pub fn create_pull_request(
     println!("\nThe following changes will be included in the PR:");
     print_diff(&diff, no_color);
 
-    // Get current branch (base for PR)
-    let base_branch = get_current_branch(base_cmd)
+    // Get current branch (to return to later)
+    let current_branch = get_current_branch(base_cmd)
         .unwrap_or_else(|| "master".to_string());
+
+    // Get base branch for PR (user override > auto-detect > current)
+    let base_branch = pr_branch_override
+        .clone()
+        .or_else(|| get_default_branch(base_cmd))
+        .unwrap_or_else(|| current_branch.clone());
     
     // Create branch name with timestamp
     let timestamp = std::time::SystemTime::now()
@@ -342,7 +381,7 @@ pub fn create_pull_request(
         .status()?;
     if !status.success() {
         eprintln!("Failed to commit changes");
-        let _ = checkout_branch(base_cmd, &base_branch);
+        let _ = checkout_branch(base_cmd, &current_branch);
         return Ok(None);
     }
     
@@ -355,12 +394,12 @@ pub fn create_pull_request(
     if !status.success() {
         eprintln!("Failed to push branch {}", pr_branch);
         // Switch back to original branch
-        let _ = checkout_branch(base_cmd, &base_branch);
+        let _ = checkout_branch(base_cmd, &current_branch);
         return Ok(None);
     }
     
     // Switch back to original branch
-    let _ = checkout_branch(base_cmd, &base_branch);
+    let _ = checkout_branch(base_cmd, &current_branch);
     
     // Generate PR URL
     let pr_url = get_remote_url(base_cmd)
