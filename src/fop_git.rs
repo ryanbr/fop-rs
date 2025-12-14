@@ -248,6 +248,50 @@ fn checkout_branch(base_cmd: &[String], branch: &str) -> io::Result<bool> {
         .map(|s| s.success())
 }
 
+/// Get added lines from git diff
+pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addition>> {
+    use crate::fop_typos::Addition;
+    
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["diff", "--no-color", "-U0"])
+        .output()
+        .ok()?;
+    
+    let diff = String::from_utf8(output.stdout).ok()?;
+    let mut added = Vec::new();
+    let mut current_file = String::new();
+    let mut line_num: usize = 0;
+    
+    for line in diff.lines() {
+        if line.starts_with("+++ b/") {
+            current_file = line[6..].to_string();
+        } else if line.starts_with("@@ ") {
+            // Parse line number from @@ -x,y +n,m @@
+            if let Some(plus_pos) = line.find(" +") {
+                let rest = &line[plus_pos + 2..];
+                if let Some(end) = rest.find(|c| c == ',' || c == ' ') {
+                    line_num = rest[..end].parse().unwrap_or(0);
+                }
+            }
+        } else if line.starts_with('+') && !line.starts_with("+++") {
+            let content = line[1..].to_string();
+            if !content.is_empty() {
+                added.push(Addition {
+                    file: current_file.clone(),
+                    line_num,
+                    content,
+                });
+            }
+            line_num += 1;
+        } else if !line.starts_with('-') {
+            line_num += 1;
+        }
+    }
+    
+    Some(added)
+}
+
 /// Create a pull request branch and return PR URL
 pub fn create_pull_request(
     repo: &RepoDefinition,

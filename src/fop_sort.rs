@@ -23,10 +23,12 @@ use crate::{
     KNOWN_OPTIONS, IGNORE_DOMAINS, UBO_CONVERSIONS, write_warning,
 };
 
+use crate::fop_typos;
+
 /// Check if line is a TLD-only pattern (e.g. .com, ||.net^)
 /// Replaces regex: r"^(\|\||[|])?\.([a-z]{2,})\^?$"
 #[inline]
-fn is_tld_only(line: &str) -> bool {
+pub fn is_tld_only(line: &str) -> bool {
     let s = if line.starts_with("||") {
         &line[2..]
     } else if line.starts_with('|') {
@@ -54,6 +56,7 @@ pub struct SortConfig<'a> {
     pub keep_empty_lines: bool,
     pub ignore_dot_domains: bool,
     pub disable_domain_limit: bool,
+    pub fix_typos: bool,
 }
 
 // =============================================================================
@@ -719,7 +722,18 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
                 lines_checked += 1;
             }
 
-            let tidied = element_tidy(&domains, separator, selector);
+            let mut tidied = element_tidy(&domains, separator, selector);
+            
+            // Fix typos if enabled
+            if config.fix_typos {
+                let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
+                if !fixes.is_empty() {
+                    write_warning(&format!(
+                        "Fixed typo: {} ? {} ({})", tidied, fixed, fixes.join(", ")
+                    ));
+                    tidied = fixed;
+                }
+            }
             section.push(tidied);
             continue;
         }

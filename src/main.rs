@@ -11,6 +11,7 @@
 
 mod fop_sort;
 mod fop_git;
+mod fop_typos;
 
 #[cfg(test)]
 mod tests;
@@ -71,7 +72,7 @@ use rayon::prelude::*;
 
 use fop_sort::{fop_sort, SortConfig};
 use fop_git::{RepoDefinition, REPO_TYPES, build_base_command, check_repo_changes,
-              commit_changes, create_pull_request, git_available};
+              commit_changes, create_pull_request, git_available, get_added_lines};
 
 // FOP version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -122,6 +123,12 @@ struct Args {
     warning_output: Option<PathBuf>,
     /// Create PR branch instead of committing to master (optional: PR title)
     create_pr: Option<String>,
+    /// Fix cosmetic typos in all processed files
+    fix_typos: bool,
+    /// Check typos in git additions before commit
+    fix_typos_on_add: bool,
+    /// Auto-fix without prompting (use with --fix-typos or --fix-typos-on-add)
+    auto_fix: bool,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
     /// Show applied configuration
@@ -258,6 +265,9 @@ impl Args {
             disable_domain_limit: parse_list(&config, "disable-domain-limit"),
             warning_output: config.get("warning-output").map(|s| PathBuf::from(s)),
             create_pr: config.get("create-pr").cloned(),
+            fix_typos: parse_bool(&config, "fix-typos", false),
+            fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
+            auto_fix: parse_bool(&config, "auto-fix", false),
             help: false,
             version: false,
         };
@@ -320,6 +330,9 @@ impl Args {
                 _ if arg.starts_with("--create-pr=") => {
                     args.create_pr = Some(arg.trim_start_matches("--create-pr=").to_string());
                 }
+                "--fix-typos" => args.fix_typos = true,
+                "--fix-typos-on-add" => args.fix_typos_on_add = true,
+                "--auto-fix" => args.auto_fix = true,
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
                 }
@@ -367,6 +380,9 @@ impl Args {
         println!("        --warning-output=   Output warnings to file instead of stderr");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --create-pr[=TITLE]  Create PR branch instead of committing to master");
+        println!("        --fix-typos      Fix cosmetic rule typos in all files");
+        println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
+        println!("        --auto-fix           Auto-fix typos without prompting");
         println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
@@ -651,6 +667,9 @@ fn process_location(
     disable_domain_limit: &[String],
     sort_config: &SortConfig,
     create_pr: &Option<String>,
+    fix_typos: bool,
+    fix_typos_on_add: bool,
+    auto_fix: bool,
     git_message: &Option<String>,
 ) -> io::Result<()> {
     if !location.is_dir() {
@@ -737,6 +756,7 @@ fn process_location(
             keep_empty_lines: sort_config.keep_empty_lines,
             ignore_dot_domains: sort_config.ignore_dot_domains,
             disable_domain_limit: skip_domain_limit,
+            fix_typos,
         };
         if let Err(e) = fop_sort(entry.path(), &config) {
             eprintln!("Error processing {}: {}", entry.path().display(), e);
@@ -761,6 +781,30 @@ fn process_location(
                 eprintln!("Error: git not found in PATH");
                 return Ok(());
             }
+
+            // Check for typos in added lines
+            if fix_typos_on_add {
+                if let Some(additions) = get_added_lines(&base_cmd) {
+                    let typos = fop_typos::check_additions(&additions);
+                    if !typos.is_empty() {
+                        fop_typos::report_addition_typos(&typos, no_color);
+                        println!("\nFound {} typo(s) in added lines.", typos.len());
+                        if !auto_fix {
+                            print!("Continue with commit? (y/N): ");
+                            io::stdout().flush().ok();
+                            let mut input = String::new();
+                            io::stdin().read_line(&mut input).ok();
+                            if input.trim().to_lowercase() != "y" {
+                                println!("Commit aborted. Fix typos and try again.");
+                                return Ok(());
+                            }
+                        } else {
+                            println!("Auto-fix enabled, continuing...");
+                        }
+                    }
+                }
+            }
+
             if let Some(pr_title) = create_pr {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
@@ -834,6 +878,7 @@ fn main() {
         keep_empty_lines: args.keep_empty_lines,
         ignore_dot_domains: args.ignore_dot_domains,
         disable_domain_limit: false,  // Set per-file in process_location
+        fix_typos: args.fix_typos,
     };
 
     // Build list of locations to process
@@ -852,7 +897,7 @@ fn main() {
 
     // Process all locations
     for (i, location) in locations.iter().enumerate() {
-        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_message) {
+        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, args.fix_typos, args.fix_typos_on_add, args.auto_fix, &args.git_message) {
             eprintln!("Error: {}", e);
         }
         // Print blank line between multiple directories (preserve original behavior)

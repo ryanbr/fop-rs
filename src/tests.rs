@@ -8,9 +8,11 @@
 //! Rust port maintains GPL-3.0 license compatibility.
 
 use crate::{
-    valid_url, check_comment,
-    TLD_ONLY_PATTERN, LOCALHOST_PATTERN,
+    LOCALHOST_PATTERN,
 };
+
+use crate::fop_git::{valid_url, check_comment};
+use crate::fop_sort::is_tld_only;
 
 use crate::fop_sort::{
     convert_ubo_options, sort_domains, remove_unnecessary_wildcards, filter_tidy,
@@ -30,11 +32,11 @@ fn test_valid_url() {
 }
 
 #[test]
-fn test_tld_only_pattern() {
-    assert!(TLD_ONLY_PATTERN.is_match("||.org^"));
-    assert!(TLD_ONLY_PATTERN.is_match(".com"));
-    assert!(TLD_ONLY_PATTERN.is_match("|.net^"));
-    assert!(!TLD_ONLY_PATTERN.is_match("||example.org^"));
+fn test_tld_only() {
+    assert!(is_tld_only("||.org^"));
+    assert!(is_tld_only(".com"));
+    assert!(is_tld_only("|.net^"));
+    assert!(!is_tld_only("||example.org^"));
 }
 
 #[test]
