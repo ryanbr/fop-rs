@@ -57,6 +57,7 @@ pub struct SortConfig<'a> {
     pub ignore_dot_domains: bool,
     pub disable_domain_limit: bool,
     pub fix_typos: bool,
+    pub quiet: bool,
 }
 
 // =============================================================================
@@ -807,7 +808,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
             fs::copy(filename, &backup_file)?;
         }
         fs::rename(&temp_file, filename)?;
-        println!("Sorted: {}", filename.display());
+        if !config.quiet {
+            println!("Sorted: {}", filename.display());
+        }
     } else {
         fs::remove_file(&temp_file)?;
     }

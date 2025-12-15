@@ -131,6 +131,8 @@ struct Args {
     fix_typos_on_add: bool,
     /// Auto-fix without prompting (use with --fix-typos or --fix-typos-on-add)
     auto_fix: bool,
+    /// Suppress most output (for CI)
+    quiet: bool,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
     /// Show applied configuration
@@ -270,6 +272,7 @@ impl Args {
             git_pr_branch: config.get("git-pr-branch").cloned(),
             fix_typos: parse_bool(&config, "fix-typos", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
+            quiet: parse_bool(&config, "quiet", false),
             auto_fix: parse_bool(&config, "auto-fix", false),
             help: false,
             version: false,
@@ -339,6 +342,7 @@ impl Args {
                 "--fix-typos" => args.fix_typos = true,
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
+                "--quiet" | "-q" => args.quiet = true,
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
                 }
@@ -390,6 +394,7 @@ impl Args {
         println!("        --fix-typos      Fix cosmetic rule typos in all files");
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
         println!("        --auto-fix           Auto-fix typos without prompting");
+        println!("    -q, --quiet                Suppress most output (for CI)");
         println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
@@ -678,6 +683,7 @@ fn process_location(
     fix_typos: bool,
     fix_typos_on_add: bool,
     auto_fix: bool,
+    quiet: bool,
     git_message: &Option<String>,
 ) -> io::Result<()> {
     if !location.is_dir() {
@@ -711,7 +717,9 @@ fn process_location(
         (None, false)
     };
 
-    println!("\nPrimary location: {}", location.display());
+    if !quiet {
+        println!("\nPrimary location: {}", location.display());
+    }
 
     // Collect directories and files
     let entries: Vec<_> = WalkDir::new(location)
@@ -730,7 +738,9 @@ fn process_location(
     for entry in &entries {
         let path = entry.path();
         if path.is_dir() {
-            println!("Current directory: {}", path.display());
+            if !quiet {
+                println!("Current directory: {}", path.display());
+            }
         }
     }
 
@@ -765,6 +775,7 @@ fn process_location(
             ignore_dot_domains: sort_config.ignore_dot_domains,
             disable_domain_limit: skip_domain_limit,
             fix_typos,
+            quiet,
         };
         if let Err(e) = fop_sort(entry.path(), &config) {
             eprintln!("Error processing {}: {}", entry.path().display(), e);
@@ -824,9 +835,9 @@ fn process_location(
                     io::stdin().read_line(&mut msg).ok();
                     msg.trim().to_string()
                 };
-                create_pull_request(repo, &base_cmd, &message, git_pr_branch, no_color)?;
+                create_pull_request(repo, &base_cmd, &message, git_pr_branch, quiet, no_color)?;
             } else {
-            commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, git_message)?;
+                commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, git_message)?;
         }
         }
     }
@@ -866,7 +877,9 @@ fn main() {
         return;
     }
 
-    print_greeting(args.no_commit, config_path.as_deref());
+    if !args.quiet {
+        print_greeting(args.no_commit, config_path.as_deref());
+    }
 
     // Set warning output path
     if let Some(ref path) = args.warning_output {
@@ -887,6 +900,7 @@ fn main() {
         ignore_dot_domains: args.ignore_dot_domains,
         disable_domain_limit: false,  // Set per-file in process_location
         fix_typos: args.fix_typos,
+        quiet: args.quiet
     };
 
     // Build list of locations to process
@@ -905,7 +919,7 @@ fn main() {
 
     // Process all locations
     for (i, location) in locations.iter().enumerate() {
-        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_pr_branch, args.fix_typos, args.fix_typos_on_add, args.auto_fix, &args.git_message) {
+        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_pr_branch, args.fix_typos, args.fix_typos_on_add, args.auto_fix, args.quiet, &args.git_message) {
             eprintln!("Error: {}", e);
         }
         // Print blank line between multiple directories (preserve original behavior)

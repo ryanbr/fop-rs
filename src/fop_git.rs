@@ -330,6 +330,7 @@ pub fn create_pull_request(
     base_cmd: &[String],
     message: &str,
     pr_branch_override: &Option<String>,
+    quiet: bool,
     no_color: bool,
 ) -> io::Result<Option<String>> {
     // Show diff first
@@ -341,8 +342,10 @@ pub fn create_pull_request(
         }
     };
 
-    println!("\nThe following changes will be included in the PR:");
-    print_diff(&diff, no_color);
+    if !quiet {
+        println!("\nThe following changes will be included in the PR:");
+        print_diff(&diff, no_color);
+    }
 
     // Get current branch (to return to later)
     let current_branch = get_current_branch(base_cmd)
@@ -361,12 +364,19 @@ pub fn create_pull_request(
         .unwrap_or(0);
     let pr_branch = format!("fop-update-{}", timestamp);
     
-    println!("\nCreating PR branch '{}'...", pr_branch);
+    if !quiet {
+        println!("\nCreating PR branch '{}'...", pr_branch);
+    }
     
     // Create and checkout new branch
-    let status = Command::new(&base_cmd[0])
+    let mut cmd = Command::new(&base_cmd[0]);
+    cmd.args(&base_cmd[1..])
+        .args(["checkout", "-b", &pr_branch]);
+    if quiet {
+        cmd.arg("--quiet");
+    }
+    let status = cmd
         .args(&base_cmd[1..])
-        .args(["checkout", "-b", &pr_branch])
         .status()?;
     if !status.success() {
         eprintln!("Failed to create branch {}", pr_branch);
@@ -386,11 +396,16 @@ pub fn create_pull_request(
     }
     
     // Push branch
-    println!("Pushing branch to origin...");
-    let status = Command::new(&base_cmd[0])
-        .args(&base_cmd[1..])
-        .args(["push", "-u", "origin", &pr_branch])
-        .status()?;
+    if !quiet {
+        println!("Pushing branch to origin...");
+    }
+    let mut cmd = Command::new(&base_cmd[0]);
+    cmd.args(&base_cmd[1..])
+        .args(["push", "-u", "origin", &pr_branch]);
+    if quiet {
+        cmd.arg("--quiet");
+    }
+    let status = cmd.status()?;
     if !status.success() {
         eprintln!("Failed to push branch {}", pr_branch);
         // Switch back to original branch
@@ -427,6 +442,7 @@ pub fn commit_changes(
     no_msg_check: bool,
     no_color: bool,
     no_large_warning: bool,
+    quiet: bool,
     git_message: &Option<String>,
 ) -> io::Result<()> {
     let diff = match get_diff(base_cmd, repo) {
@@ -437,8 +453,10 @@ pub fn commit_changes(
         }
     };
 
-    println!("\nThe following changes have been recorded by the repository:");
-    print_diff(&diff, no_color);
+    if !quiet {
+        println!("\nThe following changes have been recorded by the repository:");
+        print_diff(&diff, no_color);
+    }
 
     // If git message provided via CLI, use it directly
     if let Some(message) = git_message {
@@ -451,7 +469,9 @@ pub fn commit_changes(
             return Ok(());
         }
         
-        println!("Committing with message: {}", message);
+        if !quiet {
+            println!("Committing with message: {}", message);
+        }
         
         Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
@@ -461,17 +481,21 @@ pub fn commit_changes(
         
         // Pull and push
         for op in [repo.pull, repo.push].iter() {
-            let _ = Command::new(&base_cmd[0])
-                .args(&base_cmd[1..])
-                .args(*op)
-                .status();
+            let mut cmd = Command::new(&base_cmd[0]);
+            cmd.args(&base_cmd[1..]).args(*op);
+            if quiet {
+                cmd.arg("--quiet");
+            }
+            let _ = cmd.status();
         }
         
+        if !quiet {
             if no_color {
                 println!("Completed commit process successfully.");
             } else {
                 println!("{}", "Completed commit process successfully.".green().bold());
             }
+        }
         return Ok(());
     }
 
@@ -536,21 +560,33 @@ pub fn commit_changes(
             }
 
             // Pull and push
-            if no_color {
-                println!("\nConnecting to server. Please enter your password if required.");
-            } else {
-                println!("\n{}", "Connecting to server. Please enter your password if required.".magenta());
+            if !quiet {
+                if no_color {
+                    println!("\nConnecting to server. Please enter your password if required.");
+                } else {
+                    println!("\n{}", "Connecting to server. Please enter your password if required.".magenta());
+                }
             }
 
             for op in [repo.pull, repo.push].iter() {
-                let _ = Command::new(&base_cmd[0])
-                    .args(&base_cmd[1..])
-                    .args(*op)
-                    .status();
-                println!();
+                let mut cmd = Command::new(&base_cmd[0]);
+                cmd.args(&base_cmd[1..]).args(*op);
+                if quiet {
+                    cmd.arg("--quiet");
+                }
+                let _ = cmd.status();
+                if !quiet {
+                    println!();
+                }
             }
 
-            println!("Completed commit process successfully.");
+            if !quiet {
+                if no_color {
+                    println!("Completed commit process successfully.");
+                } else {
+                    println!("{}", "Completed commit process successfully.".green().bold());
+                }
+            }
             return Ok(());
         }
         println!();
