@@ -467,14 +467,23 @@ pub fn commit_changes(
                 .status();
         }
         
-        println!("Completed commit process successfully.");
+            if no_color {
+                println!("Completed commit process successfully.");
+            } else {
+                println!("{}", "Completed commit process successfully.".green().bold());
+            }
         return Ok(());
     }
 
     // Check for large changes
     if !no_large_warning && !original_difference && is_large_change(&diff) {
-        println!("\nThis is a large change. Are you sure you want to proceed?");
-        print!("Please type 'YES' to continue: ");
+        if no_color {
+            println!("\nThis is a large change. Are you sure you want to proceed?");
+            print!("Please type 'YES' to continue: ");
+        } else {
+            println!("\n{}", "This is a large change. Are you sure you want to proceed?".yellow());
+            print!("{}", "Please type 'YES' to continue: ".white().bold());
+        }
         io::stdout().flush()?;
 
         let mut input = String::new();
@@ -488,7 +497,11 @@ pub fn commit_changes(
 
     // Get commit comment
     loop {
-        print!("Please enter a valid commit comment or quit:\n");
+        if no_color {
+            print!("Please enter a valid commit comment or quit:\n");
+        } else {
+            println!("{}", "Please enter a valid commit comment or quit:".white().bold());
+        }
         io::stdout().flush()?;
 
         let mut comment = String::new();
@@ -504,7 +517,11 @@ pub fn commit_changes(
         }
 
         if no_msg_check || check_comment(comment, original_difference) {
-            println!("Comment \"{}\" accepted.", comment);
+            if no_color {
+                println!("Comment \"{}\" accepted.", comment);
+            } else {
+                println!("{} \"{}\" {}", "Comment".green(), comment.cyan(), "accepted.".green());
+            }
 
             // Execute commit
             let status = Command::new(&base_cmd[0])
@@ -519,7 +536,11 @@ pub fn commit_changes(
             }
 
             // Pull and push
-            println!("\nConnecting to server. Please enter your password if required.");
+            if no_color {
+                println!("\nConnecting to server. Please enter your password if required.");
+            } else {
+                println!("\n{}", "Connecting to server. Please enter your password if required.".magenta());
+            }
 
             for op in [repo.pull, repo.push].iter() {
                 let _ = Command::new(&base_cmd[0])
