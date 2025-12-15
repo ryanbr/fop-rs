@@ -917,6 +917,93 @@ fn main() {
         unique
     };
 
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use rayon::prelude::*;
+
+    // Standalone typo scan and fix mode
+    if args.fix_typos {
+        let total_typos = AtomicUsize::new(0);
+        let files_with_typos = AtomicUsize::new(0);
+        
+        for location in &locations {
+            let entries: Vec<_> = WalkDir::new(location)
+                .into_iter()
+                .filter_entry(|e| {
+                    let name = e.file_name().to_string_lossy();
+                    !name.starts_with('.')
+                        && (args.disable_ignored || !IGNORE_DIRS.contains(&name.as_ref()))
+                        && !should_ignore_dir(e.path(), &args.ignore_dirs)
+                })
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    if !e.path().is_file() {
+                        return false;
+                    }
+                    let ext = e.path().extension()
+                        .and_then(|ext| ext.to_str())
+                        .unwrap_or("");
+                    let filename = e.path().file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+                    args.file_extensions.iter().any(|fe| fe == ext)
+                        && !should_ignore_file(filename, &args.ignore_files)
+                })
+                .collect();
+            
+            entries.par_iter().for_each(|entry| {
+                let path = entry.path();
+                if let Ok(content) = fs::read_to_string(path) {
+                    // Skip files without cosmetic rules
+                    if !content.contains('#') {
+                        return;
+                    }
+
+                    let mut file_modified = false;
+                    let mut file_typo_count = 0;
+                    let mut new_lines = Vec::with_capacity(content.lines().count());
+                    
+                    for (line_num, line) in content.lines().enumerate() {
+                        let (fixed, fixes) = fop_typos::fix_all_typos(line);
+                        if !fixes.is_empty() {
+                            file_typo_count += 1;
+                            file_modified = true;
+                            if !args.quiet {
+                                println!("{}:{}: {} ? {} ({})", 
+                                    path.display(),
+                                    line_num + 1,
+                                    line, 
+                                    fixed,
+                                    fixes.join(", ")
+                                );
+                            }
+                            new_lines.push(fixed);
+                        } else {
+                            new_lines.push(line.to_string());
+                        }
+                    }
+                    
+                    if file_modified {
+                        if let Err(e) = fs::write(path, new_lines.join("\n") + "\n") {
+                            eprintln!("Error writing {}: {}", path.display(), e);
+                        }
+                        total_typos.fetch_add(file_typo_count, Ordering::Relaxed);
+                        files_with_typos.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            });
+        }
+        
+        if !args.quiet {
+            let total = total_typos.load(Ordering::Relaxed);
+            let files = files_with_typos.load(Ordering::Relaxed);
+            if total > 0 {
+                println!("\nFixed {} typo(s) in {} file(s)", total, files);
+            } else {
+                println!("\nNo typos found");
+            }
+        }
+    }
+
     // Process all locations
     for (i, location) in locations.iter().enumerate() {
         if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_pr_branch, args.fix_typos, args.fix_typos_on_add, args.auto_fix, args.quiet, &args.git_message) {
