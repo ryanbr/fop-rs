@@ -131,6 +131,8 @@ struct Args {
     fix_typos_on_add: bool,
     /// Auto-fix without prompting (use with --fix-typos or --fix-typos-on-add)
     auto_fix: bool,
+    /// Output changes as diff file (no actual changes made)
+    output_diff: Option<PathBuf>,
     /// Suppress most output (for CI)
     quiet: bool,
     /// Git commit message (skip interactive prompt)
@@ -274,6 +276,7 @@ impl Args {
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
             quiet: parse_bool(&config, "quiet", false),
             auto_fix: parse_bool(&config, "auto-fix", false),
+            output_diff: config.get("output-diff").map(PathBuf::from),
             help: false,
             version: false,
         };
@@ -343,6 +346,9 @@ impl Args {
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
                 "--quiet" | "-q" => args.quiet = true,
+                _ if arg.starts_with("--output-diff=") => {
+                    args.output_diff = Some(PathBuf::from(arg.trim_start_matches("--output-diff=")));
+                }
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
                 }
@@ -395,6 +401,7 @@ impl Args {
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("    -q, --quiet                Suppress most output (for CI)");
+        println!("        --output-diff=FILE     Output changes as diff (no files modified)");
         println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
@@ -684,6 +691,7 @@ fn process_location(
     fix_typos_on_add: bool,
     auto_fix: bool,
     quiet: bool,
+    diff_output: &std::sync::Mutex<Vec<String>>,
     git_message: &Option<String>,
 ) -> io::Result<()> {
     if !location.is_dir() {
@@ -776,9 +784,16 @@ fn process_location(
             disable_domain_limit: skip_domain_limit,
             fix_typos,
             quiet,
+            dry_run: sort_config.dry_run,
         };
-        if let Err(e) = fop_sort(entry.path(), &config) {
-            eprintln!("Error processing {}: {}", entry.path().display(), e);
+
+        match fop_sort(entry.path(), &config) {
+            Ok(Some(diff)) => {
+                // Collect diff for dry-run mode
+                diff_output.lock().unwrap().push(diff);
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("Error processing {}: {}", entry.path().display(), e),
         }
     });
 
@@ -900,8 +915,11 @@ fn main() {
         ignore_dot_domains: args.ignore_dot_domains,
         disable_domain_limit: false,  // Set per-file in process_location
         fix_typos: args.fix_typos,
-        quiet: args.quiet
+        quiet: args.quiet,
+        dry_run: args.output_diff.is_some()
     };
+
+    let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
     // Build list of locations to process
     let locations: Vec<PathBuf> = if args.directories.is_empty() {
@@ -1006,7 +1024,7 @@ fn main() {
 
     // Process all locations
     for (i, location) in locations.iter().enumerate() {
-        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_pr_branch, args.fix_typos, args.fix_typos_on_add, args.auto_fix, args.quiet, &args.git_message) {
+        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_pr_branch, args.fix_typos, args.fix_typos_on_add, args.auto_fix, args.quiet, &diff_output, &args.git_message) {
             eprintln!("Error: {}", e);
         }
         // Print blank line between multiple directories (preserve original behavior)
@@ -1014,6 +1032,17 @@ fn main() {
             println!();
         }
     }
+    
+    // Write collected diffs if --output-diff specified
+    if let Some(ref diff_path) = args.output_diff {
+        let diffs = diff_output.lock().unwrap();
+        if let Err(e) = fs::write(diff_path, diffs.join("\n")) {
+            eprintln!("Error writing diff file: {}", e);
+        } else if !args.quiet && !diffs.is_empty() {
+            println!("Diff written to: {}", diff_path.display());
+        }
+    }
+
     // Flush any buffered warnings to file
     flush_warnings();
 }

@@ -58,6 +58,7 @@ pub struct SortConfig<'a> {
     pub disable_domain_limit: bool,
     pub fix_typos: bool,
     pub quiet: bool,
+    pub dry_run: bool,
 }
 
 // =============================================================================
@@ -559,7 +560,7 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
-pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
+pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<String>> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
@@ -567,7 +568,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Cannot open {}: {}", filename.display(), e);
-            return Ok(());
+            return Ok(None);
         }
     };
     let reader = BufReader::new(input);
@@ -575,7 +576,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
         Ok(f) => BufWriter::with_capacity(64 * 1024, f),
         Err(e) => {
             eprintln!("Cannot create temp file for {}: {}", filename.display(), e);
-            return Ok(());
+            return Ok(None);
         }
     };
 
@@ -802,19 +803,33 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<()> {
     let new_content = fs::read(&temp_file)?;
 
     if original_content != new_content {
-        // Create backup if requested
-        if config.backup {
-            let backup_file = filename.with_extension("backup");
-            fs::copy(filename, &backup_file)?;
-        }
-        fs::rename(&temp_file, filename)?;
-        if !config.quiet {
-            println!("Sorted: {}", filename.display());
+        if config.dry_run {
+            // Generate unified diff
+            let original_str = String::from_utf8_lossy(&original_content);
+            let new_str = String::from_utf8_lossy(&new_content);
+            
+            let diff = similar::TextDiff::from_lines(&*original_str, &*new_str)
+                .unified_diff()
+                .header(&format!("a/{}", filename.display()), &format!("b/{}", filename.display()))
+                .to_string();
+            
+            fs::remove_file(&temp_file)?;
+            return Ok(Some(diff));
+        } else {
+            // Create backup if requested
+            if config.backup {
+                let backup_file = filename.with_extension("backup");
+                fs::copy(filename, &backup_file)?;
+            }
+            fs::rename(&temp_file, filename)?;
+            if !config.quiet {
+                println!("Sorted: {}", filename.display());
+            }
         }
     } else {
         fs::remove_file(&temp_file)?;
     }
 
 
-    Ok(())
+    Ok(None)
 }

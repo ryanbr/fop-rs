@@ -102,6 +102,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--fix-typos` | Fix cosmetic rule typos in all files during sort |
 | `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
 | `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
+| `--output-diff=FILE` | Output changes as diff (no files modified) | 
 | `--quiet` | Limit console output, less verbose |
 | `--config-file=` | Custom config file path |
 | `--show-config` | Show applied configuration and exit |
