@@ -232,18 +232,26 @@ fn parse_comment_chars(config: &HashMap<String, String>, key: &str) -> Vec<Strin
 
 impl Args {
     fn parse() -> (Self, Option<String>) {
-        // First pass: look for --config-file argument
+        // First pass: look for --ignore-config and --config-file arguments
+        let ignore_config = env::args().any(|arg| arg == "--ignore-config");
+
         let mut config_file: Option<PathBuf> = None;
-        for arg in env::args().skip(1) {
-            if arg.starts_with("--config-file=") {
-                let path = arg.trim_start_matches("--config-file=");
-                config_file = Some(PathBuf::from(path));
-                break;
+        if !ignore_config {
+            for arg in env::args().skip(1) {
+                if arg.starts_with("--config-file=") {
+                    let path = arg.trim_start_matches("--config-file=");
+                    config_file = Some(PathBuf::from(path));
+                    break;
+                }
             }
         }
         
         // Load config file and track path
-        let (config, found_config_path) = load_config(config_file.as_ref());
+        let (config, found_config_path) = if ignore_config {
+            (HashMap::new(), None)
+        } else {
+            load_config(config_file.as_ref())
+        };
         // Store for --show-config
         let config_path_str = found_config_path.as_ref().map(|p| p.display().to_string());
         
@@ -345,6 +353,7 @@ impl Args {
                 "--fix-typos" => args.fix_typos = true,
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
+                "--ignore-config" => {}  // Already handled early
                 "--quiet" | "-q" => args.quiet = true,
                 _ if arg.starts_with("--output-diff=") => {
                     args.output_diff = Some(PathBuf::from(arg.trim_start_matches("--output-diff=")));
@@ -402,6 +411,7 @@ impl Args {
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("    -q, --quiet                Suppress most output (for CI)");
         println!("        --output-diff=FILE     Output changes as diff (no files modified)");
+        println!("        --ignore-config        Ignore .fopconfig file");
         println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
