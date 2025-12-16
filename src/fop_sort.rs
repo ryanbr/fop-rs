@@ -564,6 +564,12 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
 
+    // Skip empty or tiny files
+    let metadata = fs::metadata(filename)?;
+    if metadata.len() < 3 {
+        return Ok(None);
+    }
+
     let input = match File::open(filename) {
         Ok(f) => f,
         Err(e) => {
@@ -636,7 +642,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         } else {
             // Sort blocking rules (unless no_sort)
             if !no_sort {
-                unique.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                unique.sort_by_cached_key(|s| s.to_lowercase());
             }
             let combined = combine_filters(unique, &FILTER_DOMAIN_PATTERN, "|");
             for filter in combined {
