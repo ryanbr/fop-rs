@@ -135,6 +135,8 @@ struct Args {
     output_diff: Option<PathBuf>,
     /// Suppress most output (for CI)
     quiet: bool,
+    /// Process a single file instead of directory
+    check_file: Option<PathBuf>,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
     /// Show applied configuration
@@ -285,6 +287,7 @@ impl Args {
             quiet: parse_bool(&config, "quiet", false),
             auto_fix: parse_bool(&config, "auto-fix", false),
             output_diff: config.get("output-diff").map(PathBuf::from),
+            check_file: None,
             help: false,
             version: false,
         };
@@ -354,6 +357,9 @@ impl Args {
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
                 "--ignore-config" => {}  // Already handled early
+                _ if arg.starts_with("--check-file=") => {
+                    args.check_file = Some(PathBuf::from(arg.trim_start_matches("--check-file=")));
+                }
                 "--quiet" | "-q" => args.quiet = true,
                 _ if arg.starts_with("--output-diff=") => {
                     args.output_diff = Some(PathBuf::from(arg.trim_start_matches("--output-diff=")));
@@ -410,6 +416,7 @@ impl Args {
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("    -q, --quiet                Suppress most output (for CI)");
+        println!("        --check-file=FILE      Process a single file");
         println!("        --output-diff=FILE     Output changes as diff (no files modified)");
         println!("        --ignore-config        Ignore .fopconfig file");
         println!("        --show-config   Show applied configuration and exit");
@@ -1030,6 +1037,46 @@ fn main() {
                 println!("\nNo typos found");
             }
         }
+    }
+
+    // Process single file if --check-file specified
+    if let Some(ref file_path) = args.check_file {
+        if !file_path.is_file() {
+            eprintln!("{} does not exist or is not a file.", file_path.display());
+            return;
+        }
+        
+        if !args.quiet {
+            println!("Processing file: {}", file_path.display());
+        }
+        
+        match fop_sort::fop_sort(file_path, &sort_config) {
+            Ok(Some(diff)) => {
+                diff_output.lock().unwrap().push(diff);
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("Error processing {}: {}", file_path.display(), e),
+        }
+       
+        // Handle git commit (unless no_commit mode)
+        if !args.no_commit {
+            let parent = file_path.parent().unwrap_or(std::path::Path::new("."));
+            if let Some(repo) = REPO_TYPES.iter().find(|r| parent.join(r.directory).is_dir()) {
+                let base_cmd: Vec<String> = repo.base_command.iter().map(|s| s.to_string()).collect();
+                if let Err(e) = fop_git::commit_changes(repo, &base_cmd, false, args.no_msg_check, args.no_color, args.no_large_warning, args.quiet, &args.git_message) {
+                    eprintln!("Git error: {}", e);
+                }
+            }
+        }
+        
+        // Write diff if requested
+        if let Some(ref diff_path) = args.output_diff {
+            let diffs = diff_output.lock().unwrap();
+            if let Err(e) = fs::write(diff_path, diffs.join("\n")) {
+                eprintln!("Error writing diff file: {}", e);
+            }
+        }
+        return;
     }
 
     // Process all locations
