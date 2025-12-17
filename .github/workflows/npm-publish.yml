@@ -73,10 +73,10 @@ jobs:
           RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
 
-          # Linux ARM64
+          # Linux ARM64 - optimized for Neoverse N1+ (Graviton2+, Ampere Altra, Cortex-A76+)
           rustup target add aarch64-unknown-linux-gnu
-          cargo zigbuild --release --target aarch64-unknown-linux-gnu
-          cp target/aarch64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-arm64"
+          RUSTFLAGS="-C target-cpu=neoverse-n1" cargo zigbuild --release --target aarch64-unknown-linux-gnu
+          cp target/aarch64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-arm64-n1"
 
       - name: Upload Linux/Windows artifacts
         uses: actions/upload-artifact@v4
@@ -106,8 +106,10 @@ jobs:
       - name: Build Windows ARM64
         run: |
           $VERSION = "${{ needs.build-linux-windows.outputs.version }}"
+          # Optimized for Snapdragon 8cx Gen 3+ / Cortex-A78+
+          $env:RUSTFLAGS="-C target-cpu=cortex-a78"
           cargo build --release --target aarch64-pc-windows-msvc
-          Copy-Item "target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64.exe"
+          Copy-Item "target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64-v2.exe"
 
       - name: Upload Windows ARM artifact
         uses: actions/upload-artifact@v4
