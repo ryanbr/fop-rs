@@ -28,8 +28,10 @@ jobs:
           sudo apt-get install -y gcc-mingw-w64-x86-64
           rustup target add x86_64-pc-windows-gnu
         
-      - name: Install cross for ARM builds
-        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Install zigbuild for ARM builds
+        run: |
+          sudo snap install zig --classic --beta
+          cargo install cargo-zigbuild
 
       - name: Configure git
         run: |
@@ -72,7 +74,8 @@ jobs:
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
 
           # Linux ARM64
-          cross build --release --target aarch64-unknown-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+          cargo zigbuild --release --target aarch64-unknown-linux-gnu
           cp target/aarch64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-arm64"
 
       - name: Upload Linux/Windows artifacts
