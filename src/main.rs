@@ -1003,7 +1003,9 @@ fn main() {
                             file_typo_count += 1;
                             file_modified = true;
                             if !args.quiet {
-                                println!("{}:{}: {} ? {} ({})", 
+                                let _ = writeln!(
+                                    std::io::stdout().lock(),
+                                    "{}:{}: {} ? {} ({})",  
                                     path.display(),
                                     line_num + 1,
                                     line, 

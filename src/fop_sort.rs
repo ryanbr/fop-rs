@@ -829,7 +829,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             }
             fs::rename(&temp_file, filename)?;
             if !config.quiet {
-                println!("Sorted: {}", filename.display());
+                let _ = writeln!(std::io::stdout().lock(), "Sorted: {}", filename.display());
             }
         }
     } else {
