@@ -1062,7 +1062,7 @@ fn main() {
         if !args.no_commit {
             let parent = file_path.parent().unwrap_or(std::path::Path::new("."));
             if let Some(repo) = REPO_TYPES.iter().find(|r| parent.join(r.directory).is_dir()) {
-                let base_cmd: Vec<String> = repo.base_command.iter().map(|s| s.to_string()).collect();
+                let base_cmd = fop_git::build_base_command(repo, parent);
                 if let Err(e) = fop_git::commit_changes(repo, &base_cmd, false, args.no_msg_check, args.no_color, args.no_large_warning, args.quiet, &args.git_message) {
                     eprintln!("Git error: {}", e);
                 }

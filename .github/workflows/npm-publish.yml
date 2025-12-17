@@ -28,6 +28,9 @@ jobs:
           sudo apt-get install -y gcc-mingw-w64-x86-64
           rustup target add x86_64-pc-windows-gnu
         
+      - name: Install cross for ARM builds
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -68,6 +71,10 @@ jobs:
           RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
 
+          # Linux ARM64
+          cross build --release --target aarch64-unknown-linux-gnu
+          cp target/aarch64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-arm64"
+
       - name: Upload Linux/Windows artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -78,7 +85,33 @@ jobs:
 
       - name: Push changes
         run: git push --follow-tags
-          
+
+  build-windows-arm:
+    runs-on: windows-latest
+    needs: build-linux-windows
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Pull latest changes
+        run: git pull origin main
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - name: Build Windows ARM64
+        run: |
+          $VERSION = "${{ needs.build-linux-windows.outputs.version }}"
+          cargo build --release --target aarch64-pc-windows-msvc
+          Copy-Item "target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64.exe"
+
+      - name: Upload Windows ARM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm-binaries
+          path: fop-*-windows-arm64.exe
+         
   build-macos:
     runs-on: macos-latest
     needs: build-linux-windows
@@ -114,7 +147,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: [build-linux-windows, build-macos]
+    needs: [build-linux-windows, build-windows-arm, build-macos]
     permissions:
       contents: write
     steps:
@@ -140,6 +173,7 @@ jobs:
           files: |
             linux-windows-binaries/*
             macos-binaries/*
+            windows-arm-binaries/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
