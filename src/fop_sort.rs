@@ -671,7 +671,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Comments and special lines
         let is_comment = config.comment_chars.iter().any(|c| line.starts_with(c))
-            || (config.localhost && line.starts_with('#') && !config.comment_chars.contains(&"#".to_string()));
+            || (config.localhost && line.starts_with('#') && !config.comment_chars.iter().any(|c| c == "#"));
         if is_comment
             || line.starts_with("%include")
             || (line.starts_with('[') && line.ends_with(']'))
