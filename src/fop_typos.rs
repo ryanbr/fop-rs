@@ -44,6 +44,21 @@ static LEADING_COMMA: Lazy<Regex> = Lazy::new(|| {
 });
 
 // =============================================================================
+// Network Rule Typo Patterns
+// =============================================================================
+
+/// Triple $$$ before domain= ($$$domain= ? $domain=)
+static TRIPLE_DOLLAR: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\$\$domain=").unwrap());
+
+/// Double $$ before domain= ($$domain= ? $domain=)
+static DOUBLE_DOLLAR: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\$domain=").unwrap());
+
+/// Missing $ before domain= (after common file extensions)
+static MISSING_DOLLAR: Lazy<Regex> = Lazy::new(|| 
+    Regex::new(r"(\.(js|css|html|php|json|xml|gif|png|jpg|jpeg|svg|webp|woff2?|ttf|eot|mp[34]|m3u8))domain=([a-zA-Z0-9][\w\-]*\.[a-zA-Z]{2,})").unwrap()
+);
+
+// =============================================================================
 // Typo Detection
 // =============================================================================
 
@@ -80,8 +95,31 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         return None;
     }
 
-    // Skip network rules (no # at all, or starts with || or |)
-    if !line.contains('#') || line.starts_with("||") || line.starts_with('|') {
+    // Network rules - check for $$ and $$$ typos
+    if line.starts_with("||") || line.starts_with('|') || line.starts_with("@@") {
+        // Check for $$$ before domain=
+        if TRIPLE_DOLLAR.is_match(line) {
+            let fixed = TRIPLE_DOLLAR.replace(line, "$$domain=").to_string();
+            return Some(Typo { original: line.to_string(), fixed, description: "Triple $ ($$$ ? $)".to_string() });
+        }
+
+        // Check for $$ before domain=
+        if DOUBLE_DOLLAR.is_match(line) {
+            let fixed = DOUBLE_DOLLAR.replace(line, "$$domain=").to_string();
+            return Some(Typo { original: line.to_string(), fixed, description: "Double $ ($$ ? $)".to_string() });
+        }
+
+        // Check for missing $ before domain=
+        if MISSING_DOLLAR.is_match(line) {
+            let fixed = MISSING_DOLLAR.replace(line, "$1$$domain=$3").to_string();
+            return Some(Typo { original: line.to_string(), fixed, description: "Missing $ before domain=".to_string() });
+        }
+
+        return None;  // No cosmetic typos in network rules
+    }
+
+    // Skip non-cosmetic rules (no # at all)
+    if !line.contains('#') {
         return None;
     }
 
@@ -265,5 +303,38 @@ mod tests {
         // These should not be treated as typos
         assert!(detect_typo("domain##.ad:has(.banner)").is_none());
         assert!(detect_typo("domain##+js(aopr, ads)").is_none());
+    }
+
+    #[test]
+    fn test_triple_dollar() {
+        let result = detect_typo("@@||example.com/cc.js$$$domain=asket.com");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js$domain=asket.com");
+    }
+
+    #[test]
+    fn test_double_dollar() {
+        let result = detect_typo("@@||example.com/cc.js$$domain=asket.com");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js$domain=asket.com");
+        
+        let result = detect_typo("||example.com/ad.js$$domain=test.com");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().fixed, "||example.com/ad.js$domain=test.com");
+    }
+
+    #[test]
+    fn test_missing_dollar() {
+        let result = detect_typo("@@||example.com/cc.jsdomain=asket.com");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js$domain=asket.com");
+        
+        // Valid should not match
+        let result = detect_typo("@@||example.com/cc.js$domain=asket.com");
+        assert!(result.is_none());
+
+        // No domain after domain= should not match
+        let result = detect_typo("@@||example.com/cc.jsdomain=");
+        assert!(result.is_none());
     }
 }
