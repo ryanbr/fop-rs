@@ -55,7 +55,7 @@ static DOUBLE_DOLLAR: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\$domain=").unwr
 
 /// Missing $ before domain= (after common file extensions)
 static MISSING_DOLLAR: Lazy<Regex> = Lazy::new(|| 
-    Regex::new(r"(\.(js|css|html|php|json|xml|gif|png|jpg|jpeg|svg|webp|woff2?|ttf|eot|mp[34]|m3u8))domain=([a-zA-Z0-9][\w\-]*\.[a-zA-Z]{2,})").unwrap()
+    Regex::new(r"(\.(js|css|html|php|json|xml|gif|png|jpg|jpeg|svg|webp|woff2?|ttf|eot|mp[34]|m3u8)|\^)domain=([a-zA-Z0-9][\w\-]*\.[a-zA-Z]{2,})").unwrap()
 );
 
 // =============================================================================
@@ -328,6 +328,11 @@ mod tests {
         let result = detect_typo("@@||example.com/cc.jsdomain=asket.com");
         assert!(result.is_some());
         assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js$domain=asket.com");
+        
+        // With ^ separator
+        let result = detect_typo("@@||example.com/cc.js^domain=asket.com");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js^$domain=asket.com");
         
         // Valid should not match
         let result = detect_typo("@@||example.com/cc.js$domain=asket.com");
