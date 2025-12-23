@@ -376,6 +376,23 @@ impl Args {
             }
         }
 
+        // Warn about incompatible options
+        if args.output_diff.is_some() && args.create_pr.is_some() {
+            eprintln!("Warning: --output-diff and --create-pr are incompatible (dry-run mode)");
+            args.create_pr = None;
+        }
+        if args.output_diff.is_some() && args.git_message.is_some() {
+            eprintln!("Warning: --output-diff and --git-message are incompatible (dry-run mode)");
+            args.git_message = None;
+        }
+        if args.no_commit && args.create_pr.is_some() {
+            eprintln!("Warning: --no-commit and --create-pr are incompatible");
+            args.create_pr = None;
+        }
+        if args.no_commit && args.git_message.is_some() {
+            eprintln!("Warning: --no-commit and --git-message are incompatible");
+        }
+
         (args, config_path_str)
     }
 
