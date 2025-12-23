@@ -1020,8 +1020,10 @@ fn main() {
                     }
                     
                     if file_modified {
-                        if let Err(e) = fs::write(path, new_lines.join("\n") + "\n") {
-                            eprintln!("Error writing {}: {}", path.display(), e);
+                        if args.output_diff.is_none() {
+                            if let Err(e) = fs::write(path, new_lines.join("\n") + "\n") {
+                                eprintln!("Error writing {}: {}", path.display(), e);
+                            }
                         }
                         total_typos.fetch_add(file_typo_count, Ordering::Relaxed);
                         files_with_typos.fetch_add(1, Ordering::Relaxed);
