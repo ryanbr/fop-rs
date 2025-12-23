@@ -43,6 +43,11 @@ static LEADING_COMMA: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^,+([a-zA-Z])").unwrap()
 });
 
+/// Wrong cosmetic domain separator (using | instead of ,)
+static WRONG_COSMETIC_SEPARATOR: Lazy<Regex> = Lazy::new(|| 
+    Regex::new(r"^([a-zA-Z0-9~][a-zA-Z0-9\.\-]*\.[a-zA-Z]{2,})\|([a-zA-Z0-9~][a-zA-Z0-9\.\-\|,]*)(#[@?$%]?#|#@[$%?]#|#\+js)").unwrap()
+);
+
 // =============================================================================
 // Network Rule Typo Patterns
 // =============================================================================
@@ -132,6 +137,12 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
     // Skip non-cosmetic rules (no # at all)
     if !line.contains('#') {
         return None;
+    }
+
+    // Check for wrong cosmetic domain separator (| instead of ,)
+    if WRONG_COSMETIC_SEPARATOR.is_match(line) {
+        let fixed = WRONG_COSMETIC_SEPARATOR.replace(line, "$1,$2$3").to_string();
+        return Some(Typo { original: line.to_string(), fixed, description: "Wrong cosmetic separator (| ? ,)".to_string() });
     }
 
     // Check for extra # (### ? ##)
@@ -351,6 +362,30 @@ mod tests {
 
         // No domain after domain= should not match
         let result = detect_typo("@@||example.com/cc.jsdomain=");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_wrong_cosmetic_separator() {
+        // Single pipe
+        let result = detect_typo("domain.com|domain2.com##.test");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().fixed, "domain.com,domain2.com##.test");
+        
+        // Multiple pipes (fix_all_typos handles iteratively)
+        let (fixed, _) = fix_all_typos("domain.com|domain2.com|domain3.com##.test");
+        assert_eq!(fixed, "domain.com,domain2.com,domain3.com##.test");
+        
+        // Mixed separators
+        let (fixed, _) = fix_all_typos("domain.com|domain2.com,domain3.com##.test");
+        assert_eq!(fixed, "domain.com,domain2.com,domain3.com##.test");
+        
+        // With ##+js
+        let (fixed, _) = fix_all_typos("domain3.com|domain2.com,domain1.com##+js(nowolf)");
+        assert_eq!(fixed, "domain3.com,domain2.com,domain1.com##+js(nowolf)");
+        
+        // Valid comma separator should not match
+        let result = detect_typo("domain.com,domain2.com##.test");
         assert!(result.is_none());
     }
     
