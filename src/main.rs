@@ -280,7 +280,13 @@ impl Args {
             ignore_dot_domains: parse_bool(&config, "ignore-dot-domains", false),
             disable_domain_limit: parse_list(&config, "disable-domain-limit"),
             warning_output: config.get("warning-output").map(|s| PathBuf::from(s)),
-            create_pr: config.get("create-pr").cloned(),
+            create_pr: config.get("create-pr").and_then(|v| {
+                match v.to_lowercase().as_str() {
+                    "" | "true" | "yes" | "1" => Some(String::new()),  // Enable with prompt
+                    "false" | "no" | "0" => None,                       // Disable
+                    _ => Some(v.clone()),                               // Use as title
+                }
+            }),
             git_pr_branch: config.get("git-pr-branch").cloned(),
             fix_typos: parse_bool(&config, "fix-typos", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
