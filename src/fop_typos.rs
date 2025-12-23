@@ -45,7 +45,7 @@ static LEADING_COMMA: Lazy<Regex> = Lazy::new(|| {
 
 /// Wrong cosmetic domain separator (using | instead of ,)
 static WRONG_COSMETIC_SEPARATOR: Lazy<Regex> = Lazy::new(|| 
-    Regex::new(r"^([a-zA-Z0-9~][a-zA-Z0-9\.\-]*\.[a-zA-Z]{2,})\|([a-zA-Z0-9~][a-zA-Z0-9\.\-\|,]*)(#[@?$%]?#|#@[$%?]#|#\+js)").unwrap()
+    Regex::new(r"^([a-zA-Z0-9~][a-zA-Z0-9\.\-,]*\.[a-zA-Z]{2,})\|([a-zA-Z0-9~][a-zA-Z0-9\.\-\|,]*)(#[@?$%]?#|#@[$%?]#|#\+js)").unwrap()
 );
 
 // =============================================================================
@@ -106,7 +106,7 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
     }
 
     // Network rules - check for $$ and $$$ typos
-    if line.starts_with("||") || line.starts_with('|') || line.starts_with("@@") {
+    if line.starts_with("||") || line.starts_with('|') || line.starts_with("@@") || line.contains("$domain=") || line.contains(",domain=") {
         // Check for $$$ before domain=
         if TRIPLE_DOLLAR.is_match(line) {
             let fixed = TRIPLE_DOLLAR.replace(line, "$$domain=").to_string();
