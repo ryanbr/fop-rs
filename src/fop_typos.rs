@@ -58,6 +58,11 @@ static MISSING_DOLLAR: Lazy<Regex> = Lazy::new(||
     Regex::new(r"(\.(js|css|html|php|json|xml|gif|png|jpg|jpeg|svg|webp|woff2?|ttf|eot|mp[34]|m3u8)|\^)domain=([a-zA-Z0-9][\w\-]*\.[a-zA-Z]{2,})").unwrap()
 );
 
+/// Wrong domain separator (using , instead of |)
+static WRONG_DOMAIN_SEPARATOR: Lazy<Regex> = Lazy::new(|| 
+    Regex::new(r"(domain=|\|)([a-zA-Z0-9~\*][a-zA-Z0-9\.\-\*]*\.[a-zA-Z]{2,}),([a-zA-Z0-9~\*])").unwrap()
+);
+
 // =============================================================================
 // Typo Detection
 // =============================================================================
@@ -113,6 +118,12 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         if MISSING_DOLLAR.is_match(line) {
             let fixed = MISSING_DOLLAR.replace(line, "$1$$domain=$3").to_string();
             return Some(Typo { original: line.to_string(), fixed, description: "Missing $ before domain=".to_string() });
+        }
+
+        // Check for wrong domain separator (, instead of |)
+        if WRONG_DOMAIN_SEPARATOR.is_match(line) {
+            let fixed = WRONG_DOMAIN_SEPARATOR.replace(line, "$1$2|$3").to_string();
+            return Some(Typo { original: line.to_string(), fixed, description: "Wrong domain separator (, ? |)".to_string() });
         }
 
         return None;  // No cosmetic typos in network rules
@@ -340,6 +351,27 @@ mod tests {
 
         // No domain after domain= should not match
         let result = detect_typo("@@||example.com/cc.jsdomain=");
+        assert!(result.is_none());
+    }
+    
+    #[test]
+    fn test_wrong_domain_separator() {
+        // Single comma
+        let result = detect_typo("||example.com$domain=site1.com,site2.com");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().fixed, "||example.com$domain=site1.com|site2.com");
+        
+        // Multiple commas (fix_all_typos handles iteratively)
+        let (fixed, fixes) = fix_all_typos("||example.com$3p,domain=a.com,b.com,c.com");
+        assert_eq!(fixed, "||example.com$3p,domain=a.com|b.com|c.com");
+        assert_eq!(fixes.len(), 2);
+        
+        // Mixed separators
+        let (fixed, _) = fix_all_typos("*.global/$3p,domain=animepahe.si,daddyhd.com|soap2day.day");
+        assert_eq!(fixed, "*.global/$3p,domain=animepahe.si|daddyhd.com|soap2day.day");
+        
+        // Valid pipe separator should not match
+        let result = detect_typo("||example.com$domain=site1.com|site2.com");
         assert!(result.is_none());
     }
 }
