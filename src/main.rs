@@ -25,10 +25,10 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 /// Thread-safe warning output
-pub(crate) static WARNING_BUFFER: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::with_capacity(100)));
-pub(crate) static WARNING_OUTPUT: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
+pub(crate) static WARNING_BUFFER: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(Vec::with_capacity(100)));
+pub(crate) static WARNING_OUTPUT: LazyLock<Mutex<Option<PathBuf>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
@@ -538,74 +538,74 @@ impl Args {
 // =============================================================================
 
 /// Pattern for extracting domain from blocking filter options
-pub(crate) static FILTER_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static FILTER_DOMAIN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\$(?:[^,]*,)?domain=([^,]+)").unwrap()
 });
 
 /// Pattern for extracting domain from element hiding rules  
-pub(crate) static ELEMENT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^([^/|@"!]*?)#[@?$%]?#"#).unwrap()
 });
 
 /// Pattern for FOP.py compatible element matching (no {} in selector)
-pub(crate) static FOPPY_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static FOPPY_ELEMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#)([^{}]+)$"#).unwrap()
 });
 
 /// Pattern for FOP.py compatible sorting (only ## and #@#)
-pub(crate) static FOPPY_ELEMENT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static FOPPY_ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^[^/|@"!]*?#@?#"#).unwrap()
 });
 
 /// Pattern for element hiding rules (standard, uBO, and AdGuard extended syntax)
-pub(crate) static ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static ELEMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^([^/|@"!]*?)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
 });
 
 /// Pattern for regex domain element hiding rules (uBO/AdGuard specific)
-pub(crate) static REGEX_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static REGEX_ELEMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^(/[^#]+/)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
 });
 
 /// Pattern for localhost/hosts file entries
-pub(crate) static LOCALHOST_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static LOCALHOST_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(0\.0\.0\.0|127\.0\.0\.1)\s+(.+)$").unwrap()
 });
 
-pub(crate) static OPTION_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static OPTION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(.*)\$(~?[\w\-]+(?:=[^,\s]+)?(?:,~?[\w\-]+(?:=[^,\s]+)?)*)$").unwrap()
 });
 
-pub(crate) static PSEUDO_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static PSEUDO_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(:[a-zA-Z\-]*[A-Z][a-zA-Z\-]*)").unwrap()
 });
 
-pub(crate) static REMOVAL_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static REMOVAL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"([>+~,@\s])(\*)([#.\[:])")
         .expect("Invalid REMOVAL_PATTERN regex")
 });
 
-pub(crate) static ATTRIBUTE_VALUE_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static ATTRIBUTE_VALUE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^([^'"\\]|\\.)*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\*"#).unwrap()
 });
 
-pub(crate) static TREE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static TREE_SELECTOR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(\\.|[^+>~ \t])\s*([+>~ \t])\s*(\D)").unwrap()
 });
 
-pub(crate) static UNICODE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static UNICODE_SELECTOR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap()
 });
 
-pub(crate) static SHORT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static SHORT_DOMAIN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\|*[a-zA-Z0-9]").unwrap()
 });
 
-pub(crate) static DOMAIN_EXTRACT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static DOMAIN_EXTRACT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\|*([^/\^\$]+)").unwrap()
 });
 
-pub(crate) static IP_ADDRESS_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static IP_ADDRESS_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\d+\.\d+\.\d+\.\d+").unwrap()
 });
 
@@ -624,14 +624,14 @@ const IGNORE_DIRS: &[&str] = &[
 ];
 
 /// Domains that should ignore the 7 character size restriction
-pub(crate) static IGNORE_DOMAINS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+pub(crate) static IGNORE_DOMAINS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut set = HashSet::new();
     set.insert("a.sampl");
     set
 });
 
 /// Known Adblock Plus options (HashSet for O(1) lookup)
-pub(crate) static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+pub(crate) static KNOWN_OPTIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         // Standard ABP options
         "collapse", "csp", "csp=frame-src", "csp=img-src", "csp=media-src",
@@ -664,7 +664,7 @@ pub(crate) static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 });
 
 /// uBO to ABP option conversions
-pub(crate) static UBO_CONVERSIONS: Lazy<AHashMap<&'static str, &'static str>> = Lazy::new(|| {
+pub(crate) static UBO_CONVERSIONS: LazyLock<AHashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
         ("xhr", "xmlhttprequest"),
         ("~xhr", "~xmlhttprequest"),

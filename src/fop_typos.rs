@@ -7,44 +7,44 @@
 //! - domain,,domain##.ad ? domain,domain##.ad
 
 use regex::Regex;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 // =============================================================================
 // Cosmetic Typo Patterns
 // =============================================================================
 
 /// Cosmetic rule with extra # (###.class or domain###.class)
-static EXTRA_HASH: Lazy<Regex> = Lazy::new(|| {
+static EXTRA_HASH: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^([^#]*)(###+)([.#\[\*])").unwrap()
 });
 
 /// Single # that should be ## (domain#.class)
-static SINGLE_HASH: Lazy<Regex> = Lazy::new(|| {
+static SINGLE_HASH: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^([^#]+)#([.#\[\*][a-zA-Z])").unwrap()
 });
 
 /// Double dot in cosmetic selector (##..class)
-static DOUBLE_DOT: Lazy<Regex> = Lazy::new(|| {
+static DOUBLE_DOT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(##)\.\.([a-zA-Z])").unwrap()
 });
 
 /// Double comma in domain list (domain,,domain)
-static DOUBLE_COMMA: Lazy<Regex> = Lazy::new(|| {
+static DOUBLE_COMMA: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r",,+").unwrap()
 });
 
 /// Trailing comma before ## (domain,##.ad)
-static TRAILING_COMMA: Lazy<Regex> = Lazy::new(|| {
+static TRAILING_COMMA: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r",+(#[@?$%]?#)").unwrap()
 });
 
 /// Leading comma after domain start (,domain##.ad)
-static LEADING_COMMA: Lazy<Regex> = Lazy::new(|| {
+static LEADING_COMMA: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^,+([a-zA-Z])").unwrap()
 });
 
 /// Wrong cosmetic domain separator (using | instead of ,)
-static WRONG_COSMETIC_SEPARATOR: Lazy<Regex> = Lazy::new(|| 
+static WRONG_COSMETIC_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| 
     Regex::new(r"^([a-zA-Z0-9~][a-zA-Z0-9\.\-,]*\.[a-zA-Z]{2,})\|([a-zA-Z0-9~][a-zA-Z0-9\.\-\|,]*)(#[@?$%]?#|#@[$%?]#|#\+js)").unwrap()
 );
 
@@ -53,18 +53,18 @@ static WRONG_COSMETIC_SEPARATOR: Lazy<Regex> = Lazy::new(||
 // =============================================================================
 
 /// Triple $$$ before domain= ($$$domain= ? $domain=)
-static TRIPLE_DOLLAR: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\$\$domain=").unwrap());
+static TRIPLE_DOLLAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\$\$domain=").unwrap());
 
 /// Double $$ before domain= ($$domain= ? $domain=)
-static DOUBLE_DOLLAR: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\$domain=").unwrap());
+static DOUBLE_DOLLAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\$domain=").unwrap());
 
 /// Missing $ before domain= (after common file extensions)
-static MISSING_DOLLAR: Lazy<Regex> = Lazy::new(|| 
+static MISSING_DOLLAR: LazyLock<Regex> = LazyLock::new(|| 
     Regex::new(r"(\.(js|css|html|php|json|xml|gif|png|jpg|jpeg|svg|webp|woff2?|ttf|eot|mp[34]|m3u8)|\^)domain=([a-zA-Z0-9][\w\-]*\.[a-zA-Z]{2,})").unwrap()
 );
 
 /// Wrong domain separator (using , instead of |)
-static WRONG_DOMAIN_SEPARATOR: Lazy<Regex> = Lazy::new(|| 
+static WRONG_DOMAIN_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| 
     Regex::new(r"(domain=|\|)([a-zA-Z0-9~\*][a-zA-Z0-9\.\-\*]*\.[a-zA-Z]{2,}),([a-zA-Z0-9~\*])").unwrap()
 );
 

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 use colored::Colorize;
 use regex::Regex;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 // =============================================================================
 // Repository Definition
@@ -42,7 +42,7 @@ pub const REPO_TYPES: &[RepoDefinition] = &[GIT];
 // Commit Message Validation
 // =============================================================================
 
-static COMMIT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+static COMMIT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(A|M|P):\s((\(.+\))\s)?(.*)$").unwrap()
 });
 
