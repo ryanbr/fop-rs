@@ -14,13 +14,11 @@ use ahash::AHashSet as HashSet;
 use regex::Regex;
 
 use crate::{
-    ELEMENT_PATTERN, FOPPY_ELEMENT_PATTERN, ELEMENT_DOMAIN_PATTERN,
-    FOPPY_ELEMENT_DOMAIN_PATTERN, FILTER_DOMAIN_PATTERN, OPTION_PATTERN,
-    LOCALHOST_PATTERN, SHORT_DOMAIN_PATTERN, DOMAIN_EXTRACT_PATTERN,
-    IP_ADDRESS_PATTERN, REGEX_ELEMENT_PATTERN,
-    ATTRIBUTE_VALUE_PATTERN, TREE_SELECTOR, REMOVAL_PATTERN,
-    PSEUDO_PATTERN, UNICODE_SELECTOR,
-    KNOWN_OPTIONS, IGNORE_DOMAINS, UBO_CONVERSIONS, write_warning,
+    write_warning, ATTRIBUTE_VALUE_PATTERN, DOMAIN_EXTRACT_PATTERN, ELEMENT_DOMAIN_PATTERN,
+    ELEMENT_PATTERN, FILTER_DOMAIN_PATTERN, FOPPY_ELEMENT_DOMAIN_PATTERN, FOPPY_ELEMENT_PATTERN,
+    IGNORE_DOMAINS, IP_ADDRESS_PATTERN, KNOWN_OPTIONS, LOCALHOST_PATTERN, OPTION_PATTERN,
+    PSEUDO_PATTERN, REGEX_ELEMENT_PATTERN, REMOVAL_PATTERN, SHORT_DOMAIN_PATTERN, TREE_SELECTOR,
+    UBO_CONVERSIONS, UNICODE_SELECTOR,
 };
 
 use crate::fop_typos;
@@ -67,15 +65,19 @@ pub struct SortConfig<'a> {
 
 /// Convert uBO-specific options to standard ABP options
 pub(crate) fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
-    options.into_iter().map(|option| {
-        if option.starts_with("from=") {
-            option.replacen("from=", "domain=", 1)
-        } else {
-            UBO_CONVERSIONS.get(option.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or(option)
-        }
-    }).collect()
+    options
+        .into_iter()
+        .map(|option| {
+            if option.starts_with("from=") {
+                option.replacen("from=", "domain=", 1)
+            } else {
+                UBO_CONVERSIONS
+                    .get(option.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or(option)
+            }
+        })
+        .collect()
 }
 
 /// Sort domains alphabetically, ignoring ~ prefix
@@ -95,18 +97,24 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> String {
     if allowlist {
         result = result[2..].to_string();
     }
-    
+
     let original_len = result.len();
 
     // Remove leading asterisks
-    while result.len() > 1 && result.starts_with('*')
-        && !result[1..].starts_with('|') && !result[1..].starts_with('!') {
+    while result.len() > 1
+        && result.starts_with('*')
+        && !result[1..].starts_with('|')
+        && !result[1..].starts_with('!')
+    {
         result.remove(0);
     }
 
     // Remove trailing asterisks
-    while result.len() > 1 && result.ends_with('*')
-        && !result[..result.len()-1].ends_with('|') && !result[..result.len()-1].ends_with(' ') {
+    while result.len() > 1
+        && result.ends_with('*')
+        && !result[..result.len() - 1].ends_with('|')
+        && !result[..result.len() - 1].ends_with(' ')
+    {
         result.pop();
     }
 
@@ -129,31 +137,33 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> String {
 
 /// Sort and clean filter options
 pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
-
     // Skip filters with regex values in options (contain =/.../ patterns)
     // ||example.com$removeparam=/^\\$ja=/
     // ||example.com$removeparam=/regex/
     if filter_in.contains("=/") && filter_in.contains("$") {
         return filter_in.to_string();
     }
-    
+
     let option_split = OPTION_PATTERN.captures(filter_in);
 
     match option_split {
         None => remove_unnecessary_wildcards(filter_in),
         Some(caps) => {
             let filter_text = remove_unnecessary_wildcards(&caps[1]);
-            let option_list: Vec<String> = caps[2].split(',').map(|opt| {
-                // Only replace underscores in option name, not in value
-                if let Some(eq_pos) = opt.find('=') {
-                    let name = opt[..eq_pos].to_lowercase().replace('_', "-");
-                    let value = &opt[eq_pos..]; // Keep value as-is (preserve case and underscores)
-                    format!("{}{}", name, value)
-                } else {
-                    opt.to_lowercase().replace('_', "-")
-                }
-            }).collect();
-            
+            let option_list: Vec<String> = caps[2]
+                .split(',')
+                .map(|opt| {
+                    // Only replace underscores in option name, not in value
+                    if let Some(eq_pos) = opt.find('=') {
+                        let name = opt[..eq_pos].to_lowercase().replace('_', "-");
+                        let value = &opt[eq_pos..]; // Keep value as-is (preserve case and underscores)
+                        format!("{}{}", name, value)
+                    } else {
+                        opt.to_lowercase().replace('_', "-")
+                    }
+                })
+                .collect();
+
             // Convert uBO options
             let option_list = if convert_ubo {
                 convert_ubo_options(option_list)
@@ -274,9 +284,7 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
             // - * (wildcard for all domains)
             // - TLDs without dots (pl, de, com, org) - must be 2+ chars
             // - Regular domains with dots (example.com) - must be 4+ chars
-            let is_valid = stripped == "*" 
-                || (!has_dot && len >= 2)
-                || (has_dot && len >= 4);
+            let is_valid = stripped == "*" || (!has_dot && len >= 2) || (has_dot && len >= 4);
             if !is_valid {
                 invalid_domains.push((*d).to_string());
             } else {
@@ -287,7 +295,10 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
         if !invalid_domains.is_empty() {
             write_warning(&format!(
                 "Removed invalid domain(s) from cosmetic rule: {} | Rule: {}{}{}",
-                invalid_domains.join(", "), domains, separator, selector
+                invalid_domains.join(", "),
+                domains,
+                separator,
+                selector
             ));
         }
 
@@ -343,7 +354,8 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
                     let before = c.get(1).map(|m| m.as_str()).unwrap_or("");
                     let string_val = string_part.as_str().to_string();
                     let full_match = format!("{}{}", before, string_val);
-                    selector_without_strings = selector_without_strings.replacen(&full_match, before, 1);
+                    selector_without_strings =
+                        selector_without_strings.replacen(&full_match, before, 1);
                     selector_only_strings.push_str(&string_val);
                 } else {
                     break;
@@ -356,7 +368,9 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     // Clean up tree selectors
     for caps in TREE_SELECTOR.captures_iter(&selector.clone()) {
         let full_match = caps.get(0).unwrap().as_str();
-        if selector_only_strings.contains(full_match) || !selector_without_strings.contains(full_match) {
+        if selector_only_strings.contains(full_match)
+            || !selector_without_strings.contains(full_match)
+        {
             continue;
         }
 
@@ -382,7 +396,11 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
             format!(" {} ", g2)
         };
 
-        let replace_by = if replace_by == "   " { " ".to_string() } else { replace_by };
+        let replace_by = if replace_by == "   " {
+            " ".to_string()
+        } else {
+            replace_by
+        };
         selector = selector.replacen(full_match, &format!("{}{}{}", g1, replace_by, g3), 1);
     }
 
@@ -390,13 +408,15 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     for caps in REMOVAL_PATTERN.captures_iter(&selector.clone()) {
         if let Some(untag) = caps.get(2) {
             let untag_name = untag.as_str();
-            if selector_only_strings.contains(untag_name) || !selector_without_strings.contains(untag_name) {
+            if selector_only_strings.contains(untag_name)
+                || !selector_without_strings.contains(untag_name)
+            {
                 continue;
             }
 
             let bc = caps.get(1).map(|m| m.as_str()).unwrap_or("");
             let ac = caps.get(3).map(|m| m.as_str()).unwrap_or("");
-            
+
             // Skip if this is a :not(-abp-contains...) pattern
             if ac == ":" {
                 let match_end = caps.get(0).unwrap().end();
@@ -404,7 +424,7 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
                     continue;
                 }
             }
-            
+
             let old = format!("{}{}{}", bc, untag_name, ac);
             let new = format!("{}{}", bc, ac);
             selector = selector.replacen(&old, &new, 1);
@@ -414,7 +434,9 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     // Make pseudo classes lowercase
     for caps in PSEUDO_PATTERN.captures_iter(&selector.clone()) {
         let pseudo_class = &caps[1];
-        if selector_only_strings.contains(pseudo_class) || !selector_without_strings.contains(pseudo_class) {
+        if selector_only_strings.contains(pseudo_class)
+            || !selector_without_strings.contains(pseudo_class)
+        {
             continue;
         }
 
@@ -429,7 +451,7 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     }
 
     // Remove markers and return complete rule
-    let selector = &selector[1..selector.len()-1];
+    let selector = &selector[1..selector.len() - 1];
     format!("{}{}{}", domains, separator, selector)
 }
 
@@ -447,13 +469,17 @@ fn combine_filters(
 
     for i in 0..uncombined.len() {
         let domains1 = domain_pattern.captures(&uncombined[i]);
-        
+
         // Get domain info for current and next filter
         let (domain1_str, domains1_full) = if i + 1 < uncombined.len() {
             if let Some(ref caps) = domains1 {
                 (
-                    caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default(),
-                    caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default(),
+                    caps.get(1)
+                        .map(|m| m.as_str().to_string())
+                        .unwrap_or_default(),
+                    caps.get(0)
+                        .map(|m| m.as_str().to_string())
+                        .unwrap_or_default(),
                 )
             } else {
                 (String::new(), String::new())
@@ -469,16 +495,17 @@ fn combine_filters(
         };
 
         // Check if we should just add current filter without combining
-        if domains1.is_none() 
-            || i + 1 >= uncombined.len() 
-            || domains2.is_none() 
+        if domains1.is_none()
+            || i + 1 >= uncombined.len()
+            || domains2.is_none()
             || domain1_str.is_empty()
         {
             combined.push(std::mem::take(&mut uncombined[i]));
             continue;
         }
 
-        let domain2_str = domains2.as_ref()
+        let domain2_str = domains2
+            .as_ref()
             .and_then(|c| c.get(1))
             .map(|m| m.as_str())
             .unwrap_or("");
@@ -488,7 +515,8 @@ fn combine_filters(
             continue;
         }
 
-        let domains2_full = domains2.as_ref()
+        let domains2_full = domains2
+            .as_ref()
             .and_then(|c| c.get(0))
             .map(|m| m.as_str())
             .unwrap_or("");
@@ -532,23 +560,24 @@ fn combine_filters(
             .into_iter()
             .collect();
 
-        new_domains.sort_unstable_by(|a, b| {
-            a.trim_start_matches('~').cmp(b.trim_start_matches('~'))
-        });
+        new_domains
+            .sort_unstable_by(|a, b| a.trim_start_matches('~').cmp(b.trim_start_matches('~')));
 
         let new_domain_str = new_domains.join(separator);
-        
+
         // Create the substitution pattern (full match with new domains)
         let domains_substitute = domains1_full.replace(&domain1_str, &new_domain_str);
-        
+
         // Escape $ for regex replacement ($ is special in replacement strings)
         let escaped_substitute = domains_substitute.replace("$", "$$");
-        
+
         // Modify the next filter to be the combined version
         // (using filter i as the base, replacing its domain pattern with the combined domains)
-        let combined_filter = domain_pattern.replace(&uncombined[i], escaped_substitute.as_str()).to_string();
+        let combined_filter = domain_pattern
+            .replace(&uncombined[i], escaped_substitute.as_str())
+            .to_string();
         uncombined[i + 1] = combined_filter;
-        
+
         // Don't add current filter to combined - it will be processed as part of next iteration
     }
 
@@ -591,13 +620,14 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     let mut filter_lines: usize = 0;
     let mut element_lines: usize = 0;
 
-    let write_filters = |section: &mut Vec<String>, 
-                         output: &mut BufWriter<File>,  
-                         element_lines: usize, 
+    let write_filters = |section: &mut Vec<String>,
+                         output: &mut BufWriter<File>,
+                         element_lines: usize,
                          filter_lines: usize,
                          no_sort: bool,
                          alt_sort: bool,
-                         localhost: bool| -> io::Result<()> {
+                         localhost: bool|
+     -> io::Result<()> {
         if section.is_empty() {
             return Ok(());
         }
@@ -605,17 +635,30 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         // Remove duplicates while preserving order if no_sort
         let mut unique: Vec<String> = if no_sort {
             let mut seen = HashSet::new();
-            section.drain(..).filter(|x| seen.insert(x.clone())).collect()
+            section
+                .drain(..)
+                .filter(|x| seen.insert(x.clone()))
+                .collect()
         } else {
-            section.drain(..).collect::<HashSet<_>>().into_iter().collect()
+            section
+                .drain(..)
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect()
         };
 
         if localhost {
             // Sort hosts file entries by domain
             if !no_sort {
                 unique.sort_unstable_by(|a, b| {
-                    let a_domain = LOCALHOST_PATTERN.captures(a).map(|c| c[2].to_lowercase()).unwrap_or_else(|| a.to_lowercase());
-                    let b_domain = LOCALHOST_PATTERN.captures(b).map(|c| c[2].to_lowercase()).unwrap_or_else(|| b.to_lowercase());
+                    let a_domain = LOCALHOST_PATTERN
+                        .captures(a)
+                        .map(|c| c[2].to_lowercase())
+                        .unwrap_or_else(|| a.to_lowercase());
+                    let b_domain = LOCALHOST_PATTERN
+                        .captures(b)
+                        .map(|c| c[2].to_lowercase())
+                        .unwrap_or_else(|| b.to_lowercase());
                     a_domain.cmp(&b_domain)
                 });
             }
@@ -659,7 +702,15 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if line.is_empty() {
             if config.keep_empty_lines {
                 if !section.is_empty() {
-                    write_filters(&mut section, &mut output, element_lines, filter_lines, config.no_sort, config.alt_sort, config.localhost)?;
+                    write_filters(
+                        &mut section,
+                        &mut output,
+                        element_lines,
+                        filter_lines,
+                        config.no_sort,
+                        config.alt_sort,
+                        config.localhost,
+                    )?;
                     lines_checked = 1;
                     filter_lines = 0;
                     element_lines = 0;
@@ -671,13 +722,23 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Comments and special lines
         let is_comment = config.comment_chars.iter().any(|c| line.starts_with(c))
-            || (config.localhost && line.starts_with('#') && !config.comment_chars.iter().any(|c| c == "#"));
+            || (config.localhost
+                && line.starts_with('#')
+                && !config.comment_chars.iter().any(|c| c == "#"));
         if is_comment
             || line.starts_with("%include")
             || (line.starts_with('[') && line.ends_with(']'))
         {
             if !section.is_empty() {
-                write_filters(&mut section, &mut output, element_lines, filter_lines, config.no_sort, config.alt_sort, config.localhost)?;
+                write_filters(
+                    &mut section,
+                    &mut output,
+                    element_lines,
+                    filter_lines,
+                    config.no_sort,
+                    config.alt_sort,
+                    config.localhost,
+                )?;
                 lines_checked = 1;
                 filter_lines = 0;
                 element_lines = 0;
@@ -685,13 +746,11 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             writeln!(output, "{}", line)?;
             continue;
         }
-        
+
         // Validate localhost entries when in localhost mode
         if config.localhost {
             if !LOCALHOST_PATTERN.is_match(&line) {
-                write_warning(&format!(
-                    "Removed invalid localhost entry: {}", line
-                ));
+                write_warning(&format!("Removed invalid localhost entry: {}", line));
                 continue;
             }
         }
@@ -731,13 +790,16 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             }
 
             let mut tidied = element_tidy(&domains, separator, selector);
-            
+
             // Fix typos if enabled
             if config.fix_typos {
                 let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
                 if !fixes.is_empty() {
                     write_warning(&format!(
-                        "Fixed typo: {} ? {} ({})", tidied, fixed, fixes.join(", ")
+                        "Fixed typo: {} ? {} ({})",
+                        tidied,
+                        fixed,
+                        fixes.join(", ")
                     ));
                     tidied = fixed;
                 }
@@ -747,14 +809,15 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Process blocking rules
-               
+
         // Skip short domain rules
         if !config.disable_domain_limit && line.len() <= 7 && SHORT_DOMAIN_PATTERN.is_match(&line) {
             if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(&line) {
                 let domain = &caps[1];
                 if !IGNORE_DOMAINS.contains(domain) {
                     write_warning(&format!(
-                        "Skipped short domain rule: {} (domain: {})", line, domain
+                        "Skipped short domain rule: {} (domain: {})",
+                        line, domain
                     ));
                     continue;
                 }
@@ -762,7 +825,15 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Skip network rules without dot in domain
-        let skip_schemes = ["|javascript", "|data:", "|dddata:", "|about:", "|blob:", "|http", "||edge-client"];
+        let skip_schemes = [
+            "|javascript",
+            "|data:",
+            "|dddata:",
+            "|about:",
+            "|blob:",
+            "|http",
+            "||edge-client",
+        ];
         if (line.starts_with("||") || line.starts_with('|'))
             && !skip_schemes.iter().any(|s| line.starts_with(s))
         {
@@ -771,9 +842,15 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 let is_ip = domain.starts_with('[') || IP_ADDRESS_PATTERN.is_match(domain);
                 let has_wildcard = domain.contains('*');
 
-                if !config.ignore_dot_domains && !is_ip && !has_wildcard && !domain.contains('.') && !domain.starts_with('~') {
+                if !config.ignore_dot_domains
+                    && !is_ip
+                    && !has_wildcard
+                    && !domain.contains('.')
+                    && !domain.starts_with('~')
+                {
                     write_warning(&format!(
-                        "Skipped network rule without dot in domain: {} (domain: {})", line, domain
+                        "Skipped network rule without dot in domain: {} (domain: {})",
+                        line, domain
                     ));
                     continue;
                 }
@@ -782,9 +859,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Remove TLD-only patterns
         if is_tld_only(&line) {
-            write_warning(&format!(
-                "Removed overly broad TLD-only rule: {}", line
-            ));
+            write_warning(&format!("Removed overly broad TLD-only rule: {}", line));
             continue;
         }
 
@@ -799,7 +874,15 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
     // Write remaining filters
     if !section.is_empty() {
-        write_filters(&mut section, &mut output, element_lines, filter_lines, config.no_sort, config.alt_sort, config.localhost)?;
+        write_filters(
+            &mut section,
+            &mut output,
+            element_lines,
+            filter_lines,
+            config.no_sort,
+            config.alt_sort,
+            config.localhost,
+        )?;
     }
 
     drop(output);
@@ -813,12 +896,15 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             // Generate unified diff
             let original_str = String::from_utf8_lossy(&original_content);
             let new_str = String::from_utf8_lossy(&new_content);
-            
+
             let diff = similar::TextDiff::from_lines(&*original_str, &*new_str)
                 .unified_diff()
-                .header(&format!("a/{}", filename.display()), &format!("b/{}", filename.display()))
+                .header(
+                    &format!("a/{}", filename.display()),
+                    &format!("b/{}", filename.display()),
+                )
                 .to_string();
-            
+
             fs::remove_file(&temp_file)?;
             return Ok(Some(diff));
         } else {
@@ -835,7 +921,6 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     } else {
         fs::remove_file(&temp_file)?;
     }
-
 
     Ok(None)
 }

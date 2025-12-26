@@ -14,39 +14,29 @@ use std::sync::LazyLock;
 // =============================================================================
 
 /// Cosmetic rule with extra # (###.class or domain###.class)
-static EXTRA_HASH: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^([^#]*)(###+)([.#\[\*])").unwrap()
-});
+static EXTRA_HASH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([^#]*)(###+)([.#\[\*])").unwrap());
 
 /// Single # that should be ## (domain#.class)
-static SINGLE_HASH: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^([^#]+)#([.#\[\*][a-zA-Z])").unwrap()
-});
+static SINGLE_HASH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([^#]+)#([.#\[\*][a-zA-Z])").unwrap());
 
 /// Double dot in cosmetic selector (##..class)
-static DOUBLE_DOT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(##)\.\.([a-zA-Z])").unwrap()
-});
+static DOUBLE_DOT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(##)\.\.([a-zA-Z])").unwrap());
 
 /// Double comma in domain list (domain,,domain)
-static DOUBLE_COMMA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r",,+").unwrap()
-});
+static DOUBLE_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r",,+").unwrap());
 
 /// Trailing comma before ## (domain,##.ad)
-static TRAILING_COMMA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r",+(#[@?$%]?#)").unwrap()
-});
+static TRAILING_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r",+(#[@?$%]?#)").unwrap());
 
 /// Leading comma after domain start (,domain##.ad)
-static LEADING_COMMA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^,+([a-zA-Z])").unwrap()
-});
+static LEADING_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^,+([a-zA-Z])").unwrap());
 
 /// Wrong cosmetic domain separator (using | instead of ,)
-static WRONG_COSMETIC_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| 
+static WRONG_COSMETIC_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^([a-zA-Z0-9~][a-zA-Z0-9\.\-,]*\.[a-zA-Z]{2,})\|([a-zA-Z0-9~][a-zA-Z0-9\.\-\|,]*)(#[@?$%]?#|#@[$%?]#|#\+js)").unwrap()
-);
+});
 
 // =============================================================================
 // Network Rule Typo Patterns
@@ -59,14 +49,15 @@ static TRIPLE_DOLLAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\$\$doma
 static DOUBLE_DOLLAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\$domain=").unwrap());
 
 /// Missing $ before domain= (after common file extensions)
-static MISSING_DOLLAR: LazyLock<Regex> = LazyLock::new(|| 
+static MISSING_DOLLAR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(\.(js|css|html|php|json|xml|gif|png|jpg|jpeg|svg|webp|woff2?|ttf|eot|mp[34]|m3u8)|\^)domain=([a-zA-Z0-9][\w\-]*\.[a-zA-Z]{2,})").unwrap()
-);
+});
 
 /// Wrong domain separator (using , instead of |)
-static WRONG_DOMAIN_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| 
-    Regex::new(r"(domain=|\|)([a-zA-Z0-9~\*][a-zA-Z0-9\.\-\*]*\.[a-zA-Z]{2,}),([a-zA-Z0-9~\*])").unwrap()
-);
+static WRONG_DOMAIN_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(domain=|\|)([a-zA-Z0-9~\*][a-zA-Z0-9\.\-\*]*\.[a-zA-Z]{2,}),([a-zA-Z0-9~\*])")
+        .unwrap()
+});
 
 // =============================================================================
 // Typo Detection
@@ -97,41 +88,58 @@ fn try_fix(line: &str, pattern: &Regex, replacement: &str, description: &str) ->
 #[inline]
 pub fn detect_typo(line: &str) -> Option<Typo> {
     // Skip comments, empty lines, special directives, short lines
-    if line.len() < 4
-        || line.starts_with('!')
-        || line.starts_with('[')
-        || line.starts_with('%')
-    {
+    if line.len() < 4 || line.starts_with('!') || line.starts_with('[') || line.starts_with('%') {
         return None;
     }
 
     // Network rules - check for $$ and $$$ typos
-    if line.starts_with("||") || line.starts_with('|') || line.starts_with("@@") || line.contains("$domain=") || line.contains(",domain=") {
+    if line.starts_with("||")
+        || line.starts_with('|')
+        || line.starts_with("@@")
+        || line.contains("$domain=")
+        || line.contains(",domain=")
+    {
         // Check for $$$ before domain=
         if TRIPLE_DOLLAR.is_match(line) {
             let fixed = TRIPLE_DOLLAR.replace(line, "$$domain=").to_string();
-            return Some(Typo { original: line.to_string(), fixed, description: "Triple $ ($$$ ? $)".to_string() });
+            return Some(Typo {
+                original: line.to_string(),
+                fixed,
+                description: "Triple $ ($$$ ? $)".to_string(),
+            });
         }
 
         // Check for $$ before domain=
         if DOUBLE_DOLLAR.is_match(line) {
             let fixed = DOUBLE_DOLLAR.replace(line, "$$domain=").to_string();
-            return Some(Typo { original: line.to_string(), fixed, description: "Double $ ($$ ? $)".to_string() });
+            return Some(Typo {
+                original: line.to_string(),
+                fixed,
+                description: "Double $ ($$ ? $)".to_string(),
+            });
         }
 
         // Check for missing $ before domain=
         if MISSING_DOLLAR.is_match(line) {
             let fixed = MISSING_DOLLAR.replace(line, "$1$$domain=$3").to_string();
-            return Some(Typo { original: line.to_string(), fixed, description: "Missing $ before domain=".to_string() });
+            return Some(Typo {
+                original: line.to_string(),
+                fixed,
+                description: "Missing $ before domain=".to_string(),
+            });
         }
 
         // Check for wrong domain separator (, instead of |)
         if WRONG_DOMAIN_SEPARATOR.is_match(line) {
             let fixed = WRONG_DOMAIN_SEPARATOR.replace(line, "$1$2|$3").to_string();
-            return Some(Typo { original: line.to_string(), fixed, description: "Wrong domain separator (, ? |)".to_string() });
+            return Some(Typo {
+                original: line.to_string(),
+                fixed,
+                description: "Wrong domain separator (, ? |)".to_string(),
+            });
         }
 
-        return None;  // No cosmetic typos in network rules
+        return None; // No cosmetic typos in network rules
     }
 
     // Skip non-cosmetic rules (no # at all)
@@ -141,8 +149,14 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
 
     // Check for wrong cosmetic domain separator (| instead of ,)
     if WRONG_COSMETIC_SEPARATOR.is_match(line) {
-        let fixed = WRONG_COSMETIC_SEPARATOR.replace(line, "$1,$2$3").to_string();
-        return Some(Typo { original: line.to_string(), fixed, description: "Wrong cosmetic separator (| ? ,)".to_string() });
+        let fixed = WRONG_COSMETIC_SEPARATOR
+            .replace(line, "$1,$2$3")
+            .to_string();
+        return Some(Typo {
+            original: line.to_string(),
+            fixed,
+            description: "Wrong cosmetic separator (| ? ,)".to_string(),
+        });
     }
 
     // Check for extra # (### ? ##)
@@ -218,17 +232,21 @@ pub fn report_addition_typos(typos: &[(Addition, Typo)], no_color: bool) {
     if typos.is_empty() {
         return;
     }
-    
+
     println!("\nTypos found in added lines:");
     for (add, typo) in typos {
         if no_color {
-            println!("  {}:{}: {} ? {}", add.file, add.line_num, typo.original, typo.fixed);
+            println!(
+                "  {}:{}: {} ? {}",
+                add.file, add.line_num, typo.original, typo.fixed
+            );
         } else {
             use colored::Colorize;
-            println!("  {}:{}: {} ? {}", 
-                add.file.cyan(), 
+            println!(
+                "  {}:{}: {} ? {}",
+                add.file.cyan(),
                 add.line_num,
-                typo.original.red(), 
+                typo.original.red(),
                 typo.fixed.green()
             );
         }
@@ -248,10 +266,10 @@ mod tests {
     fn test_extra_hash() {
         let typo = detect_typo("###.ad-banner").unwrap();
         assert_eq!(typo.fixed, "##.ad-banner");
-        
+
         let typo = detect_typo("example.com###.ad").unwrap();
         assert_eq!(typo.fixed, "example.com##.ad");
-        
+
         let typo = detect_typo("####.ad").unwrap();
         assert_eq!(typo.fixed, "##.ad");
     }
@@ -260,10 +278,10 @@ mod tests {
     fn test_single_hash() {
         let typo = detect_typo("domain#.ad").unwrap();
         assert_eq!(typo.fixed, "domain##.ad");
-        
+
         let typo = detect_typo("example.com#.banner").unwrap();
         assert_eq!(typo.fixed, "example.com##.banner");
-        
+
         let typo = detect_typo("domain#[class]").unwrap();
         assert_eq!(typo.fixed, "domain##[class]");
     }
@@ -279,7 +297,7 @@ mod tests {
         let typo = detect_typo("example.com,,test.com##.ad").unwrap();
         assert_eq!(typo.fixed, "example.com,test.com##.ad");
     }
-    
+
     #[test]
     fn test_triple_comma() {
         let typo = detect_typo("a,,,b##.ad").unwrap();
@@ -313,13 +331,13 @@ mod tests {
         let (fixed, fixes) = fix_all_typos("###..ad");
         assert_eq!(fixed, "##.ad");
         assert_eq!(fixes.len(), 2);
-        
+
         // Triple comma + single hash
         let (fixed, fixes) = fix_all_typos("domain,,,b#.ad");
         assert_eq!(fixed, "domain,b##.ad");
         assert_eq!(fixes.len(), 2);
     }
-    
+
     #[test]
     fn test_extended_selectors_preserved() {
         // These should not be treated as typos
@@ -331,15 +349,21 @@ mod tests {
     fn test_triple_dollar() {
         let result = detect_typo("@@||example.com/cc.js$$$domain=asket.com");
         assert!(result.is_some());
-        assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js$domain=asket.com");
+        assert_eq!(
+            result.unwrap().fixed,
+            "@@||example.com/cc.js$domain=asket.com"
+        );
     }
 
     #[test]
     fn test_double_dollar() {
         let result = detect_typo("@@||example.com/cc.js$$domain=asket.com");
         assert!(result.is_some());
-        assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js$domain=asket.com");
-        
+        assert_eq!(
+            result.unwrap().fixed,
+            "@@||example.com/cc.js$domain=asket.com"
+        );
+
         let result = detect_typo("||example.com/ad.js$$domain=test.com");
         assert!(result.is_some());
         assert_eq!(result.unwrap().fixed, "||example.com/ad.js$domain=test.com");
@@ -349,13 +373,19 @@ mod tests {
     fn test_missing_dollar() {
         let result = detect_typo("@@||example.com/cc.jsdomain=asket.com");
         assert!(result.is_some());
-        assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js$domain=asket.com");
-        
+        assert_eq!(
+            result.unwrap().fixed,
+            "@@||example.com/cc.js$domain=asket.com"
+        );
+
         // With ^ separator
         let result = detect_typo("@@||example.com/cc.js^domain=asket.com");
         assert!(result.is_some());
-        assert_eq!(result.unwrap().fixed, "@@||example.com/cc.js^$domain=asket.com");
-        
+        assert_eq!(
+            result.unwrap().fixed,
+            "@@||example.com/cc.js^$domain=asket.com"
+        );
+
         // Valid should not match
         let result = detect_typo("@@||example.com/cc.js$domain=asket.com");
         assert!(result.is_none());
@@ -371,40 +401,46 @@ mod tests {
         let result = detect_typo("domain.com|domain2.com##.test");
         assert!(result.is_some());
         assert_eq!(result.unwrap().fixed, "domain.com,domain2.com##.test");
-        
+
         // Multiple pipes (fix_all_typos handles iteratively)
         let (fixed, _) = fix_all_typos("domain.com|domain2.com|domain3.com##.test");
         assert_eq!(fixed, "domain.com,domain2.com,domain3.com##.test");
-        
+
         // Mixed separators
         let (fixed, _) = fix_all_typos("domain.com|domain2.com,domain3.com##.test");
         assert_eq!(fixed, "domain.com,domain2.com,domain3.com##.test");
-        
+
         // With ##+js
         let (fixed, _) = fix_all_typos("domain3.com|domain2.com,domain1.com##+js(nowolf)");
         assert_eq!(fixed, "domain3.com,domain2.com,domain1.com##+js(nowolf)");
-        
+
         // Valid comma separator should not match
         let result = detect_typo("domain.com,domain2.com##.test");
         assert!(result.is_none());
     }
-    
+
     #[test]
     fn test_wrong_domain_separator() {
         // Single comma
         let result = detect_typo("||example.com$domain=site1.com,site2.com");
         assert!(result.is_some());
-        assert_eq!(result.unwrap().fixed, "||example.com$domain=site1.com|site2.com");
-        
+        assert_eq!(
+            result.unwrap().fixed,
+            "||example.com$domain=site1.com|site2.com"
+        );
+
         // Multiple commas (fix_all_typos handles iteratively)
         let (fixed, fixes) = fix_all_typos("||example.com$3p,domain=a.com,b.com,c.com");
         assert_eq!(fixed, "||example.com$3p,domain=a.com|b.com|c.com");
         assert_eq!(fixes.len(), 2);
-        
+
         // Mixed separators
         let (fixed, _) = fix_all_typos("*.global/$3p,domain=animepahe.si,daddyhd.com|soap2day.day");
-        assert_eq!(fixed, "*.global/$3p,domain=animepahe.si|daddyhd.com|soap2day.day");
-        
+        assert_eq!(
+            fixed,
+            "*.global/$3p,domain=animepahe.si|daddyhd.com|soap2day.day"
+        );
+
         // Valid pipe separator should not match
         let result = detect_typo("||example.com$domain=site1.com|site2.com");
         assert!(result.is_none());
