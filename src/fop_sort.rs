@@ -8,6 +8,7 @@
 
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::io::Cursor;
 use std::path::Path;
 
 use ahash::AHashSet as HashSet;
@@ -612,14 +613,15 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         return Ok(None);
     }
 
-    let input = match File::open(filename) {
-        Ok(f) => f,
+    // Read entire file into memory (avoids double-read for diff)
+    let original_content = match fs::read(filename) {
+        Ok(c) => c,
         Err(e) => {
             eprintln!("Cannot open {}: {}", filename.display(), e);
             return Ok(None);
         }
     };
-    let reader = BufReader::new(input);
+    let reader = BufReader::new(Cursor::new(&original_content));
     let mut output = match File::create(&temp_file) {
         Ok(f) => BufWriter::with_capacity(64 * 1024, f),
         Err(e) => {
@@ -901,7 +903,6 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     drop(output);
 
     // Compare files and replace if different
-    let original_content = fs::read(filename)?;
     let new_content = fs::read(&temp_file)?;
 
     if original_content != new_content {
