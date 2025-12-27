@@ -354,7 +354,14 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     }
 
     // Clean up tree selectors
-    for caps in TREE_SELECTOR.captures_iter(&selector.clone()) {
+    // Skip normalization if selector contains pseudo-class functions (preserve original spacing)
+    let skip_tree_normalize = selector.contains(":has(") || 
+                              selector.contains(":not(") || 
+                              selector.contains(":is(") || 
+                              selector.contains(":where(");
+    
+    if !skip_tree_normalize {
+        for caps in TREE_SELECTOR.captures_iter(&selector.clone()) {
         let full_match = caps.get(0).unwrap().as_str();
         if selector_only_strings.contains(full_match) || !selector_without_strings.contains(full_match) {
             continue;
@@ -385,6 +392,7 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
         let replace_by = if replace_by == "   " { " ".to_string() } else { replace_by };
         selector = selector.replacen(full_match, &format!("{}{}{}", g1, replace_by, g3), 1);
     }
+  }
 
     // Remove unnecessary tags (asterisks)
     for caps in REMOVAL_PATTERN.captures_iter(&selector.clone()) {
