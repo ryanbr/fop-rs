@@ -32,6 +32,13 @@ pub(crate) static WARNING_BUFFER: LazyLock<Mutex<Vec<String>>> =
 pub(crate) static WARNING_OUTPUT: LazyLock<Mutex<Option<PathBuf>>> =
     LazyLock::new(|| Mutex::new(None));
 
+/// Get user's home directory (cross-platform)
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
 /// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
     let guard = WARNING_OUTPUT.lock().unwrap();
@@ -168,7 +175,7 @@ fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Optio
         // Try ./.fopconfig first, then ~/.fopconfig
         let config_paths = [
             PathBuf::from(".fopconfig"),
-            dirs::home_dir()
+            home_dir()
                 .map(|h| h.join(".fopconfig"))
                 .unwrap_or_default(),
         ];
