@@ -115,7 +115,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-arm-binaries
-          path: fop-*-windows-arm64.exe
+          path: fop-*-windows-arm64-v2.exe
          
   build-macos:
     runs-on: macos-latest
