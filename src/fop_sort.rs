@@ -144,6 +144,11 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
         return filter_in.to_string();
     }
 
+    // Fast path: no options to process (no $ in filter)
+    if !filter_in.contains('$') {
+        return remove_unnecessary_wildcards(filter_in);
+    }
+
     let option_split = OPTION_PATTERN.captures(filter_in);
 
     match option_split {
