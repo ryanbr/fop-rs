@@ -39,6 +39,16 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Get current git user name
+fn get_git_username() -> Option<String> {
+    std::process::Command::new("git")
+        .args(["config", "user.name"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_lowercase())
+}
+
 /// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
     let guard = WARNING_OUTPUT.lock().unwrap();
@@ -140,6 +150,8 @@ struct Args {
     git_pr_branch: Option<String>,
     /// Check typos in git additions before commit
     fix_typos_on_add: bool,
+    /// Users allowed to push directly (bypass create-pr)
+    direct_push_users: Vec<String>,
     /// Auto-fix without prompting (use with --fix-typos or --fix-typos-on-add)
     auto_fix: bool,
     /// Output changes as diff file (no actual changes made)
@@ -313,6 +325,9 @@ impl Args {
             git_pr_branch: config.get("git-pr-branch").cloned(),
             fix_typos: parse_bool(&config, "fix-typos", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
+            direct_push_users: config.get("direct-push-users")
+                .map(|s| s.split(',').map(|u| u.trim().to_lowercase()).collect())
+                .unwrap_or_default(),
             quiet: parse_bool(&config, "quiet", false),
             auto_fix: parse_bool(&config, "auto-fix", false),
             output_diff: config.get("output-diff").map(PathBuf::from),
@@ -558,10 +573,10 @@ impl Args {
             println!("  warning-output  = (stderr)");
         }
         if let Some(ref title) = self.create_pr {
-            println!(
-                "  create-pr       = {}",
-                if title.is_empty() { "(prompt)" } else { title }
-            );
+            println!("  create-pr       = {}", if title.is_empty() { "(prompt)" } else { title });
+            if !self.direct_push_users.is_empty() {
+                println!("  direct-push-users = {}", self.direct_push_users.join(","));
+            }
         } else {
             println!("  create-pr       = false");
         }
@@ -803,6 +818,7 @@ fn process_location(
     sort_config: &SortConfig,
     create_pr: &Option<String>,
     git_pr_branch: &Option<String>,
+    direct_push_users: &[String],
     fix_typos: bool,
     fix_typos_on_add: bool,
     auto_fix: bool,
@@ -960,6 +976,24 @@ fn process_location(
             }
 
             if let Some(pr_title) = create_pr {
+                // Check if user can bypass PR requirement
+                let can_direct_push = if !direct_push_users.is_empty() {
+                    if let Some(username) = get_git_username() {
+                        direct_push_users.contains(&username)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if can_direct_push {
+                    // Direct push for authorized users
+                    if !quiet {
+                        println!("Direct push authorized for user.");
+                    }
+                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, git_message)?;
+                } else {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
                     pr_title.clone()
@@ -971,6 +1005,7 @@ fn process_location(
                     msg.trim().to_string()
                 };
                 create_pull_request(repo, &base_cmd, &message, git_pr_branch, quiet, no_color)?;
+                }
             } else {
                 commit_changes(
                     repo,
@@ -1229,6 +1264,7 @@ fn main() {
             &sort_config,
             &args.create_pr,
             &args.git_pr_branch,
+            &args.direct_push_users,
             args.fix_typos,
             args.fix_typos_on_add,
             args.auto_fix,
