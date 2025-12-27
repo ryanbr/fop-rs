@@ -7,15 +7,13 @@
 //! Copyright (C) 2011 Michael (original Python version)
 //! Rust port maintains GPL-3.0 license compatibility.
 
-use crate::{
-    LOCALHOST_PATTERN,
-};
+use crate::LOCALHOST_PATTERN;
 
-use crate::fop_git::{valid_url, check_comment};
+use crate::fop_git::{check_comment, valid_url};
 use crate::fop_sort::is_tld_only;
 
 use crate::fop_sort::{
-    convert_ubo_options, sort_domains, remove_unnecessary_wildcards, filter_tidy,
+    convert_ubo_options, filter_tidy, remove_unnecessary_wildcards, sort_domains,
 };
 
 // =============================================================================
@@ -42,7 +40,10 @@ fn test_tld_only() {
 #[test]
 fn test_check_comment() {
     assert!(check_comment("M: Fixed typo", false));
-    assert!(check_comment("A: (filters) https://example.com/issue", true));
+    assert!(check_comment(
+        "A: (filters) https://example.com/issue",
+        true
+    ));
     assert!(!check_comment("Invalid comment", false));
     assert!(!check_comment("A: (filters) not-a-url", true));
 }
@@ -53,12 +54,12 @@ fn test_localhost_pattern() {
     assert!(LOCALHOST_PATTERN.is_match("0.0.0.0 domain.com"));
     assert!(LOCALHOST_PATTERN.is_match("0.0.0.0 sub.domain.com"));
     assert!(LOCALHOST_PATTERN.is_match("0.0.0.0 ads.example.org"));
-    
+
     // Test 127.0.0.1 entries
     assert!(LOCALHOST_PATTERN.is_match("127.0.0.1 domain.com"));
     assert!(LOCALHOST_PATTERN.is_match("127.0.0.1 sub.domain.com"));
     assert!(LOCALHOST_PATTERN.is_match("127.0.0.1 tracker.net"));
-    
+
     // Test non-matching entries
     assert!(!LOCALHOST_PATTERN.is_match("# comment"));
     assert!(!LOCALHOST_PATTERN.is_match("192.168.1.1 domain.com"));
@@ -69,10 +70,12 @@ fn test_localhost_pattern() {
 fn test_localhost_domain_extraction() {
     let caps = LOCALHOST_PATTERN.captures("0.0.0.0 z-ads.com").unwrap();
     assert_eq!(&caps[2], "z-ads.com");
-    
-    let caps = LOCALHOST_PATTERN.captures("127.0.0.1 sub.domain.com").unwrap();
+
+    let caps = LOCALHOST_PATTERN
+        .captures("127.0.0.1 sub.domain.com")
+        .unwrap();
     assert_eq!(&caps[2], "sub.domain.com");
-    
+
     let caps = LOCALHOST_PATTERN.captures("0.0.0.0 a-tracker.net").unwrap();
     assert_eq!(&caps[2], "a-tracker.net");
 }
@@ -117,7 +120,11 @@ fn test_filter_tidy() {
 
 #[test]
 fn test_sort_domains() {
-    let mut domains = vec!["z.com".to_string(), "a.com".to_string(), "~b.com".to_string()];
+    let mut domains = vec![
+        "z.com".to_string(),
+        "a.com".to_string(),
+        "~b.com".to_string(),
+    ];
     sort_domains(&mut domains);
     assert_eq!(domains, vec!["a.com", "~b.com", "z.com"]);
 }

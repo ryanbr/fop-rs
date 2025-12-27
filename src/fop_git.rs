@@ -1,11 +1,11 @@
 //! Git repository operations for FOP
 
+use colored::Colorize;
+use regex::Regex;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
-use colored::Colorize;
-use regex::Regex;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 // =============================================================================
 // Repository Definition
@@ -42,9 +42,8 @@ pub const REPO_TYPES: &[RepoDefinition] = &[GIT];
 // Commit Message Validation
 // =============================================================================
 
-static COMMIT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(A|M|P):\s((\(.+\))\s)?(.*)$").unwrap()
-});
+static COMMIT_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(A|M|P):\s((\(.+\))\s)?(.*)$").unwrap());
 
 pub fn valid_url(url_str: &str) -> bool {
     if url_str.starts_with("about:") {
@@ -72,7 +71,10 @@ pub fn valid_url(url_str: &str) -> bool {
 pub fn check_comment(comment: &str, user_changes: bool) -> bool {
     match COMMIT_PATTERN.captures(comment) {
         None => {
-            eprintln!("The comment \"{}\" is not in the recognised format.", comment);
+            eprintln!(
+                "The comment \"{}\" is not in the recognised format.",
+                comment
+            );
             false
         }
         Some(caps) => {
@@ -208,8 +210,10 @@ fn get_remote_url(base_cmd: &[String]) -> Option<String> {
         .args(["remote", "get-url", "origin"])
         .output()
         .ok()?;
-    
-    String::from_utf8(output.stdout).ok().map(|s| s.trim().to_string())
+
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// Get current branch name
@@ -219,15 +223,18 @@ fn get_current_branch(base_cmd: &[String]) -> Option<String> {
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .ok()?;
-    
-    String::from_utf8(output.stdout).ok().map(|s| s.trim().to_string())
+
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// Convert git remote URL to GitHub web URL
 fn remote_to_github_url(remote: &str) -> Option<String> {
     // Handle SSH: git@github.com:user/repo.git
     if remote.starts_with("git@github.com:") {
-        let path = remote.trim_start_matches("git@github.com:")
+        let path = remote
+            .trim_start_matches("git@github.com:")
             .trim_end_matches(".git");
         return Some(format!("https://github.com/{}", path));
     }
@@ -251,18 +258,18 @@ fn checkout_branch(base_cmd: &[String], branch: &str) -> io::Result<bool> {
 /// Get added lines from git diff
 pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addition>> {
     use crate::fop_typos::Addition;
-    
+
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
         .args(["diff", "--no-color", "-U0"])
         .output()
         .ok()?;
-    
+
     let diff = String::from_utf8(output.stdout).ok()?;
     let mut added = Vec::new();
     let mut current_file = String::new();
     let mut line_num: usize = 0;
-    
+
     for line in diff.lines() {
         if line.starts_with("+++ b/") {
             current_file = line[6..].to_string();
@@ -288,7 +295,7 @@ pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addi
             line_num += 1;
         }
     }
-    
+
     Some(added)
 }
 
@@ -300,12 +307,12 @@ fn get_default_branch(base_cmd: &[String]) -> Option<String> {
         .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
         .output()
         .ok()?;
-    
+
     if output.status.success() {
         let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
         return branch.strip_prefix("origin/").map(|s| s.to_string());
     }
-    
+
     // Fallback: check if main or master exists
     for branch in &["main", "master"] {
         let status = Command::new(&base_cmd[0])
@@ -315,12 +322,12 @@ fn get_default_branch(base_cmd: &[String]) -> Option<String> {
             .stderr(std::process::Stdio::null())
             .status()
             .ok()?;
-        
+
         if status.success() {
             return Some(branch.to_string());
         }
     }
-    
+
     None
 }
 
@@ -348,26 +355,25 @@ pub fn create_pull_request(
     }
 
     // Get current branch (to return to later)
-    let current_branch = get_current_branch(base_cmd)
-        .unwrap_or_else(|| "master".to_string());
+    let current_branch = get_current_branch(base_cmd).unwrap_or_else(|| "master".to_string());
 
     // Get base branch for PR (user override > auto-detect > current)
     let base_branch = pr_branch_override
         .clone()
         .or_else(|| get_default_branch(base_cmd))
         .unwrap_or_else(|| current_branch.clone());
-    
+
     // Create branch name with timestamp
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let pr_branch = format!("fop-update-{}", timestamp);
-    
+
     if !quiet {
         println!("\nCreating PR branch '{}'...", pr_branch);
     }
-    
+
     // Create and checkout new branch
     let mut cmd = Command::new(&base_cmd[0]);
     cmd.args(&base_cmd[1..])
@@ -375,14 +381,12 @@ pub fn create_pull_request(
     if quiet {
         cmd.arg("--quiet");
     }
-    let status = cmd
-        .args(&base_cmd[1..])
-        .status()?;
+    let status = cmd.args(&base_cmd[1..]).status()?;
     if !status.success() {
         eprintln!("Failed to create branch {}", pr_branch);
         return Ok(None);
     }
-    
+
     // Commit changes
     let status = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
@@ -394,7 +398,7 @@ pub fn create_pull_request(
         let _ = checkout_branch(base_cmd, &current_branch);
         return Ok(None);
     }
-    
+
     // Push branch
     if !quiet {
         println!("Pushing branch to origin...");
@@ -412,22 +416,30 @@ pub fn create_pull_request(
         let _ = checkout_branch(base_cmd, &current_branch);
         return Ok(None);
     }
-    
+
     // Switch back to original branch
     let _ = checkout_branch(base_cmd, &current_branch);
-    
+
     // Generate PR URL
     let pr_url = get_remote_url(base_cmd)
         .and_then(|remote| remote_to_github_url(&remote))
-        .map(|github_url| format!("{}/compare/{}...{}?expand=1", github_url, base_branch, pr_branch));
-    
+        .map(|github_url| {
+            format!(
+                "{}/compare/{}...{}?expand=1",
+                github_url, base_branch, pr_branch
+            )
+        });
+
     if let Some(ref url) = pr_url {
         println!("\n{}", "Pull request branch pushed successfully!".green());
         println!("\nCreate PR at:\n  {}", url.cyan());
     } else {
-        println!("\nBranch '{}' pushed. Create PR manually on GitHub.", pr_branch);
+        println!(
+            "\nBranch '{}' pushed. Create PR manually on GitHub.",
+            pr_branch
+        );
     }
-    
+
     Ok(pr_url)
 }
 
@@ -468,17 +480,17 @@ pub fn commit_changes(
             eprintln!("Error: Invalid commit message format. Use M:/A:/P: prefix.");
             return Ok(());
         }
-        
+
         if !quiet {
             println!("Committing with message: {}", message);
         }
-        
+
         Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
             .args(repo.commit)
             .arg(message)
             .status()?;
-        
+
         // Pull and push
         for op in [repo.pull, repo.push].iter() {
             let mut cmd = Command::new(&base_cmd[0]);
@@ -488,12 +500,15 @@ pub fn commit_changes(
             }
             let _ = cmd.status();
         }
-        
+
         if !quiet {
             if no_color {
                 println!("Completed commit process successfully.");
             } else {
-                println!("{}", "Completed commit process successfully.".green().bold());
+                println!(
+                    "{}",
+                    "Completed commit process successfully.".green().bold()
+                );
             }
         }
         return Ok(());
@@ -505,7 +520,10 @@ pub fn commit_changes(
             println!("\nThis is a large change. Are you sure you want to proceed?");
             print!("Please type 'YES' to continue: ");
         } else {
-            println!("\n{}", "This is a large change. Are you sure you want to proceed?".yellow());
+            println!(
+                "\n{}",
+                "This is a large change. Are you sure you want to proceed?".yellow()
+            );
             print!("{}", "Please type 'YES' to continue: ".white().bold());
         }
         io::stdout().flush()?;
@@ -524,7 +542,12 @@ pub fn commit_changes(
         if no_color {
             print!("Please enter a valid commit comment or quit:\n");
         } else {
-            println!("{}", "Please enter a valid commit comment or quit:".white().bold());
+            println!(
+                "{}",
+                "Please enter a valid commit comment or quit:"
+                    .white()
+                    .bold()
+            );
         }
         io::stdout().flush()?;
 
@@ -544,7 +567,12 @@ pub fn commit_changes(
             if no_color {
                 println!("Comment \"{}\" accepted.", comment);
             } else {
-                println!("{} \"{}\" {}", "Comment".green(), comment.cyan(), "accepted.".green());
+                println!(
+                    "{} \"{}\" {}",
+                    "Comment".green(),
+                    comment.cyan(),
+                    "accepted.".green()
+                );
             }
 
             // Execute commit
@@ -564,7 +592,10 @@ pub fn commit_changes(
                 if no_color {
                     println!("\nConnecting to server. Please enter your password if required.");
                 } else {
-                    println!("\n{}", "Connecting to server. Please enter your password if required.".magenta());
+                    println!(
+                        "\n{}",
+                        "Connecting to server. Please enter your password if required.".magenta()
+                    );
                 }
             }
 
@@ -584,7 +615,10 @@ pub fn commit_changes(
                 if no_color {
                     println!("Completed commit process successfully.");
                 } else {
-                    println!("{}", "Completed commit process successfully.".green().bold());
+                    println!(
+                        "{}",
+                        "Completed commit process successfully.".green().bold()
+                    );
                 }
             }
             return Ok(());

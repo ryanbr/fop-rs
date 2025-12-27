@@ -1,5 +1,5 @@
 //! FOP - Filter Orderer and Preener
-//! 
+//!
 //! A tool for sorting and cleaning ad-blocking filter lists.
 //! Rust port of the original Python FOP by Michael (EasyList project).
 //!
@@ -9,32 +9,34 @@
 //! Copyright (C) 2011 Michael (original Python version)
 //! Rust port maintains GPL-3.0 license compatibility.
 
-mod fop_sort;
 mod fop_git;
+mod fop_sort;
 mod fop_typos;
 
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
 use ahash::AHashMap;
 use ahash::AHashSet as HashSet;
-use std::sync::Mutex;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 /// Thread-safe warning output
-pub(crate) static WARNING_BUFFER: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::with_capacity(100)));
-pub(crate) static WARNING_OUTPUT: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
+pub(crate) static WARNING_BUFFER: LazyLock<Mutex<Vec<String>>> =
+    LazyLock::new(|| Mutex::new(Vec::with_capacity(100)));
+pub(crate) static WARNING_OUTPUT: LazyLock<Mutex<Option<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 /// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
     let guard = WARNING_OUTPUT.lock().unwrap();
     if guard.is_some() {
-        drop(guard);  // Release lock before acquiring buffer lock
+        drop(guard); // Release lock before acquiring buffer lock
         if let Ok(mut buffer) = WARNING_BUFFER.lock() {
             buffer.push(message.to_string());
         }
@@ -66,13 +68,15 @@ pub(crate) fn flush_warnings() {
     }
 }
 
+use rayon::prelude::*;
 use regex::Regex;
 use walkdir::WalkDir;
-use rayon::prelude::*;
 
+use fop_git::{
+    build_base_command, check_repo_changes, commit_changes, create_pull_request, get_added_lines,
+    git_available, RepoDefinition, REPO_TYPES,
+};
 use fop_sort::{fop_sort, SortConfig};
-use fop_git::{RepoDefinition, REPO_TYPES, build_base_command, check_repo_changes,
-              commit_changes, create_pull_request, git_available, get_added_lines};
 
 // FOP version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -151,7 +155,7 @@ struct Args {
 fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Option<PathBuf>) {
     // pre-allocated config settings
     let mut config = HashMap::with_capacity(28);
-    
+
     // If custom path provided, use that only
     let config_path: Option<PathBuf> = if let Some(path) = custom_path {
         if path.exists() {
@@ -163,12 +167,14 @@ fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Optio
     } else {
         // Try ./.fopconfig first, then ~/.fopconfig
         let config_paths = [
-        PathBuf::from(".fopconfig"),
-        dirs::home_dir().map(|h| h.join(".fopconfig")).unwrap_or_default(),
-    ];
+            PathBuf::from(".fopconfig"),
+            dirs::home_dir()
+                .map(|h| h.join(".fopconfig"))
+                .unwrap_or_default(),
+        ];
         config_paths.into_iter().find(|p| p.exists())
     };
-    
+
     if let Some(path) = config_path.as_ref() {
         if let Ok(content) = fs::read_to_string(path) {
             for line in content.lines() {
@@ -186,25 +192,29 @@ fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Optio
             }
         }
     }
-    
+
     (config, config_path)
 }
 
 /// Parse boolean value from config
 fn parse_bool(config: &HashMap<String, String>, key: &str, default: bool) -> bool {
-    config.get(key).map(|v| {
-        matches!(v.to_lowercase().as_str(), "true" | "yes" | "1")
-    }).unwrap_or(default)
+    config
+        .get(key)
+        .map(|v| matches!(v.to_lowercase().as_str(), "true" | "yes" | "1"))
+        .unwrap_or(default)
 }
 
 /// Parse string list from config (comma-separated)
 fn parse_list(config: &HashMap<String, String>, key: &str) -> Vec<String> {
-    config.get(key).map(|v| {
-        v.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    }).unwrap_or_default()
+    config
+        .get(key)
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Normalize extension to exclude leading dot (for path.extension() comparison)
@@ -214,22 +224,28 @@ fn normalize_extension(ext: &str) -> String {
 
 /// Parse file extensions from config (comma-separated), default to txt
 fn parse_extensions(config: &HashMap<String, String>, key: &str) -> Vec<String> {
-    config.get(key).map(|v| {
-        v.split(',')
-            .map(|s| normalize_extension(s.trim()))
-            .filter(|s| !s.is_empty())
-            .collect()
-    }).unwrap_or_else(|| vec!["txt".to_string()])
+    config
+        .get(key)
+        .map(|v| {
+            v.split(',')
+                .map(|s| normalize_extension(s.trim()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_else(|| vec!["txt".to_string()])
 }
 
 /// Parse comment characters from config (comma-separated), default to !
 fn parse_comment_chars(config: &HashMap<String, String>, key: &str) -> Vec<String> {
-    config.get(key).map(|v| {
-        v.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    }).unwrap_or_else(|| vec!["!".to_string()])
+    config
+        .get(key)
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_else(|| vec!["!".to_string()])
 }
 
 impl Args {
@@ -247,7 +263,7 @@ impl Args {
                 }
             }
         }
-        
+
         // Load config file and track path
         let (config, found_config_path) = if ignore_config {
             (HashMap::new(), None)
@@ -256,7 +272,7 @@ impl Args {
         };
         // Store for --show-config
         let config_path_str = found_config_path.as_ref().map(|p| p.display().to_string());
-        
+
         // Start with config values (or defaults)
         let mut args = Args {
             directories: Vec::new(),
@@ -282,9 +298,9 @@ impl Args {
             warning_output: config.get("warning-output").map(|s| PathBuf::from(s)),
             create_pr: config.get("create-pr").and_then(|v| {
                 match v.to_lowercase().as_str() {
-                    "" | "true" | "yes" | "1" => Some(String::new()),  // Enable with prompt
-                    "false" | "no" | "0" => None,                       // Disable
-                    _ => Some(v.clone()),                               // Use as title
+                    "" | "true" | "yes" | "1" => Some(String::new()), // Enable with prompt
+                    "false" | "no" | "0" => None,                     // Disable
+                    _ => Some(v.clone()),                             // Use as title
                 }
             }),
             git_pr_branch: config.get("git-pr-branch").cloned(),
@@ -297,7 +313,7 @@ impl Args {
             help: false,
             version: false,
         };
-        
+
         // Command line args override config
         for arg in env::args().skip(1) {
             match arg.as_str() {
@@ -315,18 +331,18 @@ impl Args {
                 "--show-config" => args.show_config = true,
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
-                    args.ignore_files = files.split(',')
-                        .map(|s| s.trim().to_string())
-                        .collect();
+                    args.ignore_files = files.split(',').map(|s| s.trim().to_string()).collect();
                 }
                 _ if arg.starts_with("--file-extensions=") => {
-                    args.file_extensions = arg.trim_start_matches("--file-extensions=")
+                    args.file_extensions = arg
+                        .trim_start_matches("--file-extensions=")
                         .split(',')
                         .map(|s| normalize_extension(s.trim()))
-                         .collect();
+                        .collect();
                 }
                 _ if arg.starts_with("--comments=") => {
-                    args.comment_chars = arg.trim_start_matches("--comments=")
+                    args.comment_chars = arg
+                        .trim_start_matches("--comments=")
                         .split(',')
                         .map(|s| s.trim().to_string())
                         .filter(|s| !s.is_empty())
@@ -335,19 +351,22 @@ impl Args {
                 "--backup" => args.backup = true,
                 "--keep-empty-lines" => args.keep_empty_lines = true,
                 _ if arg.starts_with("--disable-domain-limit=") => {
-                    args.disable_domain_limit = arg.trim_start_matches("--disable-domain-limit=")
+                    args.disable_domain_limit = arg
+                        .trim_start_matches("--disable-domain-limit=")
                         .split(',')
                         .map(|s| s.trim().to_string())
                         .collect();
                 }
                 _ if arg.starts_with("--warning-output=") => {
-                    args.warning_output = Some(PathBuf::from(arg.trim_start_matches("--warning-output=")));
+                    args.warning_output =
+                        Some(PathBuf::from(arg.trim_start_matches("--warning-output=")));
                 }
                 _ if arg.starts_with("--config-file=") => {
                     // Already handled in first pass
                 }
                 _ if arg.starts_with("--ignoredirs=") => {
-                    args.ignore_dirs = arg.trim_start_matches("--ignoredirs=")
+                    args.ignore_dirs = arg
+                        .trim_start_matches("--ignoredirs=")
                         .split(',')
                         .map(|s| s.trim().to_string())
                         .collect();
@@ -357,18 +376,20 @@ impl Args {
                     args.create_pr = Some(arg.trim_start_matches("--create-pr=").to_string());
                 }
                 _ if arg.starts_with("--git-pr-branch=") => {
-                    args.git_pr_branch = Some(arg.trim_start_matches("--git-pr-branch=").to_string());
+                    args.git_pr_branch =
+                        Some(arg.trim_start_matches("--git-pr-branch=").to_string());
                 }
                 "--fix-typos" => args.fix_typos = true,
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
-                "--ignore-config" => {}  // Already handled early
+                "--ignore-config" => {} // Already handled early
                 _ if arg.starts_with("--check-file=") => {
                     args.check_file = Some(PathBuf::from(arg.trim_start_matches("--check-file=")));
                 }
                 "--quiet" | "-q" => args.quiet = true,
                 _ if arg.starts_with("--output-diff=") => {
-                    args.output_diff = Some(PathBuf::from(arg.trim_start_matches("--output-diff=")));
+                    args.output_diff =
+                        Some(PathBuf::from(arg.trim_start_matches("--output-diff=")));
                 }
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
@@ -422,7 +443,9 @@ impl Args {
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --no-color      Disable colored output");
         println!("        --no-large-warning  Disable large change warning prompt");
-        println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
+        println!(
+            "        --ignorefiles=  Additional files to ignore (comma-separated, partial names)"
+        );
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --config-file=  Custom config file path");
         println!("        --file-extensions=  File extensions to process (default: .txt)");
@@ -430,7 +453,9 @@ impl Args {
         println!("        --backup        Create .backup files before modifying");
         println!("        --keep-empty-lines  Keep empty lines in output");
         println!("        --ignore-dot-domains  Don't skip rules without dot in domain");
-        println!("        --disable-domain-limit=  Files to skip short domain check (comma-separated)");
+        println!(
+            "        --disable-domain-limit=  Files to skip short domain check (comma-separated)"
+        );
         println!("        --warning-output=   Output warnings to file instead of stderr");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --create-pr[=TITLE]  Create PR branch instead of committing to master");
@@ -497,7 +522,9 @@ impl Args {
         } else {
             println!("  ignoredirs      = {}", self.ignore_dirs.join(","));
         }
-        if self.file_extensions.is_empty() || (self.file_extensions.len() == 1 && self.file_extensions[0] == "txt") {
+        if self.file_extensions.is_empty()
+            || (self.file_extensions.len() == 1 && self.file_extensions[0] == "txt")
+        {
             println!("  file-extensions = txt (default)");
         } else {
             println!("  file-extensions = {}", self.file_extensions.join(","));
@@ -513,7 +540,10 @@ impl Args {
         if self.disable_domain_limit.is_empty() {
             println!("  disable-domain-limit= (none)");
         } else {
-            println!("  disable-domain-limit= {}", self.disable_domain_limit.join(","));
+            println!(
+                "  disable-domain-limit= {}",
+                self.disable_domain_limit.join(",")
+            );
         }
         if let Some(ref path) = self.warning_output {
             println!("  warning-output  = {}", path.display());
@@ -521,7 +551,10 @@ impl Args {
             println!("  warning-output  = (stderr)");
         }
         if let Some(ref title) = self.create_pr {
-            println!("  create-pr       = {}", if title.is_empty() { "(prompt)" } else { title });
+            println!(
+                "  create-pr       = {}",
+                if title.is_empty() { "(prompt)" } else { title }
+            );
         } else {
             println!("  create-pr       = false");
         }
@@ -538,117 +571,148 @@ impl Args {
 // =============================================================================
 
 /// Pattern for extracting domain from blocking filter options
-pub(crate) static FILTER_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\$(?:[^,]*,)?domain=([^,]+)").unwrap()
-});
+pub(crate) static FILTER_DOMAIN_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$(?:[^,]*,)?domain=([^,]+)").unwrap());
 
 /// Pattern for extracting domain from element hiding rules  
-pub(crate) static ELEMENT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^([^/|@"!]*?)#[@?$%]?#"#).unwrap()
-});
+pub(crate) static ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)#[@?$%]?#"#).unwrap());
 
 /// Pattern for FOP.py compatible element matching (no {} in selector)
-pub(crate) static FOPPY_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#)([^{}]+)$"#).unwrap()
-});
+pub(crate) static FOPPY_ELEMENT_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#)([^{}]+)$"#).unwrap());
 
 /// Pattern for FOP.py compatible sorting (only ## and #@#)
-pub(crate) static FOPPY_ELEMENT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^[^/|@"!]*?#@?#"#).unwrap()
-});
+pub(crate) static FOPPY_ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^[^/|@"!]*?#@?#"#).unwrap());
 
 /// Pattern for element hiding rules (standard, uBO, and AdGuard extended syntax)
-pub(crate) static ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static ELEMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^([^/|@"!]*?)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
 });
 
 /// Pattern for regex domain element hiding rules (uBO/AdGuard specific)
-pub(crate) static REGEX_ELEMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static REGEX_ELEMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^(/[^#]+/)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
 });
 
 /// Pattern for localhost/hosts file entries
-pub(crate) static LOCALHOST_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(0\.0\.0\.0|127\.0\.0\.1)\s+(.+)$").unwrap()
-});
+pub(crate) static LOCALHOST_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(0\.0\.0\.0|127\.0\.0\.1)\s+(.+)$").unwrap());
 
-pub(crate) static OPTION_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static OPTION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(.*)\$(~?[\w\-]+(?:=[^,\s]+)?(?:,~?[\w\-]+(?:=[^,\s]+)?)*)$").unwrap()
 });
 
-pub(crate) static PSEUDO_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(:[a-zA-Z\-]*[A-Z][a-zA-Z\-]*)").unwrap()
+pub(crate) static PSEUDO_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(:[a-zA-Z\-]*[A-Z][a-zA-Z\-]*)").unwrap());
+
+pub(crate) static REMOVAL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"([>+~,@\s])(\*)([#.\[:])").expect("Invalid REMOVAL_PATTERN regex")
 });
 
-pub(crate) static REMOVAL_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"([>+~,@\s])(\*)([#.\[:])")
-        .expect("Invalid REMOVAL_PATTERN regex")
-});
-
-pub(crate) static ATTRIBUTE_VALUE_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static ATTRIBUTE_VALUE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^([^'"\\]|\\.)*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\*"#).unwrap()
 });
 
-pub(crate) static TREE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(\\.|[^+>~ \t])\s*([+>~ \t])\s*(\D)").unwrap()
-});
+pub(crate) static TREE_SELECTOR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(\\.|[^+>~ \t])\s*([+>~ \t])\s*(\D)").unwrap());
 
-pub(crate) static UNICODE_SELECTOR: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap()
-});
+pub(crate) static UNICODE_SELECTOR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap());
 
-pub(crate) static SHORT_DOMAIN_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\|*[a-zA-Z0-9]").unwrap()
-});
+pub(crate) static SHORT_DOMAIN_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\|*[a-zA-Z0-9]").unwrap());
 
-pub(crate) static DOMAIN_EXTRACT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\|*([^/\^\$]+)").unwrap()
-});
+pub(crate) static DOMAIN_EXTRACT_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\|*([^/\^\$]+)").unwrap());
 
-pub(crate) static IP_ADDRESS_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\d+\.\d+\.\d+\.\d+").unwrap()
-});
+pub(crate) static IP_ADDRESS_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d+\.\d+\.\d+\.\d+").unwrap());
 
 // =============================================================================
 // Constants
 // =============================================================================
 
 /// Files that should not be sorted
-const IGNORE_FILES: &[&str] = &[
-    "test-files-to-ingore.txt",
-];
+const IGNORE_FILES: &[&str] = &["test-files-to-ingore.txt"];
 
 /// Directories to ignore
-const IGNORE_DIRS: &[&str] = &[
-    "folders-to-ingore",
-];
+const IGNORE_DIRS: &[&str] = &["folders-to-ingore"];
 
 /// Domains that should ignore the 7 character size restriction
-pub(crate) static IGNORE_DOMAINS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+pub(crate) static IGNORE_DOMAINS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut set = HashSet::new();
     set.insert("a.sampl");
     set
 });
 
 /// Known Adblock Plus options (HashSet for O(1) lookup)
-pub(crate) static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+pub(crate) static KNOWN_OPTIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         // Standard ABP options
-        "collapse", "csp", "csp=frame-src", "csp=img-src", "csp=media-src",
-        "csp=script-src", "csp=worker-src", "document", "elemhide", "font",
-        "genericblock", "generichide", "image", "match-case", "media",
-        "object-subrequest", "object", "other", "ping", "popup",
-        "script", "stylesheet", "subdocument", "third-party", "webrtc",
-        "websocket", "xmlhttprequest",
+        "collapse",
+        "csp",
+        "csp=frame-src",
+        "csp=img-src",
+        "csp=media-src",
+        "csp=script-src",
+        "csp=worker-src",
+        "document",
+        "elemhide",
+        "font",
+        "genericblock",
+        "generichide",
+        "image",
+        "match-case",
+        "media",
+        "object-subrequest",
+        "object",
+        "other",
+        "ping",
+        "popup",
+        "script",
+        "stylesheet",
+        "subdocument",
+        "third-party",
+        "webrtc",
+        "websocket",
+        "xmlhttprequest",
         // uBO short options
-        "xhr", "css", "1p", "3p", "frame", "doc", "ghide", "xml", "iframe",
-        "first-party", "strict1p", "strict3p", "ehide", "shide", "specifichide",
+        "xhr",
+        "css",
+        "1p",
+        "3p",
+        "frame",
+        "doc",
+        "ghide",
+        "xml",
+        "iframe",
+        "first-party",
+        "strict1p",
+        "strict3p",
+        "ehide",
+        "shide",
+        "specifichide",
         // uBO/ABP specific
-        "all", "badfilter", "important", "popunder", "empty", "cname",
-        "inline-script", "removeparam", "redirect-rule",
-        "_____", "-----", 
+        "all",
+        "badfilter",
+        "important",
+        "popunder",
+        "empty",
+        "cname",
+        "inline-script",
+        "removeparam",
+        "redirect-rule",
+        "_____",
+        "-----",
         // Adguard
-        "network", "content", "extension", "jsinject", "stealth", "cookie",
+        "network",
+        "content",
+        "extension",
+        "jsinject",
+        "stealth",
+        "cookie",
         // ABP rewrite resources
         "rewrite=abp-resource:1x1-transparent-gif",
         "rewrite=abp-resource:2x2-transparent-png",
@@ -660,30 +724,35 @@ pub(crate) static KNOWN_OPTIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "rewrite=abp-resource:blank-mp3",
         "rewrite=abp-resource:blank-mp4",
         "rewrite=abp-resource:blank-text",
-    ].into_iter().collect()
+    ]
+    .into_iter()
+    .collect()
 });
 
 /// uBO to ABP option conversions
-pub(crate) static UBO_CONVERSIONS: Lazy<AHashMap<&'static str, &'static str>> = Lazy::new(|| {
-    [
-        ("xhr", "xmlhttprequest"),
-        ("~xhr", "~xmlhttprequest"),
-        ("css", "stylesheet"),
-        ("~css", "~stylesheet"),
-        ("1p", "~third-party"),
-        ("~1p", "third-party"),
-        ("3p", "third-party"),
-        ("~3p", "~third-party"),
-        ("frame", "subdocument"),
-        ("~frame", "~subdocument"),
-        ("doc", "document"),
-        ("ghide", "generichide"),
-        ("xml", "xmlhttprequest"),
-        ("~xml", "~xmlhttprequest"),
-        ("iframe", "subdocument"),
-        ("~iframe", "~subdocument"),
-    ].into_iter().collect()
-});
+pub(crate) static UBO_CONVERSIONS: LazyLock<AHashMap<&'static str, &'static str>> =
+    LazyLock::new(|| {
+        [
+            ("xhr", "xmlhttprequest"),
+            ("~xhr", "~xmlhttprequest"),
+            ("css", "stylesheet"),
+            ("~css", "~stylesheet"),
+            ("1p", "~third-party"),
+            ("~1p", "third-party"),
+            ("3p", "third-party"),
+            ("~3p", "~third-party"),
+            ("frame", "subdocument"),
+            ("~frame", "~subdocument"),
+            ("doc", "document"),
+            ("ghide", "generichide"),
+            ("xml", "xmlhttprequest"),
+            ("~xml", "~xmlhttprequest"),
+            ("iframe", "subdocument"),
+            ("~iframe", "~subdocument"),
+        ]
+        .into_iter()
+        .collect()
+    });
 
 // =============================================================================
 // Main Processing
@@ -781,7 +850,7 @@ fn process_location(
         })
         .filter_map(|e| e.ok())
         .collect();
- 
+
     // Print directories first (sequential for ordered output)
     for entry in &entries {
         let path = entry.path();
@@ -802,7 +871,7 @@ fn process_location(
             }
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            file_extensions.iter().any(|ext| ext == extension) 
+            file_extensions.iter().any(|ext| ext == extension)
                 && (disable_ignored || !IGNORE_FILES.contains(&filename))
                 && !should_ignore_file(filename, ignore_files)
         })
@@ -810,7 +879,11 @@ fn process_location(
 
     // Process files in parallel
     txt_files.par_iter().for_each(|entry| {
-        let filename = entry.path().file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let filename = entry
+            .path()
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
         let skip_domain_limit = disable_domain_limit.iter().any(|f| filename.contains(f));
         let config = SortConfig {
             convert_ubo: sort_config.convert_ubo,
@@ -892,8 +965,17 @@ fn process_location(
                 };
                 create_pull_request(repo, &base_cmd, &message, git_pr_branch, quiet, no_color)?;
             } else {
-                commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, git_message)?;
-        }
+                commit_changes(
+                    repo,
+                    &base_cmd,
+                    original_difference,
+                    no_msg_check,
+                    no_color,
+                    no_large_warning,
+                    quiet,
+                    git_message,
+                )?;
+            }
         }
     }
 
@@ -902,11 +984,16 @@ fn process_location(
 
 fn print_greeting(no_commit: bool, config_path: Option<&str>) {
     let mode = if no_commit { " (sort only)" } else { "" };
-    let greeting = format!("FOP (Filter Orderer and Preener) version {}{}", VERSION, mode);
+    let greeting = format!(
+        "FOP (Filter Orderer and Preener) version {}{}",
+        VERSION, mode
+    );
     let separator = "=".repeat(greeting.len());
     println!("{}", separator);
     println!("{}", greeting);
-    println!("Copyright (C) 2025 FanboyNZ - https://github.com/ryanbr/fop-rs (Licensed under GPL-3.0)");
+    println!(
+        "Copyright (C) 2025 FanboyNZ - https://github.com/ryanbr/fop-rs (Licensed under GPL-3.0)"
+    );
     if let Some(path) = config_path {
         println!("Using config file: {}", path);
     }
@@ -953,10 +1040,10 @@ fn main() {
         backup: args.backup,
         keep_empty_lines: args.keep_empty_lines,
         ignore_dot_domains: args.ignore_dot_domains,
-        disable_domain_limit: false,  // Set per-file in process_location
+        disable_domain_limit: false, // Set per-file in process_location
         fix_typos: args.fix_typos,
         quiet: args.quiet,
-        dry_run: args.output_diff.is_some()
+        dry_run: args.output_diff.is_some(),
     };
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -965,7 +1052,8 @@ fn main() {
     let locations: Vec<PathBuf> = if args.directories.is_empty() {
         env::current_dir().map(|cwd| vec![cwd]).unwrap_or_default()
     } else {
-        let mut unique: Vec<PathBuf> = args.directories
+        let mut unique: Vec<PathBuf> = args
+            .directories
             .iter()
             .filter_map(|p| fs::canonicalize(p).ok())
             .collect::<HashSet<_>>()
@@ -975,14 +1063,14 @@ fn main() {
         unique
     };
 
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use rayon::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     // Standalone typo scan and fix mode
     if args.fix_typos {
         let total_typos = AtomicUsize::new(0);
         let files_with_typos = AtomicUsize::new(0);
-        
+
         for location in &locations {
             let entries: Vec<_> = WalkDir::new(location)
                 .into_iter()
@@ -997,17 +1085,17 @@ fn main() {
                     if !e.path().is_file() {
                         return false;
                     }
-                    let ext = e.path().extension()
+                    let ext = e
+                        .path()
+                        .extension()
                         .and_then(|ext| ext.to_str())
                         .unwrap_or("");
-                    let filename = e.path().file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+                    let filename = e.path().file_name().and_then(|n| n.to_str()).unwrap_or("");
                     args.file_extensions.iter().any(|fe| fe == ext)
                         && !should_ignore_file(filename, &args.ignore_files)
                 })
                 .collect();
-            
+
             entries.par_iter().for_each(|entry| {
                 let path = entry.path();
                 if let Ok(content) = fs::read_to_string(path) {
@@ -1019,7 +1107,7 @@ fn main() {
                     let mut file_modified = false;
                     let mut file_typo_count = 0;
                     let mut new_lines = Vec::with_capacity(content.lines().count());
-                    
+
                     for (line_num, line) in content.lines().enumerate() {
                         let (fixed, fixes) = fop_typos::fix_all_typos(line);
                         if !fixes.is_empty() {
@@ -1028,10 +1116,10 @@ fn main() {
                             if !args.quiet {
                                 let _ = writeln!(
                                     std::io::stdout().lock(),
-                                    "{}:{}: {} ? {} ({})",  
+                                    "{}:{}: {} ? {} ({})",
                                     path.display(),
                                     line_num + 1,
-                                    line, 
+                                    line,
                                     fixed,
                                     fixes.join(", ")
                                 );
@@ -1041,7 +1129,7 @@ fn main() {
                             new_lines.push(line.to_string());
                         }
                     }
-                    
+
                     if file_modified {
                         if args.output_diff.is_none() {
                             if let Err(e) = fs::write(path, new_lines.join("\n") + "\n") {
@@ -1054,7 +1142,7 @@ fn main() {
                 }
             });
         }
-        
+
         if !args.quiet {
             let total = total_typos.load(Ordering::Relaxed);
             let files = files_with_typos.load(Ordering::Relaxed);
@@ -1072,11 +1160,11 @@ fn main() {
             eprintln!("{} does not exist or is not a file.", file_path.display());
             return;
         }
-        
+
         if !args.quiet {
             println!("Processing file: {}", file_path.display());
         }
-        
+
         match fop_sort::fop_sort(file_path, &sort_config) {
             Ok(Some(diff)) => {
                 diff_output.lock().unwrap().push(diff);
@@ -1084,18 +1172,30 @@ fn main() {
             Ok(None) => {}
             Err(e) => eprintln!("Error processing {}: {}", file_path.display(), e),
         }
-       
+
         // Handle git commit (unless no_commit mode)
         if !args.no_commit {
             let parent = file_path.parent().unwrap_or(std::path::Path::new("."));
-            if let Some(repo) = REPO_TYPES.iter().find(|r| parent.join(r.directory).is_dir()) {
+            if let Some(repo) = REPO_TYPES
+                .iter()
+                .find(|r| parent.join(r.directory).is_dir())
+            {
                 let base_cmd = fop_git::build_base_command(repo, parent);
-                if let Err(e) = fop_git::commit_changes(repo, &base_cmd, false, args.no_msg_check, args.no_color, args.no_large_warning, args.quiet, &args.git_message) {
+                if let Err(e) = fop_git::commit_changes(
+                    repo,
+                    &base_cmd,
+                    false,
+                    args.no_msg_check,
+                    args.no_color,
+                    args.no_large_warning,
+                    args.quiet,
+                    &args.git_message,
+                ) {
                     eprintln!("Git error: {}", e);
                 }
             }
         }
-        
+
         // Write diff if requested
         if let Some(ref diff_path) = args.output_diff {
             let diffs = diff_output.lock().unwrap();
@@ -1108,7 +1208,27 @@ fn main() {
 
     // Process all locations
     for (i, location) in locations.iter().enumerate() {
-        if let Err(e) = process_location(location, args.no_commit, args.no_msg_check, args.disable_ignored, args.no_color, args.no_large_warning, &args.ignore_files, &args.ignore_dirs, &args.file_extensions, &args.disable_domain_limit, &sort_config, &args.create_pr, &args.git_pr_branch, args.fix_typos, args.fix_typos_on_add, args.auto_fix, args.quiet, &diff_output, &args.git_message) {
+        if let Err(e) = process_location(
+            location,
+            args.no_commit,
+            args.no_msg_check,
+            args.disable_ignored,
+            args.no_color,
+            args.no_large_warning,
+            &args.ignore_files,
+            &args.ignore_dirs,
+            &args.file_extensions,
+            &args.disable_domain_limit,
+            &sort_config,
+            &args.create_pr,
+            &args.git_pr_branch,
+            args.fix_typos,
+            args.fix_typos_on_add,
+            args.auto_fix,
+            args.quiet,
+            &diff_output,
+            &args.git_message,
+        ) {
             eprintln!("Error: {}", e);
         }
         // Print blank line between multiple directories (preserve original behavior)
@@ -1116,7 +1236,7 @@ fn main() {
             println!();
         }
     }
-    
+
     // Write collected diffs if --output-diff specified
     if let Some(ref diff_path) = args.output_diff {
         let diffs = diff_output.lock().unwrap();
