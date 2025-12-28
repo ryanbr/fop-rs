@@ -55,3 +55,9 @@ ignorefiles = .json,.backup,.bak,.swp,.gz,.sh,.mjs,.js,warnings.txt
 
 # Supported file extensions for scanning
 file-extensions = txt
+
+# Create PR branch instead of committing
+create-pr = true
+
+# Users allowed to push directly when create-pr is enabled (comma-separated, case-insensitive)
+direct-push-users = mapx-,gorhill,uBlock-user,stephenhawk8054,Yuki2718,ghajini,peace2000,huyszn,BlazeFTL,u-RraaLL,JobcenterTycoon
