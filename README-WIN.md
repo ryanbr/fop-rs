@@ -108,53 +108,9 @@ Now you can run:
 fop -n C:\easylist
 ```
 
-## VSCode Integration
+## VS Code Integration
 
-### Task Runner
-
-Create `.vscode/tasks.json` in your project:
-
-```json
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Run FOP",
-      "type": "shell",
-      "command": "fop",
-      "args": ["-n", "${workspaceFolder}"],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "Run FOP (with commit)",
-      "type": "shell", 
-      "command": "fop",
-      "args": ["${workspaceFolder}"],
-      "problemMatcher": []
-    }
-  ]
-}
-```
-
-Run with:
-- `Ctrl+Shift+B` (default build task)
-- `Ctrl+Shift+P` ? "Tasks: Run Task" ? Select task
-
-### Keyboard Shortcut
-
-Add to `.vscode/keybindings.json`:
-
-```json
-{
-  "key": "ctrl+alt+f",
-  "command": "workbench.action.tasks.runTask",
-  "args": "Run FOP"
-}
-```
+See [Using FOP with Visual Studio Code](Using_FOP_with_Visual_Studio_Code.md) for tasks, keyboard shortcuts, and workflow tips.
 
 ## Configuration File
 
@@ -248,3 +204,4 @@ cargo test
 
 # Run directly without building separately
 cargo run -- -n C:\easylist
+```

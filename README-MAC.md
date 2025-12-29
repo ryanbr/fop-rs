@@ -128,53 +128,10 @@ fop --config-file=~/configs/my-fop.config -n .
 fop --git-message="M: Fixed sorting" .
 ```
 
-## VSCode Integration
+## VS Code Integration
 
-### Task Runner
+See [Using FOP with Visual Studio Code](Using_FOP_with_Visual_Studio_Code.md) for tasks, keyboard shortcuts, and workflow tips.
 
-Create `.vscode/tasks.json` in your project:
-
-```json
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Run FOP",
-      "type": "shell",
-      "command": "fop",
-      "args": ["-n", "${workspaceFolder}"],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "Run FOP (with commit)",
-      "type": "shell",
-      "command": "fop",
-      "args": ["${workspaceFolder}"],
-      "problemMatcher": []
-    }
-  ]
-}
-```
-
-Run with:
-- `Cmd+Shift+B` (default build task)
-- `Cmd+Shift+P` ? "Tasks: Run Task" ? Select task
-
-### Keyboard Shortcut
-
-Add to VSCode keybindings (`Cmd+K Cmd+S` ? Open Keyboard Shortcuts JSON):
-
-```json
-{
-  "key": "cmd+alt+f",
-  "command": "workbench.action.tasks.runTask",
-  "args": "Run FOP"
-}
-```
 
 ## Configuration File
 

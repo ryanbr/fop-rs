@@ -13,9 +13,11 @@ npm install -g fop-cli
 
 ### 2. Verify Installation
 
-Open VS Code terminal and run:
-- **Windows/Linux:** `Ctrl+`` ` `
-- **macOS:** `Cmd+`` ` `
+Open VS Code terminal:
+- **Windows/Linux:** Press `` Ctrl+` ``
+- **macOS:** Press `` Cmd+` ``
+
+Then run:
 ```bash
 fop --version
 ```
@@ -25,7 +27,7 @@ fop --version
 ### Run FOP on Current Directory
 
 1. Open your filter list repository in VS Code
-2. Open terminal (`Ctrl+`` ` ` or `Cmd+`` ` `)
+2. Open terminal (`` Ctrl+` `` or `` Cmd+` ``)
 3. Run:
 ```bash
 fop --no-commit .
