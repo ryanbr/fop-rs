@@ -155,7 +155,9 @@ struct Args {
     /// Auto-fix without prompting (use with --fix-typos or --fix-typos-on-add)
     auto_fix: bool,
     /// Output changes as diff file (no actual changes made)
-    output_diff: Option<PathBuf>,
+    output_diff: Option<PathBuf>,  // Combined mode: single file
+    /// Output individual .diff files alongside source files
+    output_diff_individual: bool,
     /// Suppress most output (for CI)
     quiet: bool,
     /// Process a single file instead of directory
@@ -331,6 +333,7 @@ impl Args {
             quiet: parse_bool(&config, "quiet", false),
             auto_fix: parse_bool(&config, "auto-fix", false),
             output_diff: config.get("output-diff").map(PathBuf::from),
+            output_diff_individual: false,
             check_file: None,
             help: false,
             version: false,
@@ -409,6 +412,10 @@ impl Args {
                     args.check_file = Some(PathBuf::from(arg.trim_start_matches("--check-file=")));
                 }
                 "--quiet" | "-q" => args.quiet = true,
+                "--output-diff" => {
+                    // Individual mode: create .diff file for each source file
+                    args.output_diff_individual = true;
+                }
                 _ if arg.starts_with("--output-diff=") => {
                     args.output_diff =
                         Some(PathBuf::from(arg.trim_start_matches("--output-diff=")));
@@ -426,13 +433,18 @@ impl Args {
         }
 
         // Warn about incompatible options
-        if args.output_diff.is_some() && args.create_pr.is_some() {
+        if (args.output_diff.is_some() || args.output_diff_individual) && args.create_pr.is_some() {
             eprintln!("Warning: --output-diff and --create-pr are incompatible (dry-run mode)");
             args.create_pr = None;
         }
-        if args.output_diff.is_some() && args.git_message.is_some() {
+        if (args.output_diff.is_some() || args.output_diff_individual) && args.git_message.is_some() {
             eprintln!("Warning: --output-diff and --git-message are incompatible (dry-run mode)");
             args.git_message = None;
+        }
+        if args.output_diff.is_some() && args.output_diff_individual {
+            eprintln!("Warning: --output-diff and --output-diff=<file> are mutually exclusive");
+            eprintln!("Using individual mode (--output-diff)");
+            args.output_diff = None;
         }
         if args.no_commit && args.create_pr.is_some() {
             eprintln!("Warning: --no-commit and --create-pr are incompatible");
@@ -823,6 +835,7 @@ fn process_location(
     fix_typos_on_add: bool,
     auto_fix: bool,
     quiet: bool,
+    output_diff_individual: bool,
     diff_output: &std::sync::Mutex<Vec<String>>,
     git_message: &Option<String>,
 ) -> io::Result<()> {
@@ -925,8 +938,18 @@ fn process_location(
 
         match fop_sort(entry.path(), &config) {
             Ok(Some(diff)) => {
-                // Collect diff for dry-run mode
-                diff_output.lock().unwrap().push(diff);
+                if output_diff_individual {
+                    // Individual mode: write .diff file alongside source
+                    let diff_path = entry.path().with_extension("diff");
+                    if let Err(e) = fs::write(&diff_path, &diff) {
+                        eprintln!("Error writing diff file {}: {}", diff_path.display(), e);
+                    } else if !quiet {
+                        println!("Diff written to: {}", diff_path.display());
+                    }
+                } else {
+                    // Combined mode: collect for later
+                    diff_output.lock().unwrap().push(diff);
+                }
             }
             Ok(None) => {}
             Err(e) => eprintln!("Error processing {}: {}", entry.path().display(), e),
@@ -1085,7 +1108,7 @@ fn main() {
         disable_domain_limit: false, // Set per-file in process_location
         fix_typos: args.fix_typos,
         quiet: args.quiet,
-        dry_run: args.output_diff.is_some(),
+        dry_run: args.output_diff.is_some() || args.output_diff_individual,
     };
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -1209,7 +1232,17 @@ fn main() {
 
         match fop_sort::fop_sort(file_path, &sort_config) {
             Ok(Some(diff)) => {
-                diff_output.lock().unwrap().push(diff);
+                if args.output_diff_individual {
+                    // Individual mode: write .diff file alongside source
+                    let diff_path = file_path.with_extension("diff");
+                    if let Err(e) = fs::write(&diff_path, &diff) {
+                        eprintln!("Error writing diff file: {}", e);
+                    } else if !args.quiet {
+                        println!("Diff written to: {}", diff_path.display());
+                    }
+                } else {
+                    diff_output.lock().unwrap().push(diff);
+                }
             }
             Ok(None) => {}
             Err(e) => eprintln!("Error processing {}: {}", file_path.display(), e),
@@ -1239,7 +1272,7 @@ fn main() {
         }
 
         // Write diff if requested
-        if let Some(ref diff_path) = args.output_diff {
+        if let Some(ref diff_path) = &args.output_diff {
             let diffs = diff_output.lock().unwrap();
             if let Err(e) = fs::write(diff_path, diffs.join("\n")) {
                 eprintln!("Error writing diff file: {}", e);
@@ -1269,6 +1302,7 @@ fn main() {
             args.fix_typos_on_add,
             args.auto_fix,
             args.quiet,
+            args.output_diff_individual,
             &diff_output,
             &args.git_message,
         ) {
@@ -1281,7 +1315,7 @@ fn main() {
     }
 
     // Write collected diffs if --output-diff specified
-    if let Some(ref diff_path) = args.output_diff {
+    if let Some(ref diff_path) = &args.output_diff {
         let diffs = diff_output.lock().unwrap();
         if let Err(e) = fs::write(diff_path, diffs.join("\n")) {
             eprintln!("Error writing diff file: {}", e);
