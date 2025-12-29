@@ -193,14 +193,34 @@ Command line arguments override config file settings.
 
 ## Platform Support
 
-| Platform | Binary |
-|----------|--------|
-| Linux x86_64 | `fop-*-linux-x86_64` |
-| Linux x86_64 (AVX2) | `fop-*-linux-x86_64-v3` |
-| macOS Intel | `fop-*-macos-x86_64` |
-| macOS Apple Silicon | `fop-*-macos-arm64` |
-| Windows x86_64 | `fop-*-windows-x86_64.exe` |
-| Windows x86_64 (AVX2) | `fop-*-windows-x86_64-v3.exe` |
+
+| Platform | Architecture | Binary |
+|----------|--------------|--------|
+| Linux | x86_64 | `fop-*-linux-x86_64` |
+| Linux | x86_64 (AVX2 optimized) | `fop-*-linux-x86_64-v3` |
+| Linux | ARM64 | `fop-*-linux-arm64-n1` |
+| macOS | Intel | `fop-*-macos-x86_64` |
+| macOS | Apple Silicon (M1->M5) | `fop-*-macos-arm64` |
+| Windows | x86_64 | `fop-*-windows-x86_64.exe` |
+| Windows | x86_64 (AVX2 optimized) | `fop-*-windows-x86_64-v3.exe` |
+| Windows | ARM64 | `fop-*-windows-arm64-v2.exe` |
+
+### Which binary should I use?
+
+**Linux/Windows x86_64:**
+- Use `-v3` version for CPUs from ~2015+ (Haswell, Ryzen) - faster due to AVX2 instructions
+- Use baseline version (-x86_64.exe) for older CPUs or if unsure
+
+**ARM64:**
+- Linux: Optimized for Neoverse N1+ (AWS Graviton2+, Ampere Altra)
+- Windows: Optimized for Snapdragon 8cx Gen 3+ / Cortex-A78+
+- macOS: Optimized for Apple Silicon (M1+)
+
+**Unsupported platform?**
+FOP.rs builds from source on any platform with Rust 1.80+:
+```bash
+cargo build --release
+```
 
 ## Migrating from Python FOP
 
