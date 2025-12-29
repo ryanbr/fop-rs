@@ -58,6 +58,8 @@ pub struct SortConfig<'a> {
     pub fix_typos: bool,
     pub quiet: bool,
     pub dry_run: bool,
+    /// Output changed files with --changed suffix
+    pub output_changed: bool,
 }
 
 // =============================================================================
@@ -907,6 +909,21 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
     if original_content != new_content {
         if config.dry_run {
+            if config.output_changed {
+                // Write to filename--changed.ext
+                let stem = filename.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+                let ext = filename.extension().and_then(|e| e.to_str()).unwrap_or("txt");
+                let changed_filename = filename.with_file_name(format!("{}--changed.{}", stem, ext));
+                
+                fs::write(&changed_filename, &new_content)?;
+                fs::remove_file(&temp_file)?;
+                
+                if !config.quiet {
+                    println!("Changed file written to: {}", changed_filename.display());
+                }
+                
+                return Ok(Some(format!("Modified: {} -> {}", filename.display(), changed_filename.display())));
+            }
             // Generate unified diff
             let original_str = String::from_utf8_lossy(&original_content);
             let new_str = String::from_utf8_lossy(&new_content);

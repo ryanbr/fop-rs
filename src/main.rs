@@ -160,6 +160,8 @@ struct Args {
     output_diff_individual: bool,
     /// Suppress most output (for CI)
     quiet: bool,
+    /// Output changed files with --changed suffix (no overwrite)
+    output_changed: bool,
     /// Process a single file instead of directory
     check_file: Option<PathBuf>,
     /// Git commit message (skip interactive prompt)
@@ -335,6 +337,7 @@ impl Args {
             output_diff: config.get("output-diff").map(PathBuf::from),
             output_diff_individual: false,
             check_file: None,
+            output_changed: false,
             help: false,
             version: false,
         };
@@ -416,6 +419,9 @@ impl Args {
                     // Individual mode: create .diff file for each source file
                     args.output_diff_individual = true;
                 }
+                "--output" => {
+                    args.output_changed = true;
+                }
                 _ if arg.starts_with("--output-diff=") => {
                     args.output_diff =
                         Some(PathBuf::from(arg.trim_start_matches("--output-diff=")));
@@ -448,6 +454,16 @@ impl Args {
         }
         if args.no_commit && args.create_pr.is_some() {
             eprintln!("Warning: --no-commit and --create-pr are incompatible");
+            args.create_pr = None;
+        }
+        if args.output_changed && (args.output_diff.is_some() || args.output_diff_individual) {
+            eprintln!("Warning: --output and --output-diff are mutually exclusive");
+            eprintln!("Using --output");
+            args.output_diff = None;
+            args.output_diff_individual = false;
+        }
+        if args.output_changed && args.create_pr.is_some() {
+            eprintln!("Warning: --output and --create-pr are incompatible");
             args.create_pr = None;
         }
         if args.no_commit && args.git_message.is_some() {
@@ -934,6 +950,7 @@ fn process_location(
             fix_typos,
             quiet,
             dry_run: sort_config.dry_run,
+            output_changed: sort_config.output_changed,
         };
 
         match fop_sort(entry.path(), &config) {
@@ -1108,7 +1125,8 @@ fn main() {
         disable_domain_limit: false, // Set per-file in process_location
         fix_typos: args.fix_typos,
         quiet: args.quiet,
-        dry_run: args.output_diff.is_some() || args.output_diff_individual,
+        dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed,
+        output_changed: args.output_changed
     };
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
