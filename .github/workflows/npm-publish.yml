@@ -78,6 +78,12 @@ jobs:
           RUSTFLAGS="-C target-cpu=neoverse-n1" cargo zigbuild --release --target aarch64-unknown-linux-gnu
           cp target/aarch64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-arm64-n1"
 
+          # Linux RISC-V 64-bit
+          cargo clean
+          rustup target add riscv64gc-unknown-linux-gnu
+          cargo zigbuild --release --target riscv64gc-unknown-linux-gnu
+          cp target/riscv64gc-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-riscv64"
+
       - name: Upload Linux/Windows artifacts
         uses: actions/upload-artifact@v4
         with:

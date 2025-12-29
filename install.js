@@ -17,6 +17,7 @@ const PLATFORMS = {
   'darwin-arm64': `-macos-arm64`,
   'linux-x64': `-linux-x86_64`,
   'linux-arm64': `-linux-arm64-n1`,
+  'linux-riscv64': `-linux-riscv64`,
   'win32-x64': `-windows-x86_64.exe`,
   'win32-arm64': `-windows-arm64-v2.exe`,
 };
