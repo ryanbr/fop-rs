@@ -1,5 +1,13 @@
 # Using FOP with Visual Studio Code
 
+This guide covers Windows, macOS, and Linux.
+
+## Quick Setup
+
+Copy the [.vscode](/.vscode/) folder to your project root for pre-configured tasks and settings.
+
+Or follow the manual setup below.
+
 ## Setup
 
 ### 1. Install FOP
@@ -40,58 +48,24 @@ fop --check-file=easylist/easylist_general_block.txt --no-commit
 
 ## VS Code Tasks Integration
 
-Create `.vscode/tasks.json` in your project:
-```json
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "FOP: Sort All",
-      "type": "shell",
-      "command": "fop",
-      "args": ["--no-commit", "."],
-      "group": "build",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "FOP: Sort Current File",
-      "type": "shell",
-      "command": "fop",
-      "args": ["--check-file=${file}", "--no-commit"],
-      "group": "build"
-    },
-    {
-      "label": "FOP: Sort and Commit",
-      "type": "shell",
-      "command": "fop",
-      "args": ["."],
-      "group": "build"
-    },
-    {
-      "label": "FOP: Preview Changes (Diff)",
-      "type": "shell",
-      "command": "fop",
-      "args": ["--no-commit", "--output-diff=changes.diff", "."],
-      "group": "build"
-    },
-    {
-      "label": "FOP: Fix Typos",
-      "type": "shell",
-      "command": "fop",
-      "args": ["--fix-typos", "--no-commit", "."],
-      "group": "build"
-    }
-  ]
-}
-```
+Copy `.vscode/tasks.json` from the [.vscode](/.vscode/) folder, or create your own.
+
+**Available tasks:**
+
+| Task | Description |
+|------|-------------|
+| FOP: Sort All | Sort all files (default build task) |
+| FOP: Sort Current File | Sort currently open file |
+| FOP: Sort and Commit | Sort all + git commit prompt |
+| FOP: Preview Changes (Diff) | Preview changes without modifying |
+| FOP: Fix Typos | Fix typos in all files |
+| FOP: Fix Typos and Commit | Fix typos + git commit prompt |
 
 **Run tasks:**
 - **Windows/Linux:** `Ctrl+Shift+P` ? "Tasks: Run Task" ? Select FOP task
 - **macOS:** `Cmd+Shift+P` ? "Tasks: Run Task" ? Select FOP task
+
+Or use `Ctrl+Shift+B` / `Cmd+Shift+B` for the default task (FOP: Sort All).
 
 ## Keyboard Shortcuts
 
@@ -182,7 +156,7 @@ quiet = false
 
 | Extension | Purpose |
 |-----------|---------|
-| [Filter List Syntax](https://marketplace.visualstudio.com/items?itemName=piquark6046.filter-list) | Syntax highlighting for filter lists |
+| [Adblock Syntax](https://marketplace.visualstudio.com/items?itemName=adguard.adblock) | Syntax highlighting for filter lists (ABP, uBO, AdGuard) |
 | [Run on Save](https://marketplace.visualstudio.com/items?itemName=emeraldwalk.RunOnSave) | Auto-run FOP on save |
 | [GitLens](https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens) | Enhanced Git integration |
 
