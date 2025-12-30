@@ -85,7 +85,12 @@ pub(crate) fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
 
 /// Sort domains alphabetically, ignoring ~ prefix
 pub(crate) fn sort_domains(domains: &mut Vec<String>) {
-    domains.sort_unstable_by(|a, b| a.trim_start_matches('~').cmp(b.trim_start_matches('~')));
+    domains.sort_unstable_by(|a, b| {
+        let (a_base, a_inv) = a.strip_prefix('~').map(|s| (s, true)).unwrap_or((a.as_str(), false));
+        let (b_base, b_inv) = b.strip_prefix('~').map(|s| (s, true)).unwrap_or((b.as_str(), false));
+        // base domain first; non-inverted before inverted when base is equal
+        (a_base, a_inv).cmp(&(b_base, b_inv))
+    });
 }
 
 // =============================================================================
@@ -569,7 +574,11 @@ fn combine_filters(
             .collect();
 
         new_domains
-            .sort_unstable_by(|a, b| a.trim_start_matches('~').cmp(b.trim_start_matches('~')));
+            .sort_unstable_by(|a, b| {
+                let (a_base, a_inv) = a.strip_prefix('~').map(|s| (s, true)).unwrap_or((a.as_str(), false));
+                let (b_base, b_inv) = b.strip_prefix('~').map(|s| (s, true)).unwrap_or((b.as_str(), false));
+                (a_base, a_inv).cmp(&(b_base, b_inv))
+            });
 
         let new_domain_str = new_domains.join(separator);
 
