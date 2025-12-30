@@ -168,11 +168,11 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                 .map(|opt| {
                     // Only replace underscores in option name, not in value
                     if let Some(eq_pos) = opt.find('=') {
-                        let name = opt[..eq_pos].to_lowercase().replace('_', "-");
+                        let name = opt[..eq_pos].to_ascii_lowercase().replace('_', "-");
                         let value = &opt[eq_pos..]; // Keep value as-is (preserve case and underscores)
                         format!("{}{}", name, value)
                     } else {
-                        opt.to_lowercase().replace('_', "-")
+                        opt.to_ascii_lowercase().replace('_', "-")
                     }
                 })
                 .collect();
