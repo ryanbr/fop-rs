@@ -459,7 +459,7 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
 
         let ac = caps.get(2).map(|m| m.as_str()).unwrap_or("");
         let old = format!("{}{}", pseudo_class, ac);
-        let new = format!("{}{}", pseudo_class.to_lowercase(), ac);
+        let new = format!("{}{}", pseudo_class.to_ascii_lowercase(), ac);
         selector = selector.replacen(&old, &new, 1);
     }
 
@@ -695,7 +695,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         } else {
             // Sort blocking rules (unless no_sort)
             if !no_sort {
-                unique.sort_by_cached_key(|s| s.to_lowercase());
+                unique.sort_by_cached_key(|s| s.to_ascii_lowercase());
             }
             let combined = combine_filters(unique, &FILTER_DOMAIN_PATTERN, "|");
             for filter in combined {
@@ -790,7 +790,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             FOPPY_ELEMENT_PATTERN.captures(&line)
         };
         if let Some(caps) = element_caps {
-            let domains = caps[1].to_lowercase();
+            let domains = caps[1].to_ascii_lowercase();
             let separator = &caps[2];
             let selector = &caps[3];
 
