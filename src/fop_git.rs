@@ -224,9 +224,15 @@ fn get_current_branch(base_cmd: &[String]) -> Option<String> {
         .output()
         .ok()?;
 
-    String::from_utf8(output.stdout)
-        .ok()
-        .map(|s| s.trim().to_string())
+    String::from_utf8(output.stdout).ok().and_then(|s| {
+        let branch = s.trim();
+        // In detached HEAD state, git prints "HEAD" (not a real branch name).
+        if branch.is_empty() || branch == "HEAD" {
+            None
+        } else {
+            Some(branch.to_string())
+        }
+    })
 }
 
 /// Convert git remote URL to GitHub web URL
