@@ -381,7 +381,7 @@ pub fn create_pull_request(
     if quiet {
         cmd.arg("--quiet");
     }
-    let status = cmd.args(&base_cmd[1..]).status()?;
+    let status = cmd.status()?;
     if !status.success() {
         eprintln!("Failed to create branch {}", pr_branch);
         return Ok(None);
