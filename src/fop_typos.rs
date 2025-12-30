@@ -99,44 +99,18 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         || line.contains("$domain=")
         || line.contains(",domain=")
     {
-        // Check for $$$ before domain=
-        if TRIPLE_DOLLAR.is_match(line) {
-            let fixed = TRIPLE_DOLLAR.replace(line, "$$domain=").to_string();
-            return Some(Typo {
-                original: line.to_string(),
-                fixed,
-                description: "Triple $ ($$$ ? $)".to_string(),
-            });
+        // Use try_fix to avoid running the regex twice (is_match + replace)
+        if let Some(typo) = try_fix(line, &TRIPLE_DOLLAR, "$$domain=", "Triple $ ($$$ ? $)") {
+            return Some(typo);
         }
-
-        // Check for $$ before domain=
-        if DOUBLE_DOLLAR.is_match(line) {
-            let fixed = DOUBLE_DOLLAR.replace(line, "$$domain=").to_string();
-            return Some(Typo {
-                original: line.to_string(),
-                fixed,
-                description: "Double $ ($$ ? $)".to_string(),
-            });
+        if let Some(typo) = try_fix(line, &DOUBLE_DOLLAR, "$$domain=", "Double $ ($$ ? $)") {
+            return Some(typo);
         }
-
-        // Check for missing $ before domain=
-        if MISSING_DOLLAR.is_match(line) {
-            let fixed = MISSING_DOLLAR.replace(line, "$1$$domain=$3").to_string();
-            return Some(Typo {
-                original: line.to_string(),
-                fixed,
-                description: "Missing $ before domain=".to_string(),
-            });
+        if let Some(typo) = try_fix(line, &MISSING_DOLLAR, "$1$$domain=$3", "Missing $ before domain=") {
+            return Some(typo);
         }
-
-        // Check for wrong domain separator (, instead of |)
-        if WRONG_DOMAIN_SEPARATOR.is_match(line) {
-            let fixed = WRONG_DOMAIN_SEPARATOR.replace(line, "$1$2|$3").to_string();
-            return Some(Typo {
-                original: line.to_string(),
-                fixed,
-                description: "Wrong domain separator (, ? |)".to_string(),
-            });
+        if let Some(typo) = try_fix(line, &WRONG_DOMAIN_SEPARATOR, "$1$2|$3", "Wrong domain separator (, ? |)") {
+            return Some(typo);
         }
 
         return None; // No cosmetic typos in network rules
@@ -148,15 +122,13 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
     }
 
     // Check for wrong cosmetic domain separator (| instead of ,)
-    if WRONG_COSMETIC_SEPARATOR.is_match(line) {
-        let fixed = WRONG_COSMETIC_SEPARATOR
-            .replace(line, "$1,$2$3")
-            .to_string();
-        return Some(Typo {
-            original: line.to_string(),
-            fixed,
-            description: "Wrong cosmetic separator (| ? ,)".to_string(),
-        });
+    if let Some(typo) = try_fix(
+        line,
+        &WRONG_COSMETIC_SEPARATOR,
+        "$1,$2$3",
+        "Wrong cosmetic separator (| ? ,)",
+    ) {
+        return Some(typo);
     }
 
     // Check for extra # (### ? ##)
