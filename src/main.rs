@@ -440,11 +440,11 @@ impl Args {
 
         // Warn about incompatible options
         if (args.output_diff.is_some() || args.output_diff_individual) && args.create_pr.is_some() {
-            eprintln!("Warning: --output-diff and --create-pr are incompatible (dry-run mode)");
+            // Silently disable create-pr when using output-diff (common when config has create-pr)
             args.create_pr = None;
         }
         if (args.output_diff.is_some() || args.output_diff_individual) && args.git_message.is_some() {
-            eprintln!("Warning: --output-diff and --git-message are incompatible (dry-run mode)");
+            // Silently disable git-message when using output-diff
             args.git_message = None;
         }
         if args.output_diff.is_some() && args.output_diff_individual {
@@ -493,9 +493,7 @@ impl Args {
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --no-color      Disable colored output");
         println!("        --no-large-warning  Disable large change warning prompt");
-        println!(
-            "        --ignorefiles=  Additional files to ignore (comma-separated, partial names)"
-        );
+        println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --config-file=  Custom config file path");
         println!("        --file-extensions=  File extensions to process (default: .txt)");
@@ -503,9 +501,7 @@ impl Args {
         println!("        --backup        Create .backup files before modifying");
         println!("        --keep-empty-lines  Keep empty lines in output");
         println!("        --ignore-dot-domains  Don't skip rules without dot in domain");
-        println!(
-            "        --disable-domain-limit=  Files to skip short domain check (comma-separated)"
-        );
+        println!("        --disable-domain-limit=  Files to skip short domain check (comma-separated)");
         println!("        --warning-output=   Output warnings to file instead of stderr");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --create-pr[=TITLE]  Create PR branch instead of committing to master");
@@ -516,6 +512,8 @@ impl Args {
         println!("    -q, --quiet                Suppress most output (for CI)");
         println!("        --check-file=FILE      Process a single file");
         println!("        --output-diff=FILE     Output changes as diff (no files modified)");
+        println!("        --output-diff          Output individual .diff files per source file");
+        println!("        --output               Output changed files with --changed suffix");
         println!("        --ignore-config        Ignore .fopconfig file");
         println!("        --show-config   Show applied configuration and exit");
         println!("    -h, --help          Show this help message");
