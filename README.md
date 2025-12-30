@@ -103,6 +103,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
 | `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
 | `--ignore-config` | Ignore .fopconfig file, use only CLI args |
+| `--output` | Output changed files with --changed suffix (no overwrite) |
 | `--check-file=FILE` | Process a single file | 
 | `--output-diff=FILE` | Output changes as diff (no files modified) | 
 | `--quiet` | Limit console output, less verbose |
@@ -193,28 +194,55 @@ Command line arguments override config file settings.
 
 ## Platform Support
 
+### Pre-built Binaries
 
-| Platform | Architecture | Binary |
-|----------|--------------|--------|
-| Linux | x86_64 | `fop-*-linux-x86_64` |
-| Linux | x86_64 (AVX2 optimized) | `fop-*-linux-x86_64-v3` |
-| Linux | ARM64 | `fop-*-linux-arm64-n1` |
-| macOS | Intel | `fop-*-macos-x86_64` |
-| macOS | Apple Silicon (M1->M5) | `fop-*-macos-arm64` |
-| Windows | x86_64 | `fop-*-windows-x86_64.exe` |
-| Windows | x86_64 (AVX2 optimized) | `fop-*-windows-x86_64-v3.exe` |
-| Windows | ARM64 | `fop-*-windows-arm64-v2.exe` |
+| Platform | Binary | Optimization | Compatible Devices |
+|----------|--------|--------------|-------------------|
+| **Linux** | | | |
+| x86_64 | `linux-x86_64` | Baseline | All 64-bit Intel/AMD |
+| x86_64 | `linux-x86_64-v3` | AVX2 | Intel Haswell+ / AMD Excavator+ (~2015+) |
+| x86 | `linux-x86_32` | Baseline | 32-bit systems, older hardware |
+| ARM64 | `linux-arm64` | Baseline | Raspberry Pi 3/4/5, Orange Pi 3/4/5, all ARM64 |
+| ARM64 | `linux-arm64-n1` | Neoverse N1 | Pi 5, Orange Pi 5, AWS Graviton2+, Ampere Altra |
+| RISC-V | `linux-riscv64` | Baseline | SiFive, StarFive VisionFive 2, Milk-V |
+| **macOS** | | | |
+| Intel | `macos-x86_64` | Baseline | All Intel Macs |
+| Apple Silicon | `macos-arm64` | Apple M1 | M1, M2, M3, M4, M5 Macs |
+| **Windows** | | | |
+| x86_64 | `windows-x86_64.exe` | Baseline | All 64-bit Windows |
+| x86_64 | `windows-x86_64-v3.exe` | AVX2 | Intel Haswell+ / AMD Excavator+ (~2015+) |
+| x86 | `windows-x86_32.exe` | Baseline | 32-bit Windows |
+| ARM64 | `windows-arm64-v2.exe` | Cortex-A78 | Surface Pro X, Snapdragon laptops |
 
 ### Which binary should I use?
 
 **Linux/Windows x86_64:**
-- Use `-v3` version for CPUs from ~2015+ (Haswell, Ryzen) - faster due to AVX2 instructions
-- Use baseline version (-x86_64.exe) for older CPUs or if unsure
+- Use `-v3` for CPUs from ~2015+ (Haswell, Ryzen) - ~10-20% faster due to AVX2
+- Use baseline if unsure or on older CPUs
 
-**ARM64:**
-- Linux: Optimized for Neoverse N1+ (AWS Graviton2+, Ampere Altra)
-- Windows: Optimized for Snapdragon 8cx Gen 3+ / Cortex-A78+
-- macOS: Optimized for Apple Silicon (M1+)
+**Linux ARM64 (Raspberry Pi / Orange Pi):**
+- Use `linux-arm64` for Pi 3, Pi 4, Orange Pi 3/4, or if unsure
+- Use `linux-arm64-n1` for Pi 5, Orange Pi 5, AWS Graviton2+ (~10-20% faster)
+
+**npm install** downloads baseline binaries for maximum compatibility. Optimized versions are available from [GitHub Releases](https://github.com/ryanbr/fop-rs/releases).
+
+### Build Details
+
+| Binary | Target | RUSTFLAGS |
+|--------|--------|-----------|
+| `linux-x86_64` | Native | - |
+| `linux-x86_64-v3` | Native | `-C target-cpu=x86-64-v3` |
+| `linux-x86_32` | `i686-unknown-linux-gnu` | - |
+| `linux-arm64` | `aarch64-unknown-linux-gnu` | - |
+| `linux-arm64-n1` | `aarch64-unknown-linux-gnu` | `-C target-cpu=neoverse-n1` |
+| `linux-riscv64` | `riscv64gc-unknown-linux-gnu` | - |
+| `macos-x86_64` | `x86_64-apple-darwin` | - |
+| `macos-arm64` | `aarch64-apple-darwin` | `-C target-cpu=apple-m1` |
+| `windows-x86_64.exe` | `x86_64-pc-windows-gnu` | - |
+| `windows-x86_64-v3.exe` | `x86_64-pc-windows-gnu` | `-C target-cpu=x86-64-v3` |
+| `windows-x86_32.exe` | `i686-pc-windows-gnu` | - |
+| `windows-arm64-v2.exe` | `aarch64-pc-windows-msvc` | `-C target-cpu=cortex-a78` |
+
 
 **Unsupported platform?**
 FOP.rs builds from source on any platform with Rust 1.80+:
