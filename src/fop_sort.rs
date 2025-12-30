@@ -677,11 +677,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 } else {
                     &*FOPPY_ELEMENT_DOMAIN_PATTERN
                 };
-                unique.sort_unstable_by(|a, b| {
-                    let a_key = pattern.replace(a, "");
-                    let b_key = pattern.replace(b, "");
-                    a_key.cmp(&b_key)
-                });
+                unique.sort_by_cached_key(|s| pattern.replace(s, "").into_owned());
             }
             let combined = combine_filters(unique, &ELEMENT_DOMAIN_PATTERN, ",");
             for filter in combined {
