@@ -378,6 +378,7 @@ impl Args {
                 }
                 "--backup" => args.backup = true,
                 "--keep-empty-lines" => args.keep_empty_lines = true,
+                "--ignore-dot-domains" => args.ignore_dot_domains = true,
                 _ if arg.starts_with("--disable-domain-limit=") => {
                     args.disable_domain_limit = arg
                         .trim_start_matches("--disable-domain-limit=")
