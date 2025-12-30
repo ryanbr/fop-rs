@@ -659,16 +659,12 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if localhost {
             // Sort hosts file entries by domain
             if !no_sort {
-                unique.sort_unstable_by(|a, b| {
-                    let a_domain = LOCALHOST_PATTERN
-                        .captures(a)
-                        .map(|c| c[2].to_lowercase())
-                        .unwrap_or_else(|| a.to_lowercase());
-                    let b_domain = LOCALHOST_PATTERN
-                        .captures(b)
-                        .map(|c| c[2].to_lowercase())
-                        .unwrap_or_else(|| b.to_lowercase());
-                    a_domain.cmp(&b_domain)
+                unique.sort_by_cached_key(|s| {
+                    LOCALHOST_PATTERN
+                        .captures(s)
+                        .and_then(|c| c.get(2))
+                        .map(|m| m.as_str().to_ascii_lowercase())
+                        .unwrap_or_else(|| s.to_ascii_lowercase())
                 });
             }
             for filter in unique {
