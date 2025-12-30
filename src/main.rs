@@ -87,7 +87,7 @@ pub(crate) fn flush_warnings() {
 
 use rayon::prelude::*;
 use regex::Regex;
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 use fop_git::{
     build_base_command, check_repo_changes, commit_changes, create_pull_request, get_added_lines,
@@ -831,6 +831,18 @@ fn should_ignore_dir(path: &Path, ignore_dirs: &[String]) -> bool {
     false
 }
 
+#[inline]
+fn entry_is_dir(entry: &DirEntry) -> bool {
+    let ft = entry.file_type();
+    ft.is_dir() || (ft.is_symlink() && entry.path().is_dir())
+}
+
+#[inline]
+fn entry_is_file(entry: &DirEntry) -> bool {
+    let ft = entry.file_type();
+    ft.is_file() || (ft.is_symlink() && entry.path().is_file())
+}
+
 fn process_location(
     location: &Path,
     no_commit: bool,
@@ -905,7 +917,7 @@ fn process_location(
     // Print directories first (sequential for ordered output)
     for entry in &entries {
         let path = entry.path();
-        if path.is_dir() {
+        if entry_is_dir(entry) {
             if !quiet {
                 println!("Current directory: {}", path.display());
             }
@@ -917,7 +929,7 @@ fn process_location(
         .iter()
         .filter(|entry| {
             let path = entry.path();
-            if path.is_dir() {
+            if entry_is_dir(entry) {
                 return false;
             }
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -975,7 +987,7 @@ fn process_location(
     // Delete backup and temp files (sequential, usually few files)
     for entry in &entries {
         let path = entry.path();
-        if path.is_file() {
+        if entry_is_file(entry) {
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if extension == "orig" || extension == "temp" {
                 let _ = fs::remove_file(path);
