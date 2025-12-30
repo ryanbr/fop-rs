@@ -13,6 +13,7 @@ use std::path::Path;
 
 use ahash::AHashSet as HashSet;
 use regex::Regex;
+use std::cmp::Ordering;
 
 use crate::{
     write_warning, ATTRIBUTE_VALUE_PATTERN, DOMAIN_EXTRACT_PATTERN, ELEMENT_DOMAIN_PATTERN,
@@ -23,6 +24,27 @@ use crate::{
 };
 
 use crate::fop_typos;
+
+/// Case-insensitive ASCII comparison without allocation
+#[inline]
+fn cmp_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
+    let mut ai = a.bytes();
+    let mut bi = b.bytes();
+    loop {
+        match (ai.next(), bi.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(ac), Some(bc)) => {
+                let al = ac.to_ascii_lowercase();
+                let bl = bc.to_ascii_lowercase();
+                if al != bl {
+                    return al.cmp(&bl);
+                }
+            }
+        }
+    }
+}
 
 /// Check if line is a TLD-only pattern (e.g. .com, ||.net^)
 /// Replaces regex: r"^(\|\||[|])?\.([a-z]{2,})\^?$"
@@ -695,7 +717,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         } else {
             // Sort blocking rules (unless no_sort)
             if !no_sort {
-                unique.sort_by_cached_key(|s| s.to_ascii_lowercase());
+                unique.sort_by(|a, b| cmp_ascii_case_insensitive(a, b));
             }
             let combined = combine_filters(unique, &FILTER_DOMAIN_PATTERN, "|");
             for filter in combined {
