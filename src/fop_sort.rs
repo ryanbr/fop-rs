@@ -239,17 +239,9 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                 .collect();
 
             sorted_options.sort_unstable_by(|a, b| {
-                let key_a = if a.starts_with('~') {
-                    format!("{}~", &a[1..])
-                } else {
-                    a.clone()
-                };
-                let key_b = if b.starts_with('~') {
-                    format!("{}~", &b[1..])
-                } else {
-                    b.clone()
-                };
-                key_a.cmp(&key_b)
+                let (a_base, a_inv) = a.strip_prefix('~').map(|s| (s, true)).unwrap_or((a.as_str(), false));
+                let (b_base, b_inv) = b.strip_prefix('~').map(|s| (s, true)).unwrap_or((b.as_str(), false));
+                (a_base, a_inv).cmp(&(b_base, b_inv))
             });
 
             final_options.extend(sorted_options);
