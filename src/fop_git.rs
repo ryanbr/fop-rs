@@ -291,8 +291,11 @@ pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addi
                 });
             }
             line_num += 1;
-        } else if !line.starts_with('-') {
+        } else if line.starts_with(' ') {
+            // Context line (not present with -U0, but correct if that ever changes)
             line_num += 1;
+        } else if line.starts_with('\\') {
+            // "\ No newline at end of file" marker; does not advance line numbers
         }
     }
 
