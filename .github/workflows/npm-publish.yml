@@ -25,9 +25,10 @@ jobs:
       - name: Install cross-compilation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64 gcc-mingw-w64-i686
+          sudo apt-get install -y gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 gcc-multilib
           rustup target add x86_64-pc-windows-gnu
           rustup target add i686-pc-windows-gnu
+          rustup target add i686-unknown-linux-gnu
         
       - name: Install zigbuild for ARM builds
         run: |
@@ -64,6 +65,11 @@ jobs:
           RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release
           cp target/release/fop "fop-${VERSION}-linux-x86_64-v3"
 
+          # Linux x86 32-bit
+          cargo clean
+          cargo build --release --target i686-unknown-linux-gnu
+          cp target/i686-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_32"
+
           # Windows x86_64 baseline
           cargo clean
           cargo build --release --target x86_64-pc-windows-gnu
@@ -76,12 +82,12 @@ jobs:
 
           # Windows x86 32-bit
           cargo clean
-          rustup target add i686-pc-windows-gnu
           cargo build --release --target i686-pc-windows-gnu
           cp target/i686-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_32.exe"
 
 
           # Linux ARM64 baseline (Raspberry Pi 3/4/5, Orange Pi, all ARM64)
+          cargo clean
           rustup target add aarch64-unknown-linux-gnu
           cargo zigbuild --release --target aarch64-unknown-linux-gnu
           cp target/aarch64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-arm64"
