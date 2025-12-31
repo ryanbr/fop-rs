@@ -128,3 +128,120 @@ fn test_sort_domains() {
     sort_domains(&mut domains);
     assert_eq!(domains, vec!["a.com", "~b.com", "z.com"]);
 }
+
+// =============================================================================
+// Attribute Selector Tests (preserve ~=)
+// =============================================================================
+
+#[test]
+fn test_attribute_selector_tilde_equals_preserved() {
+    use crate::fop_sort::element_tidy;
+    
+    // ~= means "attribute contains word" - should NOT add spaces
+    let result = element_tidy("lowendtalk.com", "##", "#Panel a[rel~=\"sponsored\"]");
+    assert!(result.contains("[rel~=\"sponsored\"]"), "~= should be preserved, got: {}", result);
+}
+
+#[test]
+fn test_attribute_selector_alt_tilde() {
+    use crate::fop_sort::element_tidy;
+    
+    let result = element_tidy("example.com", "##", "div[alt~=\"Ad\"]");
+    assert!(result.contains("[alt~=\"Ad\"]"), "~= should be preserved, got: {}", result);
+}
+
+// =============================================================================
+// *:not() and *:has() Preservation Tests
+// =============================================================================
+
+#[test]
+fn test_star_not_preserved() {
+    use crate::fop_sort::element_tidy;
+    
+    let result = element_tidy("em.com.br", "##", "div > * > *:not(.comment-header)");
+    assert!(result.contains("*:not("), "* before :not() should be preserved, got: {}", result);
+}
+
+#[test]
+fn test_star_has_preserved() {
+    use crate::fop_sort::element_tidy;
+    
+    let result = element_tidy("example.com", "##", "div > *:has(.ad)");
+    assert!(result.contains("*:has("), "* before :has() should be preserved, got: {}", result);
+}
+
+// =============================================================================
+// Extended Syntax Preservation Tests
+// =============================================================================
+
+#[test]
+fn test_has_with_attribute_selectors() {
+    use crate::fop_sort::element_tidy;
+    
+    // :has() with attribute selectors inside - should be preserved exactly
+    let result = element_tidy("tripadvisor.com", "##", "div:has(> div[class=\"ui_columns is-multiline \"])");
+    assert!(result.contains(":has("), "Extended :has() should be preserved, got: {}", result);
+    assert!(result.contains("[class=\"ui_columns is-multiline \"]"), "Attribute value should be preserved, got: {}", result);
+}
+
+#[test]
+fn test_abp_extended_selectors() {
+    use crate::fop_sort::element_tidy;
+    
+    // :-abp-contains should be preserved
+    let result = element_tidy("kijiji.ca", "#?#", "[data-testid^=\"listing-card-list-item-\"]:-abp-contains(TOP AD)");
+    assert!(result.contains(":-abp-contains("), ":-abp-contains should be preserved, got: {}", result);
+}
+
+#[test]
+fn test_escaped_tailwind_classes() {
+    use crate::fop_sort::element_tidy;
+    
+    // Escaped brackets and colons in Tailwind-style classes
+    let result = element_tidy("theepochtimes.com", "##", ".bg-\\[\\#f8f8f8\\]");
+    assert!(result.contains("\\["), "Escaped brackets should be preserved, got: {}", result);
+}
+
+// =============================================================================
+// CSS Combinator and Attribute Selector Tests
+// =============================================================================
+
+#[test]
+fn test_adjacent_sibling_with_universal() {
+    use crate::fop_sort::element_tidy;
+    
+    // + * should be preserved (adjacent sibling with universal selector)
+    let result = element_tidy("filecrypt.cc,filecrypt.co", "##", ".hghspd + *");
+    assert!(result.contains("+ *"), "Adjacent sibling + * should be preserved, got: {}", result);
+}
+
+#[test]
+fn test_attribute_selectors() {
+    use crate::fop_sort::element_tidy;
+    
+    // Various attribute selector types
+    let result = element_tidy("example.com", "##", "[class$=\"-ad\"]");
+    assert!(result.contains("[class$=\"-ad\"]"), "Attribute ends-with should be preserved, got: {}", result);
+    
+    let result = element_tidy("example.com", "##", "[class*=\"-ad-\"]");
+    assert!(result.contains("[class*=\"-ad-\"]"), "Attribute contains should be preserved, got: {}", result);
+}
+
+#[test]
+fn test_complex_has_selectors() {
+    use crate::fop_sort::element_tidy;
+    
+    // Complex :has() with nested attribute selectors
+    let result = element_tidy("twitter.com,x.com", "##", "div[data-testid=\"cellInnerDiv\"] > div > div[class] > div[class][data-testid=\"placementTracking\"]");
+    assert!(result.contains("[data-testid=\"placementTracking\"]"), "Complex attribute selector should be preserved, got: {}", result);
+}
+
+#[test]
+fn test_has_with_href_contains() {
+    use crate::fop_sort::element_tidy;
+    
+    // :has() with href contains
+    let result = element_tidy("wayfair.com", "##", "div[data-hb-id=\"Grid.Item\"]:has(a[href*=\"&sponsoredid=\"])");
+    assert!(result.contains(":has("), ":has() should be preserved, got: {}", result);
+    assert!(result.contains("[href*=\"&sponsoredid=\"]"), "href contains should be preserved, got: {}", result);
+}

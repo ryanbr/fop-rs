@@ -293,7 +293,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
 }
 
 /// Sort domains and clean element hiding rules
-fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
+pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     let mut domains = domains.to_ascii_lowercase();
 
     // Sort domain names alphabetically
