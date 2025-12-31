@@ -424,6 +424,11 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
             continue;
         }
 
+            // Skip CSS attribute selector operator ~= (e.g., [rel~="sponsored"])
+            if g2 == "~" && g3 == "=" {
+                continue;
+            }
+
         let replace_by = if g1 == "(" {
             format!("{} ", g2)
         } else {
@@ -455,7 +460,12 @@ fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
             // Skip if this is a :not(-abp-contains...) pattern
             if ac == ":" {
                 let match_end = caps.get(0).unwrap().end();
-                if selector[match_end..].starts_with("-abp-contains") {
+                let remaining = &selector[match_end..];
+                if remaining.starts_with("-abp-contains")
+                    || remaining.starts_with("-abp-has")
+                    || remaining.starts_with("not(")
+                    || remaining.starts_with("has(")
+                {
                     continue;
                 }
             }
