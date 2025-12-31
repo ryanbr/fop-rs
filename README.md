@@ -34,8 +34,7 @@ FOP preserves extended filter syntax from various adblockers:
 - Snippets: `#$#hide-if-contains`, `#$#simulate-mouse-event`
 
 ## Speed Comparison (FOP.py vs FOP Rust)
-
-<img width="1850" height="855" alt="fop-graph" src="https://github.com/user-attachments/assets/ef9e1e24-5f40-4899-b21f-3e706261f5dd" />
+<img width="2052" height="1028" alt="foprs" src="https://github.com/user-attachments/assets/7c746d17-23dc-4ba7-8d6f-f3d168c93d4a" />
 
 ## Installation
 
