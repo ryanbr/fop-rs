@@ -130,7 +130,79 @@ fop --git-message="M: Fixed sorting" .
 
 ## VS Code Integration
 
-See [Using FOP with Visual Studio Code](Using_FOP_with_Visual_Studio_Code.md) for tasks, keyboard shortcuts, and workflow tips.
+See [Using FOP with Visual Studio Code](Using_FOP_with_Visual_Studio_Code.md) for full setup.
+ 
+## Sublime Text Integration
+ 
+### Build System
+
+Create `FOP.sublime-build` in `~/Library/Application Support/Sublime Text/Packages/User/`:
+
+```json
+{
+    "cmd": ["fop", "--no-commit", "."],
+    "working_dir": "$project_path",
+    "variants": [
+        {
+            "name": "Sort Current File",
+            "cmd": ["fop", "--check-file=$file", "--no-commit"]
+        },
+        {
+            "name": "Preview Changes (Diff)",
+            "cmd": ["fop", "--check-file=$file", "--output-diff"]
+        },
+        {
+            "name": "Fix Typos",
+            "cmd": ["fop", "--fix-typos", "--no-commit", "."]
+        }
+    ]
+}
+```
+
+**Run builds:**
+- `Cmd+B` - Sort all files
+- `Cmd+Shift+B` - Select build variant
+
+### Syntax Highlighting
+
+Install via Package Control:
+1. `Cmd+Shift+P` ? "Install Package"
+2. Search "Adblock" or "AdGuard"
+
+## BBEdit Integration
+
+### Shell Worksheet
+
+Create a new Shell Worksheet (`File ? New ? Shell Worksheet`) with these commands:
+
+```bash
+# Sort all files in current project
+cd "$BB_DOC_PATH"; fop --no-commit .
+
+# Sort current file
+fop --check-file="$BB_DOC_PATH" --no-commit
+
+# Preview changes
+fop --check-file="$BB_DOC_PATH" --output-diff
+```
+
+### Text Filter (Scripts Menu)
+
+Create `~/Library/Application Support/BBEdit/Text Filters/FOP Sort.sh`:
+
+```bash
+#!/bin/bash
+# Saves file, runs FOP, reloads
+fop --check-file="$BB_DOC_PATH" --no-commit --quiet
+cat "$BB_DOC_PATH"
+```
+
+Make executable:
+```bash
+chmod +x ~/Library/Application\ Support/BBEdit/Text\ Filters/FOP\ Sort.sh
+```
+
+Access via `Text ? Apply Text Filter ? FOP Sort`.
 
 
 ## Configuration File
