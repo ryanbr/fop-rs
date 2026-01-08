@@ -2,6 +2,7 @@
 
 use colored::Colorize;
 use regex::Regex;
+use std::io::BufRead;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
@@ -308,7 +309,8 @@ pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addi
     Some(added)
 }
 
-/// Get the default branch name (main, master, etc.)
+/// Get the default branch name (main, master, etc.) - internal use
+#[inline]
 fn get_default_branch(base_cmd: &[String]) -> Option<String> {
     // Try to get from remote HEAD
     let output = Command::new(&base_cmd[0])
@@ -338,6 +340,106 @@ fn get_default_branch(base_cmd: &[String]) -> Option<String> {
     }
 
     None
+}
+
+/// Check if a branch exists (local or remote)
+fn branch_exists(base_cmd: &[String], branch: &str) -> bool {
+    // Check local branch
+    let local = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["rev-parse", "--verify", branch])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    if local.map(|s| s.success()).unwrap_or(false) {
+        return true;
+    }
+
+    // Check remote branch
+    let remote = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args([
+            "rev-parse",
+            "--verify",
+            &format!("refs/remotes/origin/{}", branch),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    remote.map(|s| s.success()).unwrap_or(false)
+}
+
+/// Get list of available branches (local and remote)
+fn get_available_branches(base_cmd: &[String]) -> Vec<String> {
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["branch", "-a", "--format=%(refname:short)"])
+        .output()
+        .ok();
+
+    match output {
+        Some(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.trim_start_matches("origin/").to_string())
+                .filter(|s| !s.is_empty() && !s.contains("HEAD"))
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect()
+        }
+        _ => vec![],
+    }
+}
+
+/// Prompt user for base branch with auto-detection
+/// Returns the validated branch name
+pub fn prompt_for_base_branch(base_cmd: &[String], no_color: bool) -> String {
+    let detected = get_default_branch(base_cmd);
+    let default_branch = detected.as_deref().unwrap_or("main");
+
+    loop {
+        // Show available branches
+        let branches = get_available_branches(base_cmd);
+        if !branches.is_empty() {
+            let mut sorted: Vec<_> = branches.iter().collect();
+            sorted.sort();
+            if no_color {
+                println!("Available branches: {}", sorted.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+            } else {
+                println!("Available branches: {}", sorted.iter().map(|s| s.yellow().to_string()).collect::<Vec<_>>().join(", "));
+            }
+        }
+        if no_color {
+            print!(
+                "Detected Git branch \"{}\", use this? [Enter=yes]: ",
+                default_branch
+            );
+        } else {
+            print!(
+                "Detected Git branch \"{}\", use this? [Enter=yes]: ",
+                default_branch.cyan()
+            );
+        }
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        if io::stdin().lock().read_line(&mut input).is_err() {
+            return default_branch.to_string();
+        }
+        let input = input.trim();
+
+        let branch = if input.is_empty() {
+            default_branch
+        } else {
+            input
+        };
+
+        if branch_exists(base_cmd, branch) {
+            return branch.to_string();
+        }
+
+        eprintln!("Error: Branch \"{}\" not found. Please try again.", branch);
+    }
 }
 
 /// Create a pull request branch and return PR URL

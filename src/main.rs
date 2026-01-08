@@ -91,7 +91,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use fop_git::{
     build_base_command, check_repo_changes, commit_changes, create_pull_request, get_added_lines,
-    git_available, RepoDefinition, REPO_TYPES,
+    git_available, prompt_for_base_branch, RepoDefinition, REPO_TYPES,
 };
 use fop_sort::{fop_sort, SortConfig};
 
@@ -1068,7 +1068,14 @@ fn process_location(
                     io::stdin().read_line(&mut msg).ok();
                     msg.trim().to_string()
                 };
-                create_pull_request(repo, &base_cmd, &message, git_pr_branch, quiet, no_color)?;
+                
+                // Determine base branch - use provided or prompt user
+                let base_branch = match git_pr_branch {
+                    Some(ref branch) => Some(branch.clone()),
+                    None => Some(prompt_for_base_branch(&base_cmd, no_color)),
+                };
+                
+                create_pull_request(repo, &base_cmd, &message, &base_branch, quiet, no_color)?;
                 }
             } else {
                 commit_changes(
