@@ -823,12 +823,9 @@ pub(crate) static UBO_CONVERSIONS: LazyLock<AHashMap<&'static str, &'static str>
 /// Check if filename matches any ignore pattern (exact or partial)
 #[inline]
 fn should_ignore_file(filename: &str, ignore_files: &[String]) -> bool {
-    for pattern in ignore_files {
-        if filename == pattern || filename.contains(pattern) {
-            return true;
-        }
-    }
-    false
+    ignore_files
+        .iter()
+        .any(|pattern| filename == pattern || filename.contains(pattern))
 }
 
 /// Check if directory path matches any ignore pattern
@@ -836,10 +833,8 @@ fn should_ignore_file(filename: &str, ignore_files: &[String]) -> bool {
 fn should_ignore_dir(path: &Path, ignore_dirs: &[String]) -> bool {
     for component in path.components() {
         if let Some(name) = component.as_os_str().to_str() {
-            for pattern in ignore_dirs {
-                if name == pattern || name.contains(pattern) {
-                    return true;
-                }
+            if ignore_dirs.iter().any(|p| name == p || name.contains(p)) {
+                return true;
             }
         }
     }
