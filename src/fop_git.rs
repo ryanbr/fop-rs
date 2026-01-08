@@ -395,11 +395,23 @@ fn get_available_branches(base_cmd: &[String]) -> Vec<String> {
 /// Prompt user for base branch with auto-detection
 /// Returns the validated branch name
 pub fn prompt_for_base_branch(base_cmd: &[String], no_color: bool) -> String {
-    let detected = get_default_branch(base_cmd);
-    let default_branch = detected.as_deref().unwrap_or("main");
+    let branches = get_available_branches(base_cmd);
+    let current = get_current_branch(base_cmd);
+    
+    // Check if there are branches other than main/master
+    let has_other_branches = branches.iter()
+        .any(|b| b != "main" && b != "master");
+    
+    // Prefer current branch if it's not main/master and other branches exist
+    let default_branch = match &current {
+        Some(branch) if branch != "main" && branch != "master" && has_other_branches => {
+            branch.clone()
+        }
+        _ => get_default_branch(base_cmd).unwrap_or_else(|| "main".to_string()),
+    };
+    let default_branch = default_branch.as_str();
 
     // Show available branches once before prompting
-    let branches = get_available_branches(base_cmd);
     if !branches.is_empty() {
         if no_color {
             println!("Available branches: {}", branches.join(", "));
