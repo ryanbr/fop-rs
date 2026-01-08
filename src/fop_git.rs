@@ -369,7 +369,7 @@ fn branch_exists(base_cmd: &[String], branch: &str) -> bool {
     remote.map(|s| s.success()).unwrap_or(false)
 }
 
-/// Get list of available branches (local and remote)
+/// Get sorted list of available branches (local and remote, deduplicated)
 fn get_available_branches(base_cmd: &[String]) -> Vec<String> {
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
@@ -379,13 +379,14 @@ fn get_available_branches(base_cmd: &[String]) -> Vec<String> {
 
     match output {
         Some(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
+            let mut branches: Vec<String> = String::from_utf8_lossy(&o.stdout)
                 .lines()
                 .map(|s| s.trim_start_matches("origin/").to_string())
                 .filter(|s| !s.is_empty() && !s.contains("HEAD"))
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect()
+                .collect();
+            branches.sort_unstable();
+            branches.dedup();
+            branches
         }
         _ => vec![],
     }
@@ -397,18 +398,18 @@ pub fn prompt_for_base_branch(base_cmd: &[String], no_color: bool) -> String {
     let detected = get_default_branch(base_cmd);
     let default_branch = detected.as_deref().unwrap_or("main");
 
-    loop {
-        // Show available branches
-        let branches = get_available_branches(base_cmd);
-        if !branches.is_empty() {
-            let mut sorted: Vec<_> = branches.iter().collect();
-            sorted.sort();
-            if no_color {
-                println!("Available branches: {}", sorted.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
-            } else {
-                println!("Available branches: {}", sorted.iter().map(|s| s.yellow().to_string()).collect::<Vec<_>>().join(", "));
-            }
+    // Show available branches once before prompting
+    let branches = get_available_branches(base_cmd);
+    if !branches.is_empty() {
+        if no_color {
+            println!("Available branches: {}", branches.join(", "));
+        } else {
+            println!("Available branches: {}", 
+                branches.iter().map(|s| s.yellow().to_string()).collect::<Vec<_>>().join(", "));
         }
+    }
+
+    loop {
         if no_color {
             print!(
                 "Detected Git branch \"{}\", use this? [Enter=yes]: ",
