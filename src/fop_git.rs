@@ -392,6 +392,12 @@ fn get_available_branches(base_cmd: &[String]) -> Vec<String> {
     }
 }
 
+/// Check if branch exists in pre-fetched list (fast path)
+#[inline]
+fn branch_in_list(branches: &[String], branch: &str) -> bool {
+    branches.iter().any(|b| b == branch)
+}
+
 /// Prompt user for base branch with auto-detection
 /// Returns the validated branch name
 pub fn prompt_for_base_branch(base_cmd: &[String], no_color: bool) -> String {
@@ -447,7 +453,8 @@ pub fn prompt_for_base_branch(base_cmd: &[String], no_color: bool) -> String {
             input
         };
 
-        if branch_exists(base_cmd, branch) {
+        // Check pre-fetched list first (fast), fall back to git commands
+        if branch_in_list(&branches, branch) || branch_exists(base_cmd, branch) {
             return branch.to_string();
         }
 
