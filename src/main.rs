@@ -126,6 +126,8 @@ struct Args {
     ignore_files: Vec<String>,
     /// Additional directories to ignore (comma-separated, supports partial names)
     ignore_dirs: Vec<String>,
+    /// Only process these files, ignore all others (comma-separated)
+    ignore_all_but: Vec<String>,
     /// Disable large change warning prompt
     no_large_warning: bool,
     /// File extensions to process (default: .txt)
@@ -309,6 +311,7 @@ impl Args {
             no_color: parse_bool(&config, "no-color", false),
             ignore_files: parse_list(&config, "ignorefiles"),
             ignore_dirs: parse_list(&config, "ignoredirs"),
+            ignore_all_but: parse_list(&config, "ignore-all-but"),
             git_message: None,
             show_config: false,
             no_large_warning: parse_bool(&config, "no-large-warning", false),
@@ -360,6 +363,10 @@ impl Args {
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
                     args.ignore_files = files.split(',').map(|s| s.trim().to_string()).collect();
+                }
+                _ if arg.starts_with("--ignore-all-but=") => {
+                    let files = arg.trim_start_matches("--ignore-all-but=");
+                    args.ignore_all_but = files.split(',').map(|s| s.trim().to_string()).collect();
                 }
                 _ if arg.starts_with("--file-extensions=") => {
                     args.file_extensions = arg
@@ -496,6 +503,7 @@ impl Args {
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
+        println!("        --ignore-all-but=   Only process these files, ignore all others (comma-separated)");
         println!("        --config-file=  Custom config file path");
         println!("        --file-extensions=  File extensions to process (default: .txt)");
         println!("        --comments=     Comment line prefixes (default: !)");
@@ -570,6 +578,11 @@ impl Args {
             println!("  ignoredirs      = (none)");
         } else {
             println!("  ignoredirs      = {}", self.ignore_dirs.join(","));
+        }
+        if self.ignore_all_but.is_empty() {
+            println!("  ignore-all-but  = (none)");
+        } else {
+            println!("  ignore-all-but  = {}", self.ignore_all_but.join(","));
         }
         if self.file_extensions.is_empty()
             || (self.file_extensions.len() == 1 && self.file_extensions[0] == "txt")
@@ -852,6 +865,7 @@ fn process_location(
     no_large_warning: bool,
     ignore_files: &[String],
     ignore_dirs: &[String],
+    ignore_all_but: &[String],
     file_extensions: &[String],
     disable_domain_limit: &[String],
     sort_config: &SortConfig,
@@ -937,6 +951,8 @@ fn process_location(
             file_extensions.iter().any(|ext| ext == extension)
                 && (disable_ignored || !IGNORE_FILES.contains(&filename))
                 && !should_ignore_file(filename, ignore_files)
+                && (ignore_all_but.is_empty()
+                    || ignore_all_but.iter().any(|f| filename.contains(f)))
         })
         .collect();
 
@@ -1321,6 +1337,7 @@ fn main() {
             args.no_large_warning,
             &args.ignore_files,
             &args.ignore_dirs,
+            &args.ignore_all_but,
             &args.file_extensions,
             &args.disable_domain_limit,
             &sort_config,

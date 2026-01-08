@@ -91,6 +91,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--ignore-dot-domains` | Don't skip rules without dot in domain |
 | `--ignorefiles=` | Additional files to ignore (comma-separated, partial names) |
 | `--ignoredirs=` | Additional directories to ignore (comma-separated, partial names) |
+| `--ignore-all-but=` |  Only process these files, ignore all others (comma-separated) |
 | `--file-extensions=` | File extensions to process (default: .txt) |
 | `--comments=` | Comment line prefixes (default: !) |
 | `--disable-domain-limit=` | Files to skip short domain check (comma-separated) |
