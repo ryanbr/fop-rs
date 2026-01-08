@@ -236,21 +236,32 @@ fn get_current_branch(base_cmd: &[String]) -> Option<String> {
     })
 }
 
-/// Convert git remote URL to GitHub web URL
-fn remote_to_github_url(remote: &str) -> Option<String> {
-    // Handle SSH: git@github.com:user/repo.git
-    if remote.starts_with("git@github.com:") {
-        let path = remote
-            .trim_start_matches("git@github.com:")
-            .trim_end_matches(".git");
-        return Some(format!("https://github.com/{}", path));
+/// Convert git remote URL to web URL and generate PR/MR link
+fn generate_pr_url(remote: &str, base_branch: &str, pr_branch: &str) -> Option<String> {
+    let remote = remote.trim().trim_end_matches(".git");
+    
+    // Build base URL from SSH or HTTPS format
+    let base_url = if let Some(rest) = remote.strip_prefix("git@") {
+        // SSH format: git@host:user/repo
+        let colon_pos = rest.find(':')?;
+        let (host, path) = rest.split_at(colon_pos);
+        format!("https://{}/{}", host, &path[1..])
+    } else if remote.starts_with("https://") || remote.starts_with("http://") {
+        remote.to_string()
+    } else {
+        return None;
+    };
+    
+    // Detect platform and generate URL (only for known platforms)
+    if base_url.contains("gitlab") {
+        Some(format!("{}/-/merge_requests/new?merge_request[source_branch]={}&merge_request[target_branch]={}", 
+            base_url, pr_branch, base_branch))
+    } else if base_url.contains("github") {
+        Some(format!("{}/compare/{}...{}?expand=1", 
+            base_url, base_branch, pr_branch))
+    } else {
+        None
     }
-    // Handle HTTPS: https://github.com/user/repo.git
-    if remote.starts_with("https://github.com/") {
-        let url = remote.trim_end_matches(".git");
-        return Some(url.to_string());
-    }
-    None
 }
 
 /// Switch to a branch
@@ -553,20 +564,14 @@ pub fn create_pull_request(
 
     // Generate PR URL
     let pr_url = get_remote_url(base_cmd)
-        .and_then(|remote| remote_to_github_url(&remote))
-        .map(|github_url| {
-            format!(
-                "{}/compare/{}...{}?expand=1",
-                github_url, base_branch, pr_branch
-            )
-        });
+        .and_then(|remote| generate_pr_url(&remote, &base_branch, &pr_branch));
 
     if let Some(ref url) = pr_url {
         println!("\n{}", "Pull request branch pushed successfully!".green());
         println!("\nCreate PR at:\n  {}", url.cyan());
     } else {
         println!(
-            "\nBranch '{}' pushed. Create PR manually on GitHub.",
+            "\nBranch '{}' pushed. Create PR/MR manually in your git web interface.",
             pr_branch
         );
     }
