@@ -46,6 +46,7 @@ pub const REPO_TYPES: &[RepoDefinition] = &[GIT];
 static COMMIT_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(A|M|P):\s((\(.+\))\s)?(.*)$").unwrap());
 
+#[inline]
 pub fn valid_url(url_str: &str) -> bool {
     if url_str.starts_with("about:") {
         return true;
@@ -166,6 +167,7 @@ pub fn get_diff(base_cmd: &[String], repo: &RepoDefinition) -> Option<String> {
 // Diff Display
 // =============================================================================
 
+#[inline]
 fn is_large_change(diff: &str) -> bool {
     const LARGE_LINES_THRESHOLD: usize = 25;
 
@@ -204,11 +206,54 @@ fn print_diff(diff: &str, no_color: bool) {
 // Pull Request Operations
 // =============================================================================
 
-/// Get the remote URL for constructing PR link
-fn get_remote_url(base_cmd: &[String]) -> Option<String> {
+/// Get list of available remotes
+fn get_remotes(base_cmd: &[String]) -> Vec<String> {
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
-        .args(["remote", "get-url", "origin"])
+        .arg("remote")
+        .output()
+        .ok();
+
+    match output {
+        Some(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        }
+        _ => vec![],
+    }
+}
+
+/// Get remote to use - origin if exists, otherwise prompt or use single remote
+pub fn get_remote_name(base_cmd: &[String], no_color: bool) -> Option<String> {
+    let remotes = get_remotes(base_cmd);
+    
+    if remotes.is_empty() {
+        eprintln!("No remotes found.");
+        return None;
+    }
+    
+    // Use origin if available
+    if remotes.contains(&"origin".to_string()) {
+        return Some("origin".to_string());
+    }
+    
+    // Single remote - use it
+    if remotes.len() == 1 {
+        return Some(remotes[0].clone());
+    }
+    
+    // Multiple remotes, no origin - prompt
+    prompt_for_remote(&remotes, no_color)
+}
+
+/// Get the remote URL for constructing PR link
+fn get_remote_url(base_cmd: &[String], remote: &str) -> Option<String> {
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["remote", "get-url", remote])
         .output()
         .ok()?;
 
@@ -234,6 +279,34 @@ fn get_current_branch(base_cmd: &[String]) -> Option<String> {
             Some(branch.to_string())
         }
     })
+}
+
+/// Prompt user to select a remote
+fn prompt_for_remote(remotes: &[String], no_color: bool) -> Option<String> {
+    println!("Available remotes: {}", 
+        if no_color {
+            remotes.join(", ")
+        } else {
+            remotes.iter().map(|s| s.yellow().to_string()).collect::<Vec<_>>().join(", ")
+        }
+    );
+    
+    loop {
+        print!("Enter remote name: ");
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        if io::stdin().lock().read_line(&mut input).is_err() {
+            return None;
+        }
+        let input = input.trim();
+        
+        if remotes.iter().any(|r| r == input) {
+            return Some(input.to_string());
+        }
+        
+        eprintln!("Remote \"{}\" not found. Please try again.", input);
+    }
 }
 
 /// Convert git remote URL to web URL and generate PR/MR link
@@ -322,24 +395,25 @@ pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addi
 
 /// Get the default branch name (main, master, etc.) - internal use
 #[inline]
-fn get_default_branch(base_cmd: &[String]) -> Option<String> {
+fn get_default_branch(base_cmd: &[String], remote: &str) -> Option<String> {
     // Try to get from remote HEAD
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
-        .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
+        .args(["symbolic-ref", &format!("refs/remotes/{}/HEAD", remote), "--short"])
         .output()
         .ok()?;
 
     if output.status.success() {
         let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return branch.strip_prefix("origin/").map(|s| s.to_string());
+        let prefix = format!("{}/", remote);
+        return branch.strip_prefix(&prefix).map(|s| s.to_string());
     }
 
     // Fallback: check if main or master exists
     for branch in &["main", "master"] {
         let status = Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
-            .args(["show-ref", "--verify", &format!("refs/heads/{}", branch)])
+            .args(["show-ref", "--verify", &format!("refs/remotes/{}/{}", remote, branch)])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -354,7 +428,7 @@ fn get_default_branch(base_cmd: &[String]) -> Option<String> {
 }
 
 /// Check if a branch exists (local or remote)
-fn branch_exists(base_cmd: &[String], branch: &str) -> bool {
+fn branch_exists(base_cmd: &[String], branch: &str, remote: &str) -> bool {
     // Check local branch
     let local = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
@@ -372,7 +446,7 @@ fn branch_exists(base_cmd: &[String], branch: &str) -> bool {
         .args([
             "rev-parse",
             "--verify",
-            &format!("refs/remotes/origin/{}", branch),
+            &format!("refs/remotes/{}/{}", remote, branch),
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -380,20 +454,22 @@ fn branch_exists(base_cmd: &[String], branch: &str) -> bool {
     remote.map(|s| s.success()).unwrap_or(false)
 }
 
-/// Get sorted list of available branches (local and remote, deduplicated)
-fn get_available_branches(base_cmd: &[String]) -> Vec<String> {
+/// Get sorted list of remote branches for a specific remote
+fn get_available_branches(base_cmd: &[String], remote: &str) -> Vec<String> {
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
         .args(["branch", "-a", "--format=%(refname:short)"])
         .output()
         .ok();
-
+        
+    let prefix = format!("{}/", remote);
     match output {
         Some(o) if o.status.success() => {
             let mut branches: Vec<String> = String::from_utf8_lossy(&o.stdout)
                 .lines()
-                .map(|s| s.trim_start_matches("origin/").to_string())
-                .filter(|s| !s.is_empty() && !s.contains("HEAD"))
+                .filter(|s| s.starts_with(&prefix))
+                .map(|s| s.trim_start_matches(&prefix).to_string())
+                .filter(|s| !s.is_empty() && s != "HEAD")
                 .collect();
             branches.sort_unstable();
             branches.dedup();
@@ -411,8 +487,8 @@ fn branch_in_list(branches: &[String], branch: &str) -> bool {
 
 /// Prompt user for base branch with auto-detection
 /// Returns the validated branch name
-pub fn prompt_for_base_branch(base_cmd: &[String], no_color: bool) -> String {
-    let branches = get_available_branches(base_cmd);
+pub fn prompt_for_base_branch(base_cmd: &[String], remote: &str, no_color: bool) -> String {
+    let branches = get_available_branches(base_cmd, remote);
     let current = get_current_branch(base_cmd);
     
     // Check if there are branches other than main/master
@@ -424,19 +500,9 @@ pub fn prompt_for_base_branch(base_cmd: &[String], no_color: bool) -> String {
         Some(branch) if branch != "main" && branch != "master" && has_other_branches => {
             branch.clone()
         }
-        _ => get_default_branch(base_cmd).unwrap_or_else(|| "main".to_string()),
+        _ => get_default_branch(base_cmd, remote).unwrap_or_else(|| "main".to_string()),
     };
     let default_branch = default_branch.as_str();
-
-    // Show available branches once before prompting
-    if !branches.is_empty() {
-        if no_color {
-            println!("Available branches: {}", branches.join(", "));
-        } else {
-            println!("Available branches: {}", 
-                branches.iter().map(|s| s.yellow().to_string()).collect::<Vec<_>>().join(", "));
-        }
-    }
 
     loop {
         if no_color {
@@ -465,7 +531,7 @@ pub fn prompt_for_base_branch(base_cmd: &[String], no_color: bool) -> String {
         };
 
         // Check pre-fetched list first (fast), fall back to git commands
-        if branch_in_list(&branches, branch) || branch_exists(base_cmd, branch) {
+        if branch_in_list(&branches, branch) || branch_exists(base_cmd, branch, remote) {
             return branch.to_string();
         }
 
@@ -478,6 +544,7 @@ pub fn create_pull_request(
     repo: &RepoDefinition,
     base_cmd: &[String],
     message: &str,
+    remote: &str,
     pr_branch_override: &Option<String>,
     quiet: bool,
     no_color: bool,
@@ -502,7 +569,7 @@ pub fn create_pull_request(
     // Get base branch for PR (user override > auto-detect > current)
     let base_branch = pr_branch_override
         .clone()
-        .or_else(|| get_default_branch(base_cmd))
+        .or_else(|| get_default_branch(base_cmd, remote))
         .unwrap_or_else(|| current_branch.clone());
 
     // Create branch name with timestamp
@@ -543,11 +610,11 @@ pub fn create_pull_request(
 
     // Push branch
     if !quiet {
-        println!("Pushing branch to origin...");
+        println!("Pushing branch to {}...", remote);
     }
     let mut cmd = Command::new(&base_cmd[0]);
     cmd.args(&base_cmd[1..])
-        .args(["push", "-u", "origin", &pr_branch]);
+        .args(["push", "-u", remote, &pr_branch]);
     if quiet {
         cmd.arg("--quiet");
     }
@@ -563,7 +630,7 @@ pub fn create_pull_request(
     let _ = checkout_branch(base_cmd, &current_branch);
 
     // Generate PR URL
-    let pr_url = get_remote_url(base_cmd)
+    let pr_url = get_remote_url(base_cmd, remote)
         .and_then(|remote| generate_pr_url(&remote, &base_branch, &pr_branch));
 
     if let Some(ref url) = pr_url {
