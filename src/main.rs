@@ -91,7 +91,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use fop_git::{
     build_base_command, check_repo_changes, commit_changes, create_pull_request, get_added_lines,
-    git_available, get_remote_name, prompt_for_base_branch, RepoDefinition, REPO_TYPES,
+    git_available, get_remote_name, RepoDefinition, REPO_TYPES,
 };
 use fop_sort::{fop_sort, SortConfig};
 
@@ -1081,7 +1081,7 @@ fn process_location(
                 // Determine base branch - use provided or prompt user
                 let base_branch = match git_pr_branch {
                     Some(ref branch) => Some(branch.clone()),
-                    None => Some(prompt_for_base_branch(&base_cmd, &remote, no_color)),
+                    None => None,  // Let create_pull_request auto-detect
                 };
                 
                 create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, no_color)?;

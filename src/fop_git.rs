@@ -236,12 +236,14 @@ pub fn get_remote_name(base_cmd: &[String], no_color: bool) -> Option<String> {
     }
     
     // Use origin if available
-    if remotes.contains(&"origin".to_string()) {
+    if remotes.iter().any(|r| r == "origin") {
+        println!("Using remote: origin");
         return Some("origin".to_string());
     }
     
     // Single remote - use it
     if remotes.len() == 1 {
+        println!("Using remote: {}", remotes[0]);
         return Some(remotes[0].clone());
     }
     
@@ -425,118 +427,6 @@ fn get_default_branch(base_cmd: &[String], remote: &str) -> Option<String> {
     }
 
     None
-}
-
-/// Check if a branch exists (local or remote)
-fn branch_exists(base_cmd: &[String], branch: &str, remote: &str) -> bool {
-    // Check local branch
-    let local = Command::new(&base_cmd[0])
-        .args(&base_cmd[1..])
-        .args(["rev-parse", "--verify", branch])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    if local.map(|s| s.success()).unwrap_or(false) {
-        return true;
-    }
-
-    // Check remote branch
-    let remote = Command::new(&base_cmd[0])
-        .args(&base_cmd[1..])
-        .args([
-            "rev-parse",
-            "--verify",
-            &format!("refs/remotes/{}/{}", remote, branch),
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    remote.map(|s| s.success()).unwrap_or(false)
-}
-
-/// Get sorted list of remote branches for a specific remote
-fn get_available_branches(base_cmd: &[String], remote: &str) -> Vec<String> {
-    let output = Command::new(&base_cmd[0])
-        .args(&base_cmd[1..])
-        .args(["branch", "-a", "--format=%(refname:short)"])
-        .output()
-        .ok();
-        
-    let prefix = format!("{}/", remote);
-    match output {
-        Some(o) if o.status.success() => {
-            let mut branches: Vec<String> = String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter(|s| s.starts_with(&prefix))
-                .map(|s| s.trim_start_matches(&prefix).to_string())
-                .filter(|s| !s.is_empty() && s != "HEAD")
-                .collect();
-            branches.sort_unstable();
-            branches.dedup();
-            branches
-        }
-        _ => vec![],
-    }
-}
-
-/// Check if branch exists in pre-fetched list (fast path)
-#[inline]
-fn branch_in_list(branches: &[String], branch: &str) -> bool {
-    branches.iter().any(|b| b == branch)
-}
-
-/// Prompt user for base branch with auto-detection
-/// Returns the validated branch name
-pub fn prompt_for_base_branch(base_cmd: &[String], remote: &str, no_color: bool) -> String {
-    let branches = get_available_branches(base_cmd, remote);
-    let current = get_current_branch(base_cmd);
-    
-    // Check if there are branches other than main/master
-    let has_other_branches = branches.iter()
-        .any(|b| b != "main" && b != "master");
-    
-    // Prefer current branch if it's not main/master and other branches exist
-    let default_branch = match &current {
-        Some(branch) if branch != "main" && branch != "master" && has_other_branches => {
-            branch.clone()
-        }
-        _ => get_default_branch(base_cmd, remote).unwrap_or_else(|| "main".to_string()),
-    };
-    let default_branch = default_branch.as_str();
-
-    loop {
-        if no_color {
-            print!(
-                "Detected Git branch \"{}\", use this? [Enter=yes]: ",
-                default_branch
-            );
-        } else {
-            print!(
-                "Detected Git branch \"{}\", use this? [Enter=yes]: ",
-                default_branch.cyan()
-            );
-        }
-        io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        if io::stdin().lock().read_line(&mut input).is_err() {
-            return default_branch.to_string();
-        }
-        let input = input.trim();
-
-        let branch = if input.is_empty() {
-            default_branch
-        } else {
-            input
-        };
-
-        // Check pre-fetched list first (fast), fall back to git commands
-        if branch_in_list(&branches, branch) || branch_exists(base_cmd, branch, remote) {
-            return branch.to_string();
-        }
-
-        eprintln!("Error: Branch \"{}\" not found. Please try again.", branch);
-    }
 }
 
 /// Create a pull request branch and return PR URL
