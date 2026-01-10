@@ -207,6 +207,7 @@ fn print_diff(diff: &str, no_color: bool) {
 // =============================================================================
 
 /// Get list of available remotes
+#[inline]
 fn get_remotes(base_cmd: &[String]) -> Vec<String> {
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
@@ -252,6 +253,7 @@ pub fn get_remote_name(base_cmd: &[String], no_color: bool) -> Option<String> {
 }
 
 /// Get the remote URL for constructing PR link
+#[inline]
 fn get_remote_url(base_cmd: &[String], remote: &str) -> Option<String> {
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
@@ -265,6 +267,7 @@ fn get_remote_url(base_cmd: &[String], remote: &str) -> Option<String> {
 }
 
 /// Get current branch name
+#[inline]
 fn get_current_branch(base_cmd: &[String]) -> Option<String> {
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
