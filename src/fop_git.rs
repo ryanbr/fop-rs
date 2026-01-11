@@ -666,11 +666,11 @@ pub fn commit_changes(
     // Get commit comment
     loop {
         if no_color {
-            print!("Please enter a valid commit comment or quit:\n");
+            print!("Please enter a valid commit comment (or ABORT to restore):\n");
         } else {
             println!(
                 "{}",
-                "Please enter a valid commit comment or quit:"
+                "Please enter a valid commit comment (or ABORT to restore):"
                     .white()
                     .bold()
             );
@@ -686,6 +686,23 @@ pub fn commit_changes(
         let comment = comment.trim();
         if comment.is_empty() {
             println!("\nCommit aborted.");
+            return Ok(());
+        }
+
+ 
+        // Check for ABORT command
+        if comment.eq_ignore_ascii_case("ABORT") {
+            println!("Restoring previous state...");
+            let status = Command::new(&base_cmd[0])
+                .args(&base_cmd[1..])
+                .args(["restore", "."])
+                .status()?;
+            
+            if status.success() {
+                println!("Changes restored successfully.");
+            } else {
+                eprintln!("Failed to restore changes.");
+            }
             return Ok(());
         }
 
