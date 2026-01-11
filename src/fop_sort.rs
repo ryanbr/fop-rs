@@ -543,10 +543,7 @@ fn normalize_has_text_arg(arg: &str) -> String {
 /// Parse a selector to extract base selector and :has-text() argument
 fn parse_has_text_selector(selector: &str) -> Option<(String, String, String)> {
     let caps = HAS_TEXT_PATTERN.captures(selector)?;
-    let base = caps.get(1)?.as_str().to_string();
-    let pseudo = caps.get(2)?.as_str().to_string();
-    let arg = caps.get(3)?.as_str().to_string();
-    Some((base, pseudo, arg))
+    Some((caps[1].to_string(), caps[2].to_string(), caps[3].to_string()))
 }
 
 /// Merge multiple :has-text() arguments into a single regex

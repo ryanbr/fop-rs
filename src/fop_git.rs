@@ -327,7 +327,7 @@ fn prompt_for_remote(remotes: &[String], no_color: bool) -> Option<String> {
     
     loop {
         print!("Enter remote name: ");
-        io::stdout().flush().unwrap();
+        io::stdout().flush().ok();
         
         let mut input = String::new();
         if io::stdin().lock().read_line(&mut input).is_err() {
