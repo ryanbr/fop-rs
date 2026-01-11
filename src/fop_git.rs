@@ -183,6 +183,35 @@ fn is_large_change(diff: &str) -> bool {
     changed_lines > LARGE_LINES_THRESHOLD
 }
 
+/// Prompt user to restore changes
+fn prompt_restore(base_cmd: &[String], no_color: bool) -> io::Result<bool> {
+    if no_color {
+        print!("Would you like to restore the previous state before this change? [y/N]: ");
+    } else {
+        print!("{}", "Would you like to restore the previous state before this change? [y/N]: ".yellow());
+    }
+    io::stdout().flush()?;
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    
+    if input.trim().eq_ignore_ascii_case("y") {
+        let status = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(["restore", "."])
+            .status()?;
+        
+        if status.success() {
+            println!("Changes restored successfully.");
+            return Ok(true);
+        } else {
+            eprintln!("Failed to restore changes.");
+        }
+    }
+    
+    Ok(false)
+}
+
 #[inline]
 fn print_diff_line(line: &str, no_color: bool) {
     if no_color {
@@ -629,6 +658,7 @@ pub fn commit_changes(
 
         if input.trim() != "YES" {
             println!("Commit aborted.");
+            let _ = prompt_restore(base_cmd, no_color);
             return Ok(());
         }
     }
