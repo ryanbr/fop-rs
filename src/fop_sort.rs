@@ -12,6 +12,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use ahash::AHashSet as HashSet;
+use ahash::AHashMap;
 use regex::Regex;
 use std::cmp::Ordering;
 
@@ -24,6 +25,13 @@ use crate::{
 };
 
 use crate::fop_typos;
+
+// Pattern for :has-text() merging
+use std::sync::LazyLock;
+static HAS_TEXT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    // Match :has-text() at end, not followed by other pseudo-classes
+    Regex::new(r"^(.+?):(has-text|-?abp-contains)\((.+)\)$").unwrap()
+});
 
 /// Case-insensitive ASCII comparison without allocation
 #[inline]
@@ -500,6 +508,124 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
     format!("{}{}{}", domains, separator, selector)
 }
 
+/// Escape special regex characters in plain text
+#[inline]
+fn escape_regex_chars(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() * 2);
+    for c in text.chars() {
+        match c {
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '^' | '$' => {
+                result.push('\\');
+                result.push(c);
+            }
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
+/// Check if a :has-text() argument is a regex (starts and ends with /)
+#[inline]
+fn is_regex_arg(arg: &str) -> bool {
+    arg.starts_with('/') && arg.ends_with('/')
+}
+
+/// Extract the regex content (without slashes) or escape plain text
+#[inline]
+fn normalize_has_text_arg(arg: &str) -> String {
+    if is_regex_arg(arg) {
+        arg[1..arg.len()-1].to_string()
+    } else {
+        escape_regex_chars(arg)
+    }
+}
+
+/// Parse a selector to extract base selector and :has-text() argument
+fn parse_has_text_selector(selector: &str) -> Option<(String, String, String)> {
+    let caps = HAS_TEXT_PATTERN.captures(selector)?;
+    let base = caps.get(1)?.as_str().to_string();
+    let pseudo = caps.get(2)?.as_str().to_string();
+    let arg = caps.get(3)?.as_str().to_string();
+    Some((base, pseudo, arg))
+}
+
+/// Merge multiple :has-text() arguments into a single regex
+fn merge_has_text_args(args: &[String]) -> String {
+    if args.is_empty() {
+        return String::new();
+    }
+    
+    // Single rule - keep original format unchanged
+    if args.len() == 1 {
+        return args[0].clone();
+    }
+
+    // Multiple rules - combine into regex    
+   let combined = args.iter()
+        .map(|a| normalize_has_text_arg(a))
+        .collect::<Vec<_>>()
+        .join("|");
+    
+    format!("/{}/", combined)
+}
+
+/// Combine element rules with same domain and base selector but different :has-text() args
+pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
+    let capacity = lines.len();
+    let mut groups: AHashMap<(String, String, String), (usize, Vec<String>)> = AHashMap::new();
+    let mut order: Vec<(usize, String)> = Vec::with_capacity(capacity);
+    let mut idx = 0;
+    
+    for line in lines {
+        // Skip non-standard separators (#?#, #@#, #$#, etc.) and non-element rules
+        if line.starts_with('!') 
+            || line.starts_with('[') 
+            || !line.contains("##") 
+        {
+
+            order.push((idx, line));
+            idx += 1;
+            continue;
+        }
+        
+        let (domains, selector) = if let Some(pos) = line.find("##") {
+            (&line[..pos], &line[pos+2..])
+        } else {
+            order.push((idx, line));
+            idx += 1;
+            continue;
+        };
+        
+        if let Some((base, pseudo, arg)) = parse_has_text_selector(selector) {
+            let key = (domains.to_string(), base, pseudo);
+            let entry = groups.entry(key).or_insert_with(|| (idx, Vec::new()));
+            entry.1.push(arg);
+            // Only increment idx for first occurrence of this group
+            if entry.1.len() == 1 {
+                idx += 1;
+            }
+        } else {
+            order.push((idx, line));
+            idx += 1;
+        }
+    }
+    
+    // Add merged has-text rules with their original position
+    for ((domains, base, pseudo), (pos, args)) in groups {
+        let merged_arg = merge_has_text_args(&args);
+        if domains.is_empty() {
+            order.push((pos, format!("##{}:{}({})", base, pseudo, merged_arg)));
+        } else {
+            order.push((pos, format!("{}##{}:{}({})", domains, base, pseudo, merged_arg)));
+        }
+    }
+    // Sort by original position
+    order.sort_by_key(|(pos, _)| *pos);
+    
+    let result: Vec<String> = order.into_iter().map(|(_, line)| line).collect();
+    result
+}
+
 /// Combine filters with identical rules but different domains
 fn combine_filters(
     mut uncombined: Vec<String>,
@@ -720,7 +846,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 };
                 unique.sort_by_cached_key(|s| pattern.replace(s, "").into_owned());
             }
-            let combined = combine_filters(unique, &ELEMENT_DOMAIN_PATTERN, ",");
+            // Merge :has-text() rules first, then combine domains
+            let merged = combine_has_text_rules(unique);
+            let combined = combine_filters(merged, &ELEMENT_DOMAIN_PATTERN, ",");
             for filter in combined {
                 writeln!(output, "{}", filter)?;
             }

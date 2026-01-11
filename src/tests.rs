@@ -245,3 +245,98 @@ fn test_has_with_href_contains() {
     assert!(result.contains(":has("), ":has() should be preserved, got: {}", result);
     assert!(result.contains("[href*=\"&sponsoredid=\"]"), "href contains should be preserved, got: {}", result);
 }
+
+// =============================================================================
+// :has-text() Merging Tests
+// =============================================================================
+
+#[test]
+fn test_has_text_merge_two_plain() {
+    let input = vec![
+        "example.com##.ad:has-text(Buy now)".to_string(),
+        "example.com##.ad:has-text(Subscribe)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input);
+    assert_eq!(result.len(), 1);
+    assert!(result[0].contains(":has-text(/Buy now|Subscribe/)") 
+         || result[0].contains(":has-text(/Subscribe|Buy now/)"));
+}
+
+#[test]
+fn test_has_text_merge_regex_and_plain() {
+    let input = vec![
+        "example.com##.ad:has-text(/regex pattern/)".to_string(),
+        "example.com##.ad:has-text(plain text)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input);
+    assert_eq!(result.len(), 1);
+    assert!(result[0].contains(":has-text(/"));
+    assert!(result[0].contains("regex pattern"));
+    assert!(result[0].contains("plain text"));
+}
+
+#[test]
+fn test_has_text_escape_special_chars() {
+    let input = vec![
+        "example.com##.price:has-text($9.99)".to_string(),
+        "example.com##.price:has-text(50% off)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input);
+    assert_eq!(result.len(), 1);
+    assert!(result[0].contains("\\$9\\.99"));
+}
+
+#[test]
+fn test_has_text_different_base_selectors_not_merged() {
+    let input = vec![
+        "example.com##.ad:has-text(text1)".to_string(),
+        "example.com##.banner:has-text(text2)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input);
+    assert_eq!(result.len(), 2);
+}
+
+#[test]
+fn test_has_text_different_domains_not_merged() {
+    let input = vec![
+        "example.com##.ad:has-text(text1)".to_string(),
+        "other.com##.ad:has-text(text2)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input);
+    assert_eq!(result.len(), 2);
+}
+
+#[test]
+fn test_has_text_single_rule_unchanged() {
+    let input = vec![
+        "example.com##.ad:has-text(single)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0], "example.com##.ad:has-text(/single/)");
+}
+
+#[test]
+fn test_has_text_abp_contains_merged() {
+    let input = vec![
+        "example.com##.ad:-abp-contains(text1)".to_string(),
+        "example.com##.ad:-abp-contains(text2)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input);
+    assert_eq!(result.len(), 1);
+    assert!(result[0].contains(":-abp-contains(/text1|text2/)") 
+         || result[0].contains(":-abp-contains(/text2|text1/)"));
+}
+
+#[test]
+fn test_has_text_google_promo_example() {
+    let input = vec![
+        "www.google.com##[aria-describedby=\"promo_desc_id\"]:has-text(/Time for a new laptop|Gemini/)".to_string(),
+        "www.google.com##[aria-describedby=\"promo_desc_id\"]:has-text(Keep things dark)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input);
+    assert_eq!(result.len(), 1);
+    assert!(result[0].contains("www.google.com##"));
+    assert!(result[0].contains("Time for a new laptop|Gemini"));
+    assert!(result[0].contains("Keep things dark"));
+}
