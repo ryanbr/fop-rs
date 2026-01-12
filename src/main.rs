@@ -168,6 +168,8 @@ struct Args {
     check_file: Option<PathBuf>,
     /// Git commit message (skip interactive prompt)
     git_message: Option<String>,
+    /// Only sort files changed according to git
+    only_sort_changed: bool,
     /// Show applied configuration
     show_config: bool,
     /// Show help
@@ -341,6 +343,7 @@ impl Args {
             output_diff_individual: false,
             check_file: None,
             output_changed: false,
+            only_sort_changed: parse_bool(&config, "only-sort-changed", false),
             help: false,
             version: false,
         };
@@ -360,6 +363,7 @@ impl Args {
                 "--no-color" => args.no_color = true,
                 "--no-large-warning" => args.no_large_warning = true,
                 "--show-config" => args.show_config = true,
+                "--only-sort-changed" => args.only_sort_changed = true,
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
                     args.ignore_files = files.split(',').map(|s| s.trim().to_string()).collect();
@@ -560,6 +564,7 @@ impl Args {
         println!();
         println!("Settings:");
         println!("  no-commit       = {}", self.no_commit);
+        println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  no-ubo-convert  = {}", self.no_ubo_convert);
         println!("  no-msg-check    = {}", self.no_msg_check);
         println!("  disable-ignored = {}", self.disable_ignored);
@@ -853,6 +858,54 @@ fn entry_is_file(entry: &DirEntry) -> bool {
     ft.is_file() || (ft.is_symlink() && entry.path().is_file())
 }
 
+/// Get list of changed/untracked files from git
+/// Returns None if git not available or not in a repo
+fn get_git_changed_files(location: &Path) -> Option<ahash::AHashSet<PathBuf>> {
+    use std::process::Command;
+    
+    // Check if git exists
+    if Command::new("git")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_err()
+    {
+        return None;
+    }
+    
+    // Get changed files (modified, added, untracked)
+    let output = Command::new("git")
+        .args(["status", "--porcelain", "-uall"])
+        .current_dir(location)
+        .output()
+        .ok()?;
+    
+    if !output.status.success() {
+        return None; // Not a git repo
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    // If no changes, return empty set (skip all files)
+    if stdout.trim().is_empty() {
+        return Some(ahash::AHashSet::new());
+    }
+    
+    let files: ahash::AHashSet<PathBuf> = stdout
+        .lines()
+        .filter_map(|line| {
+            // Format: "XY filename" or "XY original -> renamed"
+            let path_str = line.get(3..)?.trim();
+            // Handle renames: "old -> new"
+            let path_str = path_str.split(" -> ").last()?;
+            Some(location.join(path_str))
+        })
+        .collect();
+    
+    Some(files)
+}
+
 fn process_location(
     location: &Path,
     no_commit: bool,
@@ -872,6 +925,7 @@ fn process_location(
     fix_typos: bool,
     fix_typos_on_add: bool,
     auto_fix: bool,
+    only_sort_changed: bool,
     quiet: bool,
     output_diff_individual: bool,
     diff_output: &std::sync::Mutex<Vec<String>>,
@@ -953,10 +1007,32 @@ fn process_location(
         })
         .collect();
 
+    // Get list of changed files from git (if flag enabled)
+    let changed_files = if only_sort_changed {
+        get_git_changed_files(location)
+    } else {
+        None
+    };
+    
+    if !quiet {
+        if let Some(ref files) = changed_files {
+            println!("Git detected: processing {} changed file(s)", files.len());
+        } else if only_sort_changed {
+            eprintln!("Warning: --only-sort-changed set but git not available, processing all files");
+        }
+    }
+
     // Process files in parallel
     txt_files.par_iter().for_each(|entry| {
-        let filename = entry
-            .path()
+        // Skip files git says are unchanged
+        if let Some(ref changed) = changed_files {
+            if !changed.contains(&entry.path().to_path_buf()) {
+                return;
+            }
+        }
+
+        let path = entry.path();
+        let filename = path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
@@ -977,7 +1053,7 @@ fn process_location(
             output_changed: sort_config.output_changed,
         };
 
-        match fop_sort(entry.path(), &config) {
+        match fop_sort(path, &config) {
             Ok(Some(diff)) => {
                 if output_diff_individual {
                     // Individual mode: write .diff file alongside source
@@ -1360,6 +1436,7 @@ fn main() {
             args.fix_typos,
             args.fix_typos_on_add,
             args.auto_fix,
+            args.only_sort_changed,
             args.quiet,
             args.output_diff_individual,
             &diff_output,
