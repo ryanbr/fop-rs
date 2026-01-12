@@ -633,7 +633,7 @@ fn combine_filters(
     if uncombined.len() <= 1 {
         return uncombined;
     }
-    let mut combined: Vec<String> = Vec::new();
+    let mut combined: Vec<String> = Vec::with_capacity(uncombined.len());
 
     for i in 0..uncombined.len() {
         let domains1 = domain_pattern.captures(&uncombined[i]);
@@ -741,7 +741,11 @@ fn combine_filters(
         let domains_substitute = domains1_full.replace(&domain1_str, &new_domain_str);
 
         // Escape $ for regex replacement ($ is special in replacement strings)
-        let escaped_substitute = domains_substitute.replace("$", "$$");
+        let escaped_substitute = if domains_substitute.contains('$') {
+            domains_substitute.replace("$", "$$")
+        } else {
+            domains_substitute
+        };
 
         // Modify the next filter to be the combined version
         // (using filter i as the base, replacing its domain pattern with the combined domains)

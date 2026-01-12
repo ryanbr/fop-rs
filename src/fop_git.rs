@@ -304,6 +304,10 @@ fn get_current_branch(base_cmd: &[String]) -> Option<String> {
         .output()
         .ok()?;
 
+    if !output.status.success() {
+        return None;
+    }
+
     String::from_utf8(output.stdout).ok().and_then(|s| {
         let branch = s.trim();
         // In detached HEAD state, git prints "HEAD" (not a real branch name).
