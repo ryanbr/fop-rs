@@ -1013,11 +1013,13 @@ fn process_location(
     }
 
     // Process files in parallel
-    txt_files.par_iter().for_each(|entry| {
+    let diffs: Vec<String> = txt_files
+        .par_iter()
+        .filter_map(|entry| {
         // Skip files git says are unchanged
         if let Some(ref changed) = changed_files {
             if !changed.contains(&entry.path().to_path_buf()) {
-                return;
+                return None;
             }
         }
 
@@ -1053,15 +1055,25 @@ fn process_location(
                     } else if !quiet {
                         println!("Diff written to: {}", diff_path.display());
                     }
+                    None
                 } else {
-                    // Combined mode: collect for later
-                    diff_output.lock().unwrap().push(diff);
+                    // Combined mode: return diff for collection outside the parallel loop
+                    Some(diff)
                 }
             }
-            Ok(None) => {}
-            Err(e) => eprintln!("Error processing {}: {}", entry.path().display(), e),
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("Error processing {}: {}", entry.path().display(), e);
+                None
+            }
         }
-    });
+        })
+        .collect();
+
+    // Single lock acquisition (reduces mutex pressure)
+    if !output_diff_individual && !diffs.is_empty() {
+        diff_output.lock().unwrap().extend(diffs);
+    }
 
     // Delete backup and temp files (sequential, usually few files)
     for entry in &entries {
