@@ -860,21 +860,11 @@ fn entry_is_file(entry: &DirEntry) -> bool {
 
 /// Get list of changed/untracked files from git
 /// Returns None if git not available or not in a repo
+#[inline]
 fn get_git_changed_files(location: &Path) -> Option<ahash::AHashSet<PathBuf>> {
     use std::process::Command;
     
-    // Check if git exists
-    if Command::new("git")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_err()
-    {
-        return None;
-    }
-    
-    // Get changed files (modified, added, untracked)
+    // Get changed files - if this fails, git isn't available or not a repo
     let output = Command::new("git")
         .args(["status", "--porcelain", "-uall"])
         .current_dir(location)
@@ -882,7 +872,7 @@ fn get_git_changed_files(location: &Path) -> Option<ahash::AHashSet<PathBuf>> {
         .ok()?;
     
     if !output.status.success() {
-        return None; // Not a git repo
+        return None; // Not a git repo or git not installed
     }
     
     let stdout = String::from_utf8_lossy(&output.stdout);
