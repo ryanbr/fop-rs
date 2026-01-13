@@ -621,16 +621,22 @@ pub fn commit_changes(
             .status()?;
 
         // Pull and push
-        for op in [repo.pull, repo.push].iter() {
+        let mut push_failed = false;
+        for (i, op) in [repo.pull, repo.push].iter().enumerate() {
             let mut cmd = Command::new(&base_cmd[0]);
             cmd.args(&base_cmd[1..]).args(*op);
             if quiet {
                 cmd.arg("--quiet");
             }
-            let _ = cmd.status();
+            let status = cmd.status();
+            if i == 1 && !status.map(|s| s.success()).unwrap_or(false) {
+                push_failed = true;
+            }
         }
 
-        if !quiet {
+        if push_failed {
+            eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
+        } else if !quiet {
             if no_color {
                 println!("Completed commit process successfully.");
             } else {
@@ -746,19 +752,25 @@ pub fn commit_changes(
                 }
             }
 
-            for op in [repo.pull, repo.push].iter() {
+            let mut push_failed = false;
+            for (i, op) in [repo.pull, repo.push].iter().enumerate() {
                 let mut cmd = Command::new(&base_cmd[0]);
                 cmd.args(&base_cmd[1..]).args(*op);
                 if quiet {
                     cmd.arg("--quiet");
                 }
-                let _ = cmd.status();
+                let status = cmd.status();
+                if i == 1 && !status.map(|s| s.success()).unwrap_or(false) {
+                    push_failed = true;
+                }
                 if !quiet {
                     println!();
                 }
             }
 
-            if !quiet {
+            if push_failed {
+                eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
+            } else if !quiet {
                 if no_color {
                     println!("Completed commit process successfully.");
                 } else {
