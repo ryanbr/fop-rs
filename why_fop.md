@@ -67,7 +67,7 @@ FOP is a tool that allows adblock list authors to quickly make list additions an
 
 | Action | Before | After |
 |--------|--------|-------|
-| Remove trailing wildcards | `||example.com^*` | `||example.com^` |
+| Remove trailing wildcards | `\|\|example.com^*` | `\|\|example.com^` |
 | Lowercase domains | `Example.COM##.ad` | `example.com##.ad` |
 | Trim whitespace | `  example.com##.ad  ` | `example.com##.ad` |
 
