@@ -576,6 +576,28 @@ pub fn create_pull_request(
 // Commit Operations
 // =============================================================================
 
+/// Attempt rebase and retry push after initial push failure
+#[inline]
+fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition) {
+    eprintln!("Push failed. Attempting rebase...");
+    let rebase_status = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["pull", "--rebase"])
+        .status();
+    
+    if rebase_status.map(|s| s.success()).unwrap_or(false) {
+        let retry = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(repo.push)
+            .status();
+        if retry.map(|s| s.success()).unwrap_or(false) {
+            println!("Push succeeded after rebase.");
+            return;
+        }
+    }
+    eprintln!("Push still failed. Resolve manually.");
+}
+
 pub fn commit_changes(
     repo: &RepoDefinition,
     base_cmd: &[String],
@@ -637,20 +659,7 @@ pub fn commit_changes(
 
         if push_failed {
             if rebase_on_fail {
-                eprintln!("Push failed. Attempting rebase...");
-                let _ = Command::new(&base_cmd[0])
-                    .args(&base_cmd[1..])
-                    .args(["pull", "--rebase"])
-                    .status();
-                let retry = Command::new(&base_cmd[0])
-                    .args(&base_cmd[1..])
-                    .args(repo.push)
-                    .status();
-                if retry.map(|s| s.success()).unwrap_or(false) {
-                    println!("Push succeeded after rebase.");
-                } else {
-                    eprintln!("Push still failed. Resolve manually.");
-                }
+                rebase_and_retry_push(base_cmd, repo);
             } else {
                 eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
             }
@@ -788,20 +797,7 @@ pub fn commit_changes(
 
             if push_failed {
                 if rebase_on_fail {
-                    eprintln!("Push failed. Attempting rebase...");
-                    let _ = Command::new(&base_cmd[0])
-                        .args(&base_cmd[1..])
-                        .args(["pull", "--rebase"])
-                        .status();
-                    let retry = Command::new(&base_cmd[0])
-                        .args(&base_cmd[1..])
-                        .args(repo.push)
-                        .status();
-                    if retry.map(|s| s.success()).unwrap_or(false) {
-                        println!("Push succeeded after rebase.");
-                    } else {
-                        eprintln!("Push still failed. Resolve manually.");
-                    }
+                    rebase_and_retry_push(base_cmd, repo);
                 } else {
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
