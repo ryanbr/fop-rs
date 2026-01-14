@@ -131,8 +131,8 @@ jobs:
       - name: Build Windows ARM64
         run: |
           $VERSION = "${{ needs.build-linux-windows.outputs.version }}"
-          # Optimized for Snapdragon 8cx Gen 3+ / Cortex-A78+
-          $env:RUSTFLAGS="-C target-cpu=cortex-a78"
+          # Optimized for Snapdragon 8cx Gen 3+ / Cortex-A78+, static CRT to avoid VCRUNTIME140.dll
+          $env:RUSTFLAGS="-C target-cpu=cortex-a78 -C target-feature=+crt-static"
           cargo build --release --target aarch64-pc-windows-msvc
           Copy-Item "target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64-v2.exe"
 
