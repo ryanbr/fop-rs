@@ -584,6 +584,7 @@ pub fn commit_changes(
     no_color: bool,
     no_large_warning: bool,
     quiet: bool,
+    rebase_on_fail: bool,
     git_message: &Option<String>,
 ) -> io::Result<()> {
     let diff = match get_diff(base_cmd, repo) {
@@ -635,7 +636,24 @@ pub fn commit_changes(
         }
 
         if push_failed {
-            eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
+            if rebase_on_fail {
+                eprintln!("Push failed. Attempting rebase...");
+                let _ = Command::new(&base_cmd[0])
+                    .args(&base_cmd[1..])
+                    .args(["pull", "--rebase"])
+                    .status();
+                let retry = Command::new(&base_cmd[0])
+                    .args(&base_cmd[1..])
+                    .args(repo.push)
+                    .status();
+                if retry.map(|s| s.success()).unwrap_or(false) {
+                    println!("Push succeeded after rebase.");
+                } else {
+                    eprintln!("Push still failed. Resolve manually.");
+                }
+            } else {
+                eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
+            }
         } else if !quiet {
             if no_color {
                 println!("Completed commit process successfully.");
@@ -769,7 +787,24 @@ pub fn commit_changes(
             }
 
             if push_failed {
-                eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
+                if rebase_on_fail {
+                    eprintln!("Push failed. Attempting rebase...");
+                    let _ = Command::new(&base_cmd[0])
+                        .args(&base_cmd[1..])
+                        .args(["pull", "--rebase"])
+                        .status();
+                    let retry = Command::new(&base_cmd[0])
+                        .args(&base_cmd[1..])
+                        .args(repo.push)
+                        .status();
+                    if retry.map(|s| s.success()).unwrap_or(false) {
+                        println!("Push succeeded after rebase.");
+                    } else {
+                        eprintln!("Push still failed. Resolve manually.");
+                    }
+                } else {
+                    eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
+                }
             } else if !quiet {
                 if no_color {
                     println!("Completed commit process successfully.");

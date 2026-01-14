@@ -170,6 +170,8 @@ struct Args {
     git_message: Option<String>,
     /// Only sort files changed according to git
     only_sort_changed: bool,
+    /// Auto rebase and retry if push fails
+    rebase_on_fail: bool,
     /// Show applied configuration
     show_config: bool,
     /// Show help
@@ -344,6 +346,7 @@ impl Args {
             check_file: None,
             output_changed: false,
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
+            rebase_on_fail: parse_bool(&config, "rebase-on-fail", false),
             help: false,
             version: false,
         };
@@ -364,6 +367,7 @@ impl Args {
                 "--no-large-warning" => args.no_large_warning = true,
                 "--show-config" => args.show_config = true,
                 "--only-sort-changed" => args.only_sort_changed = true,
+                "--rebase-on-fail" => args.rebase_on_fail = true,
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
                     args.ignore_files = files.split(',').map(|s| s.trim().to_string()).collect();
@@ -565,6 +569,7 @@ impl Args {
         println!("Settings:");
         println!("  no-commit       = {}", self.no_commit);
         println!("  only-sort-changed = {}", self.only_sort_changed);
+        println!("  rebase-on-fail  = {}", self.rebase_on_fail);
         println!("  no-ubo-convert  = {}", self.no_ubo_convert);
         println!("  no-msg-check    = {}", self.no_msg_check);
         println!("  disable-ignored = {}", self.disable_ignored);
@@ -916,6 +921,7 @@ fn process_location(
     fix_typos_on_add: bool,
     auto_fix: bool,
     only_sort_changed: bool,
+    rebase_on_fail: bool,
     quiet: bool,
     output_diff_individual: bool,
     diff_output: &std::sync::Mutex<Vec<String>>,
@@ -1134,7 +1140,7 @@ fn process_location(
                     if !quiet {
                         println!("Direct push authorized for user.");
                     }
-                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, git_message)?;
+                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, rebase_on_fail, git_message)?;
                 } else {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
@@ -1173,6 +1179,7 @@ fn process_location(
                     no_color,
                     no_large_warning,
                     quiet,
+                    rebase_on_fail,
                     git_message,
                 )?;
             }
@@ -1400,6 +1407,7 @@ fn main() {
                     args.no_color,
                     args.no_large_warning,
                     args.quiet,
+                    args.rebase_on_fail,
                     &args.git_message,
                 ) {
                     eprintln!("Git error: {}", e);
@@ -1439,6 +1447,7 @@ fn main() {
             args.fix_typos_on_add,
             args.auto_fix,
             args.only_sort_changed,
+            args.rebase_on_fail,
             args.quiet,
             args.output_diff_individual,
             &diff_output,
