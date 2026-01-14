@@ -84,7 +84,29 @@ FOP is a tool that allows adblock list authors to quickly make list additions an
 | Action | Before | After | Flag |
 |--------|--------|-------|------|
 | uBO → ABP options | `\|\|example.com$xhr,3p` | `\|\|example.com$xmlhttprequest,third-party` | *(default)* |
-| Fix typos | `##.addvertisement` | `##.advertisement` | `--fix-typos` |
+
+### Syntax Typo Detection (`--fix-typos`)
+
+**Cosmetic rule typos:**
+
+| Typo | Before | After |
+|------|--------|-------|
+| Extra `#` | `###.ad-banner` | `##.ad-banner` |
+| Single `#` | `domain.com#.ad` | `domain.com##.ad` |
+| Double dot | `##..ad-class` | `##.ad-class` |
+| Double comma | `a.com,,b.com##.ad` | `a.com,b.com##.ad` |
+| Trailing comma | `domain.com,##.ad` | `domain.com##.ad` |
+| Leading comma | `,domain.com##.ad` | `domain.com##.ad` |
+| Wrong separator | `a.com\|b.com##.ad` | `a.com,b.com##.ad` |
+
+**Network rule typos:**
+
+| Typo | Before | After |
+|------|--------|-------|
+| Triple `$` | `\|\|example.com$$$domain=x.com` | `\|\|example.com$domain=x.com` |
+| Double `$` | `\|\|example.com$$domain=x.com` | `\|\|example.com$domain=x.com` |
+| Missing `$` | `\|\|example.com/ad.jsdomain=x.com` | `\|\|example.com/ad.js$domain=x.com` |
+| Wrong separator | `$domain=a.com,b.com` | `$domain=a.com\|b.com` |
 
 ### Preserved Unchanged
 
