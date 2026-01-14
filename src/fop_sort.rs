@@ -1039,7 +1039,19 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             lines_checked += 1;
         }
 
-        let tidied = filter_tidy(&line, config.convert_ubo);
+        let mut tidied = filter_tidy(&line, config.convert_ubo);
+
+        // Fix typos if enabled (network rules)
+        if config.fix_typos {
+            let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
+            if !fixes.is_empty() {
+                write_warning(&format!(
+                    "Fixed typo: {} ? {} ({})",
+                    tidied, fixed, fixes.join(", ")
+                ));
+                tidied = fixed;
+            }
+        }
         section.push(tidied);
     }
 
