@@ -11,6 +11,7 @@ A Rust port of the EasyList FOP tool for sorting and cleaning ad-blocking filter
 - **Validation**: Removes invalid/overly-broad rules (TLD-only, too short, etc.)
 - **Git integration**: Commit changes directly to repositories (can be disabled)
 - **easylist_adservers.txt validation**: Ensures rules start with `|` or `/`
+- **:has-text() merging**: Combines rules with same base selector into single regex
 - **Parallel processing**: Uses all CPU cores for faster processing via Rayon
 
 ## Extended Syntax Support
@@ -102,6 +103,8 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--fix-typos` | Fix cosmetic rule typos in all files during sort |
 | `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
 | `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
+| `--only-sort-changed` | Only process files changed according to git |
+| `--rebase-on-fail` | Auto rebase and retry push if it fails |
 | `--ignore-config` | Ignore .fopconfig file, use only CLI args |
 | `--output` | Output changed files with --changed suffix (no overwrite) |
 | `--check-file=FILE` | Process a single file | 
@@ -182,6 +185,12 @@ fix-typos-on-add = false
 
 # Auto-fix without prompting
 auto-fix = false
+
+# Only sort git-changed files (skip unchanged)
+only-sort-changed = false
+
+# Auto rebase and retry if push fails
+rebase-on-fail = false
 
 # Suppress most output (for CI)
 quiet = false
