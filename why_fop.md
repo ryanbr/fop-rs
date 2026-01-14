@@ -60,7 +60,7 @@ FOP is a tool that allows adblock list authors to quickly make list additions an
 | Action | Before | After |
 |--------|--------|-------|
 | Combine domains (element hiding) | `a.com##.ad`<br>`b.com##.ad` | `a.com,b.com##.ad` |
-| Combine domains (blocking) | `||x.js$domain=a.com`<br>`||x.js$domain=b.com` | `||x.js$domain=a.com\|b.com` |
+| Combine domains (blocking) | `\|\|x.js$domain=a.com`<br>`\|\|x.js$domain=b.com` | `\|\|x.js$domain=a.com\|b.com` |
 | Merge :has-text() rules | `a.com##div:has-text(foo)`<br>`a.com##div:has-text(bar)` | `a.com##div:has-text(/foo\|bar/)` |
 
 ### Cleanup & Normalization
@@ -75,7 +75,7 @@ FOP is a tool that allows adblock list authors to quickly make list additions an
 
 | Action | Before | After |
 |--------|--------|-------|
-| Remove TLD-only rules | `||com^` | *(removed)* |
+| Remove TLD-only rules | `\|\|com^` | *(removed)* |
 | Remove short rules (<3 chars) | `ab` | *(removed)* |
 | Validate adservers.txt | `example.com^` | *(warning: must start with \| or /)* |
 
@@ -83,7 +83,7 @@ FOP is a tool that allows adblock list authors to quickly make list additions an
 
 | Action | Before | After | Flag |
 |--------|--------|-------|------|
-| uBO → ABP options | `||example.com$xhr,3p` | `||example.com$xmlhttprequest,third-party` | *(default)* |
+| uBO → ABP options | `\|\|example.com$xhr,3p` | `\|\|example.com$xmlhttprequest,third-party` | *(default)* |
 | Fix typos | `##.addvertisement` | `##.advertisement` | `--fix-typos` |
 
 ### Preserved Unchanged
