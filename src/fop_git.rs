@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 /// Format changes for PR body
 pub fn format_pr_changes() -> String {
     const MAX_ITEMS: usize = 40; // Limit to avoid huge PR bodies
+    const MAX_BODY_LEN: usize = 1700;  // Leave room for base URL
     
     if let Ok(changes) = SORT_CHANGES.lock() {
         // Estimate capacity: ~100 chars per item
@@ -24,7 +25,7 @@ pub fn format_pr_changes() -> String {
         if !changes.typos_fixed.is_empty() {
             body.push_str("## Typos Fixed\n\n");
             for (before, after, reason) in changes.typos_fixed.iter().take(MAX_ITEMS) {
-                body.push_str(&format!("- `{}` ? `{}` ({})\n", before, after, reason));
+                body.push_str(&format!("- `{}` -> `{}` ({})\n", before, after, reason));
             }
             if changes.typos_fixed.len() > MAX_ITEMS {
                 body.push_str(&format!("- ... and {} more\n", changes.typos_fixed.len() - MAX_ITEMS));
@@ -34,7 +35,7 @@ pub fn format_pr_changes() -> String {
         if !changes.domains_combined.is_empty() {
             body.push_str("## Domains Combined\n\n");
             for (originals, combined) in changes.domains_combined.iter().take(MAX_ITEMS) {
-                body.push_str(&format!("- `{}` ? `{}`\n", originals.join("` + `"), combined));
+                body.push_str(&format!("- `{}` -> `{}`\n", originals.join("` + `"), combined));
             }
             if changes.domains_combined.len() > MAX_ITEMS {
                 body.push_str(&format!("- ... and {} more\n", changes.domains_combined.len() - MAX_ITEMS));
@@ -45,7 +46,7 @@ pub fn format_pr_changes() -> String {
         if !changes.has_text_merged.is_empty() {
             body.push_str("## :has-text() Merged\n\n");
             for (originals, merged) in changes.has_text_merged.iter().take(MAX_ITEMS) {
-                body.push_str(&format!("- {} rules ? `{}`\n", originals.len(), merged));
+                body.push_str(&format!("- {} rules -> `{}`\n", originals.len(), merged));
             }
             if changes.has_text_merged.len() > MAX_ITEMS {
                 body.push_str(&format!("- ... and {} more\n", changes.has_text_merged.len() - MAX_ITEMS));
@@ -64,9 +65,18 @@ pub fn format_pr_changes() -> String {
             }
             body.push('\n');
         }
+
+        // Truncate if too long for URL
+        if body.len() > MAX_BODY_LEN {
+            body.truncate(MAX_BODY_LEN);
+            body.push_str("\n\n... (truncated)\n");
+        }
         
         return body;
     }
+
+
+        
     
     String::new()
 }
@@ -638,6 +648,8 @@ pub fn create_pull_request(
     // Generate PR URL
     let pr_url = get_remote_url(base_cmd, remote)
         .and_then(|remote| generate_pr_url(&remote, &base_branch, &pr_branch, pr_body.as_deref()));
+
+    eprintln!("DEBUG: pr_body = {:?}", pr_body);
 
     if let Some(ref url) = pr_url {
         println!("\n{}", "Pull request branch pushed successfully!".green());
