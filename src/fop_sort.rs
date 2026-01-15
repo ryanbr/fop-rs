@@ -92,6 +92,34 @@ pub struct SortConfig<'a> {
     pub output_changed: bool,
 }
 
+/// Track changes made during sorting
+#[derive(Default, Clone)]
+pub struct SortChanges {
+    pub typos_fixed: Vec<(String, String, String)>,       // (before, after, reason)
+    pub domains_combined: Vec<(Vec<String>, String)>,     // (original rules, combined rule)
+    pub has_text_merged: Vec<(Vec<String>, String)>,      // (original rules, merged rule)
+    pub duplicates_removed: ahash::AHashSet<String>,      // removed duplicate rules (deduped)
+}
+
+use std::sync::Mutex;
+
+/// Global change tracker for aggregating across files
+pub static SORT_CHANGES: LazyLock<Mutex<SortChanges>> = 
+    LazyLock::new(|| Mutex::new(SortChanges::default()));
+
+/// Enable/disable change tracking (for --pr-show-changes)
+pub static TRACK_CHANGES: std::sync::atomic::AtomicBool = 
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Clear tracked changes (call before processing)
+#[allow(dead_code)]
+#[inline]
+pub fn clear_tracked_changes() {
+    if let Ok(mut changes) = SORT_CHANGES.lock() {
+        *changes = SortChanges::default();
+    }
+}
+
 // =============================================================================
 // UBO Option Conversion
 // =============================================================================
@@ -609,12 +637,31 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
     
     // Add merged has-text rules with their original position
     for ((domains, base, pseudo), (pos, args)) in groups {
+        // Only track if multiple rules were merged
+        let was_merged = args.len() > 1;
+               
         let merged_arg = merge_has_text_args(&args);
-        if domains.is_empty() {
-            order.push((pos, format!("##{}:{}({})", base, pseudo, merged_arg)));
+        let merged_rule = if domains.is_empty() {
+            format!("##{}:{}({})", base, pseudo, merged_arg)
         } else {
-            order.push((pos, format!("{}##{}:{}({})", domains, base, pseudo, merged_arg)));
+            format!("{}##{}:{}({})", domains, base, pseudo, merged_arg)
+        };
+        
+        // Track merge
+        if was_merged && TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+            let originals: Vec<String> = args.iter().map(|arg| {
+                if domains.is_empty() {
+                    format!("##{}:{}({})", base, pseudo, arg)
+                } else {
+                    format!("{}##{}:{}({})", domains, base, pseudo, arg)
+                }
+            }).collect();
+            if let Ok(mut changes) = SORT_CHANGES.lock() {
+                changes.has_text_merged.push((originals, merged_rule.clone()));
+            }
         }
+        
+        order.push((pos, merged_rule));
     }
     // Sort by original position
     order.sort_by_key(|(pos, _)| *pos);
@@ -749,9 +796,21 @@ fn combine_filters(
 
         // Modify the next filter to be the combined version
         // (using filter i as the base, replacing its domain pattern with the combined domains)
+
         let combined_filter = domain_pattern
             .replace(&uncombined[i], escaped_substitute.as_str())
             .to_string();
+            
+        // Track combination
+        if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Ok(mut changes) = SORT_CHANGES.lock() {
+                changes.domains_combined.push((
+                    vec![uncombined[i].clone(), uncombined[i + 1].clone()],
+                    combined_filter.clone(),
+                ));
+            }
+        }
+
         uncombined[i + 1] = combined_filter;
 
         // Don't add current filter to combined - it will be processed as part of next iteration
@@ -814,14 +873,39 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             let mut seen = HashSet::new();
             section
                 .drain(..)
-                .filter(|x| seen.insert(x.clone()))
+                .filter(|x| {
+                    if !seen.insert(x.clone()) {
+                        // Track duplicate
+                        if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+                            if let Ok(mut changes) = SORT_CHANGES.lock() {
+                                changes.duplicates_removed.insert(x.clone());
+                            }
+                        }
+                        false
+                    } else {
+                        true
+                    }
+                })
                 .collect()
         } else {
-            section
+            let mut seen = HashSet::new();
+            let unique: Vec<String> = section
                 .drain(..)
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect()
+                .filter(|x| {
+                    if !seen.insert(x.clone()) {
+                        // Track duplicate
+                        if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+                            if let Ok(mut changes) = SORT_CHANGES.lock() {
+                                changes.duplicates_removed.insert(x.clone());
+                            }
+                        }
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+            unique
         };
 
         if localhost {
@@ -966,6 +1050,12 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             if config.fix_typos {
                 let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
                 if !fixes.is_empty() {
+                    // Track for PR body
+                    if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+                        if let Ok(mut changes) = SORT_CHANGES.lock() {
+                            changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));
+                        }
+                    }
                     write_warning(&format!(
                         "Fixed typo: {} ? {} ({})",
                         tidied,
@@ -1045,6 +1135,12 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if config.fix_typos {
             let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
             if !fixes.is_empty() {
+                // Track for PR body
+                if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+                    if let Ok(mut changes) = SORT_CHANGES.lock() {
+                        changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));
+                    }
+                }
                 write_warning(&format!(
                     "Fixed typo: {} ? {} ({})",
                     tidied, fixed, fixes.join(", ")

@@ -93,7 +93,7 @@ use fop_git::{
     build_base_command, check_repo_changes, commit_changes, create_pull_request, get_added_lines,
     git_available, get_remote_name, RepoDefinition, REPO_TYPES,
 };
-use fop_sort::{fop_sort, SortConfig};
+use fop_sort::{fop_sort, SortConfig, TRACK_CHANGES};
 
 // FOP version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -150,6 +150,8 @@ struct Args {
     fix_typos: bool,
     /// Base branch for PR (default: auto-detect main/master)
     git_pr_branch: Option<String>,
+    /// Include rule changes in PR body
+    pr_show_changes: bool,
     /// Check typos in git additions before commit
     fix_typos_on_add: bool,
     /// Users allowed to push directly (bypass create-pr)
@@ -334,6 +336,7 @@ impl Args {
                 }
             }),
             git_pr_branch: config.get("git-pr-branch").cloned(),
+            pr_show_changes: parse_bool(&config, "pr-show-changes", false),
             fix_typos: parse_bool(&config, "fix-typos", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
             direct_push_users: config.get("direct-push-users")
@@ -368,6 +371,7 @@ impl Args {
                 "--show-config" => args.show_config = true,
                 "--only-sort-changed" => args.only_sort_changed = true,
                 "--rebase-on-fail" => args.rebase_on_fail = true,
+                "--pr-show-changes" => args.pr_show_changes = true,
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
                     args.ignore_files = files.split(',').map(|s| s.trim().to_string()).collect();
@@ -570,6 +574,7 @@ impl Args {
         println!("  no-commit       = {}", self.no_commit);
         println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  rebase-on-fail  = {}", self.rebase_on_fail);
+        println!("  pr-show-changes = {}", self.pr_show_changes);
         println!("  no-ubo-convert  = {}", self.no_ubo_convert);
         println!("  no-msg-check    = {}", self.no_msg_check);
         println!("  disable-ignored = {}", self.disable_ignored);
@@ -916,6 +921,7 @@ fn process_location(
     sort_config: &SortConfig,
     create_pr: &Option<String>,
     git_pr_branch: &Option<String>,
+    pr_show_changes: bool,
     direct_push_users: &[String],
     fix_typos: bool,
     fix_typos_on_add: bool,
@@ -1168,7 +1174,7 @@ fn process_location(
                     None => None,  // Let create_pull_request auto-detect
                 };
                 
-                create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, no_color)?;
+                create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, pr_show_changes, no_color)?;
                 }
             } else {
                 commit_changes(
@@ -1425,6 +1431,12 @@ fn main() {
         return;
     }
 
+    // Clear any previous tracking data and enable if needed
+    if args.pr_show_changes {
+        fop_sort::clear_tracked_changes();
+        TRACK_CHANGES.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     // Process all locations
     for (i, location) in locations.iter().enumerate() {
         if let Err(e) = process_location(
@@ -1442,6 +1454,7 @@ fn main() {
             &sort_config,
             &args.create_pr,
             &args.git_pr_branch,
+            args.pr_show_changes,
             &args.direct_push_users,
             args.fix_typos,
             args.fix_typos_on_add,

@@ -6,7 +6,70 @@ use std::io::BufRead;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
+use crate::fop_sort::SORT_CHANGES;
 use std::sync::LazyLock;
+
+/// Format changes for PR body
+pub fn format_pr_changes() -> String {
+    const MAX_ITEMS: usize = 40; // Limit to avoid huge PR bodies
+    
+    if let Ok(changes) = SORT_CHANGES.lock() {
+        // Estimate capacity: ~100 chars per item
+        let estimated = (changes.typos_fixed.len() 
+            + changes.domains_combined.len()
+            + changes.has_text_merged.len()
+            + changes.duplicates_removed.len()) * 100;
+        let mut body = String::with_capacity(estimated.min(8000));
+
+        if !changes.typos_fixed.is_empty() {
+            body.push_str("## Typos Fixed\n\n");
+            for (before, after, reason) in changes.typos_fixed.iter().take(MAX_ITEMS) {
+                body.push_str(&format!("- `{}` ? `{}` ({})\n", before, after, reason));
+            }
+            if changes.typos_fixed.len() > MAX_ITEMS {
+                body.push_str(&format!("- ... and {} more\n", changes.typos_fixed.len() - MAX_ITEMS));
+            }
+            body.push('\n');
+        }
+        if !changes.domains_combined.is_empty() {
+            body.push_str("## Domains Combined\n\n");
+            for (originals, combined) in changes.domains_combined.iter().take(MAX_ITEMS) {
+                body.push_str(&format!("- `{}` ? `{}`\n", originals.join("` + `"), combined));
+            }
+            if changes.domains_combined.len() > MAX_ITEMS {
+                body.push_str(&format!("- ... and {} more\n", changes.domains_combined.len() - MAX_ITEMS));
+            }
+            body.push('\n');
+        }
+        
+        if !changes.has_text_merged.is_empty() {
+            body.push_str("## :has-text() Merged\n\n");
+            for (originals, merged) in changes.has_text_merged.iter().take(MAX_ITEMS) {
+                body.push_str(&format!("- {} rules ? `{}`\n", originals.len(), merged));
+            }
+            if changes.has_text_merged.len() > MAX_ITEMS {
+                body.push_str(&format!("- ... and {} more\n", changes.has_text_merged.len() - MAX_ITEMS));
+            }
+            body.push('\n');
+        }
+        
+        if !changes.duplicates_removed.is_empty() {
+            body.push_str("## Duplicates Removed\n\n");
+            let dupes: Vec<_> = changes.duplicates_removed.iter().collect();
+            for dup in dupes.iter().take(MAX_ITEMS) {
+                body.push_str(&format!("- `{}`\n", dup));
+            }
+            if changes.duplicates_removed.len() > MAX_ITEMS {
+                body.push_str(&format!("- ... and {} more\n", changes.duplicates_removed.len() - MAX_ITEMS));
+            }
+            body.push('\n');
+        }
+        
+        return body;
+    }
+    
+    String::new()
+}
 
 // =============================================================================
 // Repository Definition
@@ -348,7 +411,7 @@ fn prompt_for_remote(remotes: &[String], no_color: bool) -> Option<String> {
 }
 
 /// Convert git remote URL to web URL and generate PR/MR link
-fn generate_pr_url(remote: &str, base_branch: &str, pr_branch: &str) -> Option<String> {
+fn generate_pr_url(remote: &str, base_branch: &str, pr_branch: &str, body: Option<&str>) -> Option<String> {
     let remote = remote.trim().trim_end_matches(".git");
     
     // Build base URL from SSH or HTTPS format
@@ -365,11 +428,19 @@ fn generate_pr_url(remote: &str, base_branch: &str, pr_branch: &str) -> Option<S
     
     // Detect platform and generate URL (only for known platforms)
     if base_url.contains("gitlab") {
-        Some(format!("{}/-/merge_requests/new?merge_request[source_branch]={}&merge_request[target_branch]={}", 
-            base_url, pr_branch, base_branch))
+        let mut url = format!("{}/-/merge_requests/new?merge_request[source_branch]={}&merge_request[target_branch]={}", 
+            base_url, pr_branch, base_branch);
+        if let Some(b) = body {
+            url.push_str(&format!("&merge_request[description]={}", urlencoding::encode(b)));
+        }
+        Some(url)
     } else if base_url.contains("github") {
-        Some(format!("{}/compare/{}...{}?expand=1", 
-            base_url, base_branch, pr_branch))
+        let mut url = format!("{}/compare/{}...{}?expand=1", 
+            base_url, base_branch, pr_branch);
+        if let Some(b) = body {
+            url.push_str(&format!("&body={}", urlencoding::encode(b)));
+        }
+        Some(url)
     } else {
         None
     }
@@ -473,6 +544,7 @@ pub fn create_pull_request(
     remote: &str,
     pr_branch_override: &Option<String>,
     quiet: bool,
+    show_changes: bool,
     no_color: bool,
 ) -> io::Result<Option<String>> {
     // Show diff first
@@ -555,9 +627,17 @@ pub fn create_pull_request(
     // Switch back to original branch
     let _ = checkout_branch(base_cmd, &current_branch);
 
+    // Build PR body if show_changes enabled
+    let pr_body = if show_changes {
+        let body = format_pr_changes();
+        if body.is_empty() { None } else { Some(body) }
+    } else {
+        None
+    };
+
     // Generate PR URL
     let pr_url = get_remote_url(base_cmd, remote)
-        .and_then(|remote| generate_pr_url(&remote, &base_branch, &pr_branch));
+        .and_then(|remote| generate_pr_url(&remote, &base_branch, &pr_branch, pr_body.as_deref()));
 
     if let Some(ref url) = pr_url {
         println!("\n{}", "Pull request branch pushed successfully!".green());

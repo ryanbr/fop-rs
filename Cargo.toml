@@ -1,6 +1,6 @@
 [package]
 name = "fop"
-version = "4.2.6"
+version = "4.2.5"
 edition = "2021"
 authors = ["Original: Michael (EasyList)", "Rust port"]
 description = "Filter Orderer and Preener - A tool for sorting and cleaning ad-blocking filter lists"
@@ -16,6 +16,7 @@ rayon = "1.11"
 ahash = "0.8"
 colored = "3.0"
 similar = "2"
+urlencoding ="2.1"
 
 [profile.release]
 lto = "fat"
