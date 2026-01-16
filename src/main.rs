@@ -1474,6 +1474,12 @@ fn main() {
         }
     }
 
+    // Clear tracking data when done (free memory)
+    if args.pr_show_changes {
+        TRACK_CHANGES.store(false, std::sync::atomic::Ordering::Relaxed);
+        fop_sort::clear_tracked_changes();
+    }
+
     // Write collected diffs if --output-diff specified
     if let Some(ref diff_path) = &args.output_diff {
         let diffs = diff_output.lock().unwrap();
