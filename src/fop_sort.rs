@@ -112,7 +112,6 @@ pub static TRACK_CHANGES: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// Clear tracked changes (call before processing)
-#[allow(dead_code)]
 #[inline]
 pub fn clear_tracked_changes() {
     if let Ok(mut changes) = SORT_CHANGES.lock() {
@@ -851,7 +850,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
     };
 
-    let mut section: Vec<String> = Vec::with_capacity(800);
+    let mut section: Vec<String> = Vec::with_capacity(2000);
     let mut lines_checked: usize = 1;
     let mut filter_lines: usize = 0;
     let mut element_lines: usize = 0;
