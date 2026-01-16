@@ -596,7 +596,7 @@ fn merge_has_text_args(args: &[String]) -> String {
 /// Combine element rules with same domain and base selector but different :has-text() args
 pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
     let capacity = lines.len();
-    let mut groups: AHashMap<(String, String, String), (usize, Vec<String>)> = AHashMap::new();
+    let mut groups: AHashMap<(String, String, String), (usize, Vec<String>)> = AHashMap::with_capacity(capacity / 4);
     let mut order: Vec<(usize, String)> = Vec::with_capacity(capacity);
     let mut idx = 0;
     
