@@ -327,7 +327,7 @@ impl Args {
             keep_empty_lines: parse_bool(&config, "keep-empty-lines", false),
             ignore_dot_domains: parse_bool(&config, "ignore-dot-domains", false),
             disable_domain_limit: parse_list(&config, "disable-domain-limit"),
-            warning_output: config.get("warning-output").map(|s| PathBuf::from(s)),
+            warning_output: config.get("warning-output").map(PathBuf::from),
             create_pr: config.get("create-pr").and_then(|v| {
                 match v.to_lowercase().as_str() {
                     "" | "true" | "yes" | "1" => Some(String::new()), // Enable with prompt
@@ -906,6 +906,7 @@ fn get_git_changed_files(location: &Path) -> Option<ahash::AHashSet<PathBuf>> {
     Some(files)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_location(
     location: &Path,
     no_commit: bool,
@@ -984,10 +985,8 @@ fn process_location(
     // Print directories first (sequential for ordered output)
     for entry in &entries {
         let path = entry.path();
-        if entry_is_dir(entry) {
-            if !quiet {
-                println!("Current directory: {}", path.display());
-            }
+        if entry_is_dir(entry) && !quiet {
+            println!("Current directory: {}", path.display());
         }
     }
 
@@ -1169,10 +1168,7 @@ fn process_location(
                 };
                 
                 // Determine base branch - use provided or prompt user
-                let base_branch = match git_pr_branch {
-                    Some(ref branch) => Some(branch.clone()),
-                    None => None,  // Let create_pull_request auto-detect
-                };
+                let base_branch = git_pr_branch.clone();
                 
                 create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, pr_show_changes, no_color)?;
                 }

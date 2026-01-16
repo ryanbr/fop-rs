@@ -481,13 +481,13 @@ pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addi
     let mut line_num: usize = 0;
 
     for line in diff.lines() {
-        if line.starts_with("+++ b/") {
-            current_file = line[6..].to_string();
+        if let Some(file) = line.strip_prefix("+++ b/") {
+            current_file = file.to_string();
         } else if line.starts_with("@@ ") {
             // Parse line number from @@ -x,y +n,m @@
             if let Some(plus_pos) = line.find(" +") {
                 let rest = &line[plus_pos + 2..];
-                if let Some(end) = rest.find(|c| c == ',' || c == ' ') {
+                 if let Some(end) = rest.find([',', ' ']) {
                     line_num = rest[..end].parse().unwrap_or(0);
                 }
             }
@@ -547,6 +547,7 @@ fn get_default_branch(base_cmd: &[String], remote: &str) -> Option<String> {
 }
 
 /// Create a pull request branch and return PR URL
+#[allow(clippy::too_many_arguments)]
 pub fn create_pull_request(
     repo: &RepoDefinition,
     base_cmd: &[String],
@@ -690,6 +691,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition) {
     eprintln!("Push still failed. Resolve manually.");
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn commit_changes(
     repo: &RepoDefinition,
     base_cmd: &[String],
@@ -795,7 +797,7 @@ pub fn commit_changes(
     // Get commit comment
     loop {
         if no_color {
-            print!("Please enter a valid commit comment (or ABORT to restore):\n");
+            println!("Please enter a valid commit comment (or ABORT to restore):");
         } else {
             println!(
                 "{}",

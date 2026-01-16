@@ -58,10 +58,10 @@ fn cmp_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
 /// Replaces regex: r"^(\|\||[|])?\.([a-z]{2,})\^?$"
 #[inline]
 pub fn is_tld_only(line: &str) -> bool {
-    let s = if line.starts_with("||") {
-        &line[2..]
-    } else if line.starts_with('|') {
-        &line[1..]
+    let s = if let Some(rest) = line.strip_prefix("||") {
+        rest
+    } else if let Some(rest) = line.strip_prefix('|') {
+        rest
     } else {
         line
     };
@@ -141,7 +141,7 @@ pub(crate) fn convert_ubo_options(options: Vec<String>) -> Vec<String> {
 }
 
 /// Sort domains alphabetically, ignoring ~ prefix
-pub(crate) fn sort_domains(domains: &mut Vec<String>) {
+pub(crate) fn sort_domains(domains: &mut [String]) {
     domains.sort_unstable_by(|a, b| {
         let (a_base, a_inv) = a.strip_prefix('~').map(|s| (s, true)).unwrap_or((a.as_str(), false));
         let (b_base, b_inv) = b.strip_prefix('~').map(|s| (s, true)).unwrap_or((b.as_str(), false));
@@ -246,8 +246,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
             let mut final_options: Vec<String> = Vec::new();
 
             for option in &option_list {
-                if option.starts_with("domain=") {
-                    let domains = &option[7..];
+                if let Some(domains) = option.strip_prefix("domain=") {
                     domain_list.extend(domains.split('|').map(String::from));
                     remove_entries.insert(option.clone());
                 } else {
@@ -1002,11 +1001,10 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Validate localhost entries when in localhost mode
-        if config.localhost {
-            if !LOCALHOST_PATTERN.is_match(&line) {
-                write_warning(&format!("Removed invalid localhost entry: {}", line));
-                continue;
-            }
+        if config.localhost && !LOCALHOST_PATTERN.is_match(&line) {
+            write_warning(&format!("Removed invalid localhost entry: {}", line));
+            continue;
+
         }
 
         // Skip filters less than 3 characters
