@@ -100,6 +100,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--git-message=` | Git commit message (skip interactive prompt) |
 | `--create-pr[=TITLE]` | Create PR branch instead of committing to current branch |
 | `--git-pr-branch=NAME` | Base branch for PR (default: auto-detect main/master) |
+| `--pr-show-changes` | Include rule changes (combines, merges, typos) in PR body |
 | `--fix-typos` | Fix cosmetic rule typos in all files during sort |
 | `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
 | `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
@@ -173,6 +174,9 @@ file-extensions = txt
 
 # Create PR branch instead of committing
 create-pr =
+
+# Include rule changes in PR body
+pr-show-changes = false
 
 # Base branch for PR (default: auto-detect)
 git-pr-branch =
