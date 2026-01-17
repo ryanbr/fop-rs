@@ -128,6 +128,13 @@ fn extract_banned_domain(line: &str) -> Option<&str> {
     
     // ||domain.com^$options or ||domain.com^ or ||domain.com
     let s = line.strip_prefix("||")?;
+ 
+    // If domain= restriction exists, it's targeting specific sites, not blocking globally
+    if line.contains("$domain=") || line.contains(",domain=") 
+        || line.contains("$from=") || line.contains(",from=") 
+    {
+        return None;
+    }
     
     // If there's a path (/) it's targeting specific resource, not whole domain
     if s.contains('/') {
