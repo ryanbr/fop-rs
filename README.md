@@ -280,6 +280,15 @@ The Rust version is significantly faster than Python FOP due to:
 - Optimized regex handling
 - Efficient memory management
 
+## Windows PowerShell Note
+
+If you see `UnauthorizedAccess` or `PSSecurityException` when running `fop` in PowerShell, run this once to fix permanently:
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+Alternatively, use Git Bash, MINGW64, or WSL.
+
 ## License
 
 GPL-3.0 (same as original Python FOP)
