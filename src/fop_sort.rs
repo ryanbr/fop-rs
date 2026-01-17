@@ -129,8 +129,13 @@ fn extract_banned_domain(line: &str) -> Option<&str> {
     // ||domain.com^$options or ||domain.com^ or ||domain.com
     let s = line.strip_prefix("||")?;
     
-    // Find end of domain (^ or $ or / or end of string)
-    let end = s.find(|c| c == '^' || c == '$' || c == '/').unwrap_or(s.len());
+    // If there's a path (/) it's targeting specific resource, not whole domain
+    if s.contains('/') {
+        return None;
+    }
+    
+    // Find end of domain (^ or $ or end of string)
+    let end = s.find(|c| c == '^' || c == '$').unwrap_or(s.len());
     
     if end > 0 {
         Some(&s[..end])
