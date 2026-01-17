@@ -91,7 +91,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use fop_git::{
     build_base_command, check_repo_changes, commit_changes, create_pull_request, get_added_lines,
-    git_available, get_remote_name, RepoDefinition, REPO_TYPES,
+    git_available, get_remote_name, check_banned_domains_prompt, RepoDefinition, REPO_TYPES,
 };
 use fop_sort::{fop_sort, SortConfig, TRACK_CHANGES};
 
@@ -152,6 +152,8 @@ struct Args {
     git_pr_branch: Option<String>,
     /// Include rule changes in PR body
     pr_show_changes: bool,
+    /// Path to banned domain list file
+    check_banned_list: Option<PathBuf>,
     /// Check typos in git additions before commit
     fix_typos_on_add: bool,
     /// Users allowed to push directly (bypass create-pr)
@@ -337,6 +339,7 @@ impl Args {
             }),
             git_pr_branch: config.get("git-pr-branch").cloned(),
             pr_show_changes: parse_bool(&config, "pr-show-changes", false),
+            check_banned_list: config.get("check-banned-list").map(PathBuf::from),
             fix_typos: parse_bool(&config, "fix-typos", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
             direct_push_users: config.get("direct-push-users")
@@ -372,6 +375,9 @@ impl Args {
                 "--only-sort-changed" => args.only_sort_changed = true,
                 "--rebase-on-fail" => args.rebase_on_fail = true,
                 "--pr-show-changes" => args.pr_show_changes = true,
+                _ if arg.starts_with("--check-banned-list=") => {
+                    args.check_banned_list = Some(PathBuf::from(arg.trim_start_matches("--check-banned-list=")));
+                }
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
                     args.ignore_files = files.split(',').map(|s| s.trim().to_string()).collect();
@@ -575,6 +581,7 @@ impl Args {
         println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  rebase-on-fail  = {}", self.rebase_on_fail);
         println!("  pr-show-changes = {}", self.pr_show_changes);
+        println!("  check-banned-list = {:?}", self.check_banned_list);
         println!("  no-ubo-convert  = {}", self.no_ubo_convert);
         println!("  no-msg-check    = {}", self.no_msg_check);
         println!("  disable-ignored = {}", self.disable_ignored);
@@ -1054,6 +1061,7 @@ fn process_location(
             quiet,
             dry_run: sort_config.dry_run,
             output_changed: sort_config.output_changed,
+            banned_domains: sort_config.banned_domains.clone(),
         };
 
         match fop_sort(path, &config) {
@@ -1169,10 +1177,23 @@ fn process_location(
                 
                 // Determine base branch - use provided or prompt user
                 let base_branch = git_pr_branch.clone();
+
+                // Check for banned domains before creating PR
+                if !check_banned_domains_prompt(no_color)? {
+                    println!("Commit aborted due to banned domains.");
+                    return Ok(());
+                }
                 
                 create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, pr_show_changes, no_color)?;
                 }
             } else {
+
+                // Check for banned domains before commit
+                if !check_banned_domains_prompt(no_color)? {
+                    println!("Commit aborted due to banned domains.");
+                    return Ok(());
+                }
+
                 commit_changes(
                     repo,
                     &base_cmd,
@@ -1238,6 +1259,24 @@ fn main() {
         // Clear existing file
         let _ = std::fs::write(path, "");
     }
+    
+    // Load banned domain list if specified
+    let banned_domains = if let Some(ref path) = args.check_banned_list {
+        match fop_sort::load_banned_list(path) {
+            Ok(domains) => {
+                if !args.quiet {
+                    println!("Loaded {} banned domains from {}", domains.len(), path.display());
+                }
+                Some(domains)
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not load banned list {}: {}", path.display(), e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // Build sort config
     let sort_config = SortConfig {
@@ -1253,7 +1292,8 @@ fn main() {
         fix_typos: args.fix_typos,
         quiet: args.quiet,
         dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed,
-        output_changed: args.output_changed
+        output_changed: args.output_changed,
+        banned_domains,
     };
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -1401,6 +1441,13 @@ fn main() {
                 .find(|r| parent.join(r.directory).is_dir())
             {
                 let base_cmd = fop_git::build_base_command(repo, parent);
+
+                // Check for banned domains before commit
+                if !fop_git::check_banned_domains_prompt(args.no_color).unwrap_or(true) {
+                    println!("Commit aborted due to banned domains.");
+                    return;
+                }
+
                 if let Err(e) = fop_git::commit_changes(
                     repo,
                     &base_cmd,

@@ -81,6 +81,40 @@ pub fn format_pr_changes() -> String {
     String::new()
 }
 
+/// Check if banned domains were found and prompt user
+pub fn check_banned_domains_prompt(no_color: bool) -> io::Result<bool> {
+    let banned_found = if let Ok(changes) = SORT_CHANGES.lock() {
+        changes.banned_domains_found.clone()
+    } else {
+        Vec::new()
+    };
+    
+    if banned_found.is_empty() {
+        return Ok(true); // No banned domains, continue
+    }
+    
+    println!("\n{} banned domain(s) detected:", banned_found.len());
+    for (domain, rule) in &banned_found {
+        if no_color {
+            println!("  {} in: {}", domain, rule);
+        } else {
+            println!("  {} in: {}", domain.red(), rule);
+        }
+    }
+    
+    if no_color {
+        print!("\nAre you sure you want to commit this? These domain(s) shouldn't be blocked. [y/N]: ");
+    } else {
+        print!("\n{}", "Are you sure you want to commit this? These domain(s) shouldn't be blocked. [y/N]: ".yellow());
+    }
+    io::stdout().flush()?;
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    
+    Ok(input.trim().eq_ignore_ascii_case("y") || input.trim().eq_ignore_ascii_case("yes"))
+}
+
 // =============================================================================
 // Repository Definition
 // =============================================================================

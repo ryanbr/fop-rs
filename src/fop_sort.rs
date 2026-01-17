@@ -90,6 +90,8 @@ pub struct SortConfig<'a> {
     pub dry_run: bool,
     /// Output changed files with --changed suffix
     pub output_changed: bool,
+    /// Banned domains to check against
+    pub banned_domains: Option<ahash::AHashSet<String>>,
 }
 
 /// Track changes made during sorting
@@ -99,6 +101,7 @@ pub struct SortChanges {
     pub domains_combined: Vec<(Vec<String>, String)>,     // (original rules, combined rule)
     pub has_text_merged: Vec<(Vec<String>, String)>,      // (original rules, merged rule)
     pub duplicates_removed: ahash::AHashSet<String>,      // removed duplicate rules (deduped)
+    pub banned_domains_found: Vec<(String, String)>,      // (domain, rule)
 }
 
 use std::sync::Mutex;
@@ -110,6 +113,65 @@ pub static SORT_CHANGES: LazyLock<Mutex<SortChanges>> =
 /// Enable/disable change tracking (for --pr-show-changes)
 pub static TRACK_CHANGES: std::sync::atomic::AtomicBool = 
     std::sync::atomic::AtomicBool::new(false);
+
+// =============================================================================
+// Banned Domain Checking
+// =============================================================================
+
+/// Extract domain from blocking rule for banned list check
+#[inline]
+fn extract_banned_domain(line: &str) -> Option<&str> {
+    // Skip comments and cosmetic rules
+    if line.starts_with('!') || line.contains("##") || line.contains("#@#") {
+        return None;
+    }
+    
+    // ||domain.com^$options or ||domain.com^ or ||domain.com
+    let s = line.strip_prefix("||")?;
+    
+    // Find end of domain (^ or $ or / or end of string)
+    let end = s.find(|c| c == '^' || c == '$' || c == '/').unwrap_or(s.len());
+    
+    if end > 0 {
+        Some(&s[..end])
+    } else {
+        None
+    }
+}
+
+/// Check if line matches a banned domain
+#[inline]
+pub fn check_banned_domain(line: &str, banned: &ahash::AHashSet<String>) -> Option<String> {
+    // Check ||domain.com style rules
+    if let Some(domain) = extract_banned_domain(line) {
+        let domain_lower = domain.to_ascii_lowercase();
+        if banned.contains(&domain_lower) {
+            return Some(domain_lower);
+        }
+    }
+    
+    // Check plain domain lines (no || prefix, no # for cosmetic)
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') && !trimmed.contains('#') && !trimmed.starts_with('!') {
+        let domain_lower = trimmed.to_ascii_lowercase();
+        if banned.contains(&domain_lower) {
+            return Some(domain_lower);
+        }
+    }
+    
+    None
+}
+
+/// Load banned domains from file
+pub fn load_banned_list(path: &std::path::Path) -> io::Result<ahash::AHashSet<String>> {
+    let content = fs::read_to_string(path)?;
+    let domains: ahash::AHashSet<String> = content
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('!') && !l.starts_with('#'))
+        .map(|l| l.trim().to_ascii_lowercase())
+        .collect();
+    Ok(domains)
+}
 
 /// Clear tracked changes (call before processing)
 #[inline]
@@ -1067,6 +1129,17 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Process blocking rules
+
+        // Check banned domain list
+        if let Some(ref banned) = config.banned_domains {
+            if let Some(domain) = check_banned_domain(&line, banned) {
+                write_warning(&format!("Banned domain detected: {} in rule: {}", domain, line));
+                // Track for commit prompt
+                if let Ok(mut changes) = SORT_CHANGES.lock() {
+                    changes.banned_domains_found.push((domain, line.clone()));
+                }
+            }
+        }
 
         // Skip short domain rules
         if !config.disable_domain_limit && line.len() <= 6 && SHORT_DOMAIN_PATTERN.is_match(&line) {
