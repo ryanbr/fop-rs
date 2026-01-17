@@ -1231,7 +1231,7 @@ fn print_greeting(no_commit: bool, config_path: Option<&str>) {
 }
 
 fn main() {
-    let (args, config_path) = Args::parse();
+    let (mut args, config_path) = Args::parse();
 
     // Handle help and version
     if args.help {
@@ -1262,6 +1262,13 @@ fn main() {
     
     // Load banned domain list if specified
     let banned_domains = if let Some(ref path) = args.check_banned_list {
+        // Auto-ignore the banned list file
+        if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
+            if !args.ignore_files.iter().any(|f| f == filename) {
+                args.ignore_files.push(filename.to_string());
+            }
+        }
+
         match fop_sort::load_banned_list(path) {
             Ok(domains) => {
                 if !args.quiet {
