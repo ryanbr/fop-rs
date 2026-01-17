@@ -91,7 +91,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use fop_git::{
     build_base_command, check_repo_changes, commit_changes, create_pull_request, get_added_lines,
-    git_available, get_remote_name, show_banned_domains_removed, RepoDefinition, REPO_TYPES,
+    git_available, get_remote_name, check_banned_domains, RepoDefinition, REPO_TYPES,
 };
 use fop_sort::{fop_sort, SortConfig, TRACK_CHANGES};
 
@@ -154,6 +154,8 @@ struct Args {
     pr_show_changes: bool,
     /// Path to banned domain list file
     check_banned_list: Option<PathBuf>,
+    /// Auto-remove banned domains and commit
+    auto_banned_remove: bool,
     /// Check typos in git additions before commit
     fix_typos_on_add: bool,
     /// Users allowed to push directly (bypass create-pr)
@@ -340,6 +342,7 @@ impl Args {
             git_pr_branch: config.get("git-pr-branch").cloned(),
             pr_show_changes: parse_bool(&config, "pr-show-changes", false),
             check_banned_list: config.get("check-banned-list").map(PathBuf::from),
+            auto_banned_remove: parse_bool(&config, "auto-banned-remove", false),
             fix_typos: parse_bool(&config, "fix-typos", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
             direct_push_users: config.get("direct-push-users")
@@ -378,6 +381,7 @@ impl Args {
                 _ if arg.starts_with("--check-banned-list=") => {
                     args.check_banned_list = Some(PathBuf::from(arg.trim_start_matches("--check-banned-list=")));
                 }
+                "--auto-banned-remove" => args.auto_banned_remove = true,
                 _ if arg.starts_with("--ignorefiles=") => {
                     let files = arg.trim_start_matches("--ignorefiles=");
                     args.ignore_files = files.split(',').map(|s| s.trim().to_string()).collect();
@@ -705,6 +709,7 @@ pub(crate) static TREE_SELECTOR: LazyLock<Regex> =
 pub(crate) static UNICODE_SELECTOR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap());
 
+#[allow(dead_code)]
 pub(crate) static SHORT_DOMAIN_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\|*[a-zA-Z0-9]").unwrap());
 
@@ -725,6 +730,7 @@ const IGNORE_FILES: &[&str] = &["test-files-to-ingore.txt"];
 const IGNORE_DIRS: &[&str] = &["folders-to-ingore"];
 
 /// Domains that should ignore the 7 character size restriction
+#[allow(dead_code)]
 pub(crate) static IGNORE_DOMAINS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut set = HashSet::new();
     set.insert("a.sampl");
@@ -925,11 +931,12 @@ fn process_location(
     ignore_dirs: &[String],
     ignore_all_but: &[String],
     file_extensions: &[String],
-    disable_domain_limit: &[String],
     sort_config: &SortConfig,
     create_pr: &Option<String>,
     git_pr_branch: &Option<String>,
     pr_show_changes: bool,
+    banned_domains: &Option<ahash::AHashSet<String>>,
+    auto_banned_remove: bool,
     direct_push_users: &[String],
     fix_typos: bool,
     fix_typos_on_add: bool,
@@ -1042,11 +1049,6 @@ fn process_location(
         }
 
         let path = entry.path();
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        let skip_domain_limit = disable_domain_limit.iter().any(|f| filename.contains(f));
         let config = SortConfig {
             convert_ubo: sort_config.convert_ubo,
             no_sort: sort_config.no_sort,
@@ -1056,12 +1058,10 @@ fn process_location(
             backup: sort_config.backup,
             keep_empty_lines: sort_config.keep_empty_lines,
             ignore_dot_domains: sort_config.ignore_dot_domains,
-            disable_domain_limit: skip_domain_limit,
             fix_typos,
             quiet,
             dry_run: sort_config.dry_run,
             output_changed: sort_config.output_changed,
-            banned_domains: sort_config.banned_domains.clone(),
         };
 
         match fop_sort(path, &config) {
@@ -1136,6 +1136,22 @@ fn process_location(
                 }
             }
 
+           // Check for banned domains in added lines
+           if let Some(ref banned) = banned_domains {
+                if !banned.is_empty() {
+                    if let Some(additions) = get_added_lines(&base_cmd) {
+                        for add in &additions {
+                            if let Some(domain) = fop_sort::check_banned_domain(&add.content, banned) {
+                                eprintln!("Warning: Banned domain in new addition: {} in rule: {}", domain, add.content);
+                                if let Ok(mut changes) = fop_sort::SORT_CHANGES.lock() {
+                                    changes.banned_domains_found.push((domain, add.content.clone(), add.file.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if let Some(pr_title) = create_pr {
                 // Check if user can bypass PR requirement
                 let can_direct_push = if !direct_push_users.is_empty() {
@@ -1179,14 +1195,18 @@ fn process_location(
                 let base_branch = git_pr_branch.clone();
 
                 // Check for banned domains before creating PR
-                show_banned_domains_removed(no_color);
+                if !check_banned_domains(no_color, auto_banned_remove, &base_cmd) {
+                    return Ok(());
+                }
                 
                 create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, pr_show_changes, no_color)?;
                 }
             } else {
 
                 // Check for banned domains before commit
-                show_banned_domains_removed(no_color);
+                if !check_banned_domains(no_color, auto_banned_remove, &base_cmd) {
+                    return Ok(());
+                }
 
                 commit_changes(
                     repo,
@@ -1289,12 +1309,10 @@ fn main() {
         backup: args.backup,
         keep_empty_lines: args.keep_empty_lines,
         ignore_dot_domains: args.ignore_dot_domains,
-        disable_domain_limit: false, // Set per-file in process_location
         fix_typos: args.fix_typos,
         quiet: args.quiet,
         dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed,
         output_changed: args.output_changed,
-        banned_domains,
     };
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -1444,7 +1462,9 @@ fn main() {
                 let base_cmd = fop_git::build_base_command(repo, parent);
 
                 // Check for banned domains before commit
-                fop_git::show_banned_domains_removed(args.no_color);
+                if !fop_git::check_banned_domains(args.no_color, args.auto_banned_remove, &base_cmd) {
+                    return;
+                }
 
                 if let Err(e) = fop_git::commit_changes(
                     repo,
@@ -1491,11 +1511,12 @@ fn main() {
             &args.ignore_dirs,
             &args.ignore_all_but,
             &args.file_extensions,
-            &args.disable_domain_limit,
             &sort_config,
             &args.create_pr,
             &args.git_pr_branch,
             args.pr_show_changes,
+            &banned_domains,
+            args.auto_banned_remove,
             &args.direct_push_users,
             args.fix_typos,
             args.fix_typos_on_add,

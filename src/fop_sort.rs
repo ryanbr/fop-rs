@@ -19,8 +19,8 @@ use std::cmp::Ordering;
 use crate::{
     write_warning, ATTRIBUTE_VALUE_PATTERN, DOMAIN_EXTRACT_PATTERN, ELEMENT_DOMAIN_PATTERN,
     ELEMENT_PATTERN, FILTER_DOMAIN_PATTERN, FOPPY_ELEMENT_DOMAIN_PATTERN, FOPPY_ELEMENT_PATTERN,
-    IGNORE_DOMAINS, IP_ADDRESS_PATTERN, KNOWN_OPTIONS, LOCALHOST_PATTERN, OPTION_PATTERN,
-    PSEUDO_PATTERN, REGEX_ELEMENT_PATTERN, REMOVAL_PATTERN, SHORT_DOMAIN_PATTERN, TREE_SELECTOR,
+    IP_ADDRESS_PATTERN, KNOWN_OPTIONS, LOCALHOST_PATTERN, OPTION_PATTERN,
+    PSEUDO_PATTERN, REGEX_ELEMENT_PATTERN, REMOVAL_PATTERN, TREE_SELECTOR,
     UBO_CONVERSIONS, UNICODE_SELECTOR,
 };
 
@@ -84,14 +84,11 @@ pub struct SortConfig<'a> {
     pub backup: bool,
     pub keep_empty_lines: bool,
     pub ignore_dot_domains: bool,
-    pub disable_domain_limit: bool,
     pub fix_typos: bool,
     pub quiet: bool,
     pub dry_run: bool,
     /// Output changed files with --changed suffix
     pub output_changed: bool,
-    /// Banned domains to check against
-    pub banned_domains: Option<ahash::AHashSet<String>>,
 }
 
 /// Track changes made during sorting
@@ -101,7 +98,7 @@ pub struct SortChanges {
     pub domains_combined: Vec<(Vec<String>, String)>,     // (original rules, combined rule)
     pub has_text_merged: Vec<(Vec<String>, String)>,      // (original rules, merged rule)
     pub duplicates_removed: ahash::AHashSet<String>,      // removed duplicate rules (deduped)
-    pub banned_domains_found: Vec<(String, String)>,      // (domain, rule)
+    pub banned_domains_found: Vec<(String, String, String)>,  // (domain, rule, file}
 }
 
 use std::sync::Mutex;
@@ -1146,31 +1143,6 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Process blocking rules
-
-        // Check banned domain list
-        if let Some(ref banned) = config.banned_domains {
-            if let Some(domain) = check_banned_domain(&line, banned) {
-                write_warning(&format!("Banned domain detected: {} in rule: {}", domain, line));
-                if let Ok(mut changes) = SORT_CHANGES.lock() {
-                    changes.banned_domains_found.push((domain, line.clone()));
-                }
-                continue; // Remove banned domain from output
-            }
-        }
-
-        // Skip short domain rules
-        if !config.disable_domain_limit && line.len() <= 6 && SHORT_DOMAIN_PATTERN.is_match(&line) {
-            if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(&line) {
-                let domain = &caps[1];
-                if !IGNORE_DOMAINS.contains(domain) {
-                    write_warning(&format!(
-                        "Skipped short domain rule: {} (domain: {})",
-                        line, domain
-                    ));
-                    continue;
-                }
-            }
-        }
 
         // Skip network rules without dot in domain
         let skip_schemes = [

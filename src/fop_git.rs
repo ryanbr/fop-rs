@@ -81,26 +81,101 @@ pub fn format_pr_changes() -> String {
     String::new()
 }
 
-/// Show banned domains that were removed (informational only)
-pub fn show_banned_domains_removed(no_color: bool) {
-    let banned_found = if let Ok(changes) = SORT_CHANGES.lock() {
-        changes.banned_domains_found.clone()
+/// Check if banned domains were found and abort if so
+pub fn check_banned_domains(no_color: bool, auto_remove: bool, base_cmd: &[String]) -> bool {
+    let banned_found = if let Ok(mut changes) = SORT_CHANGES.lock() {
+        let found = changes.banned_domains_found.clone();
+        changes.banned_domains_found.clear(); // Clear for next run
+        found
     } else {
         Vec::new()
     };
     
     if banned_found.is_empty() {
-        return;
+        return true; // No banned domains, OK to continue
     }
     
-    println!("\n{} banned domain(s) removed:", banned_found.len());
-    for (domain, rule) in &banned_found {
+    println!("\n{} banned domain(s) found in new additions:", banned_found.len());
+    for (domain, rule, file) in &banned_found {
         if no_color {
-            println!("  {} in: {}", domain, rule);
+            println!("  {} in: {} ({})", domain, rule, file);
         } else {
-            println!("  {} in: {}", domain.red(), rule);
+            println!("  {} in: {} ({})", domain.red(), rule, file);
         }
-    }   
+    }
+
+    if auto_remove {
+        // Remove banned lines from files and commit
+        if remove_banned_lines(&banned_found, base_cmd) {
+            println!("\nBanned domains removed and committed.");
+            return true; // Continue (removal committed)
+        } else {
+            println!("\nFailed to remove banned domains.");
+            return false;
+        }
+    }
+
+    println!("\nCommit aborted. Run 'git checkout .' to restore, remove banned domains, and try again.");
+
+    false // Block commit
+}
+/// Remove banned lines from files and commit
+fn remove_banned_lines(banned: &[(String, String, String)], base_cmd: &[String]) -> bool {
+    use std::collections::HashMap;
+    use std::fs;
+    
+    // Group by file
+    let mut files_to_fix: HashMap<String, Vec<String>> = HashMap::new();
+    for (_, rule, file) in banned {
+        files_to_fix.entry(file.clone()).or_default().push(rule.clone());
+    }
+    
+    // Process each file
+    for (file, rules_to_remove) in &files_to_fix {
+        let path = std::path::Path::new(file);
+        if !path.exists() {
+            eprintln!("File not found: {}", file);
+            continue;
+        }
+        
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Error reading {}: {}", file, e);
+                continue;
+            }
+        };
+        
+        // Filter out banned lines
+        let new_content: String = content
+            .lines()
+            .filter(|line| !rules_to_remove.contains(&line.to_string()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        // Write back
+        if let Err(e) = fs::write(path, new_content + "\n") {
+            eprintln!("Error writing {}: {}", file, e);
+            return false;
+        }
+        
+        // Stage the file
+        let _ = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(["add", file])
+            .output();
+    }
+    
+    // Commit the removal
+    let removed_count = banned.len();
+    let commit_msg = format!("Remove {} banned domain(s)", removed_count);
+    
+    let status = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["commit", "-m", &commit_msg])
+        .status();
+    
+    matches!(status, Ok(s) if s.success())
 }
 
 // =============================================================================
