@@ -91,7 +91,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use fop_git::{
     build_base_command, check_repo_changes, commit_changes, create_pull_request, get_added_lines,
-    git_available, get_remote_name, check_banned_domains_prompt, RepoDefinition, REPO_TYPES,
+    git_available, get_remote_name, show_banned_domains_removed, RepoDefinition, REPO_TYPES,
 };
 use fop_sort::{fop_sort, SortConfig, TRACK_CHANGES};
 
@@ -1179,20 +1179,14 @@ fn process_location(
                 let base_branch = git_pr_branch.clone();
 
                 // Check for banned domains before creating PR
-                if !check_banned_domains_prompt(no_color)? {
-                    println!("Commit aborted due to banned domains.");
-                    return Ok(());
-                }
+                show_banned_domains_removed(no_color);
                 
                 create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, pr_show_changes, no_color)?;
                 }
             } else {
 
                 // Check for banned domains before commit
-                if !check_banned_domains_prompt(no_color)? {
-                    println!("Commit aborted due to banned domains.");
-                    return Ok(());
-                }
+                show_banned_domains_removed(no_color);
 
                 commit_changes(
                     repo,
@@ -1450,10 +1444,7 @@ fn main() {
                 let base_cmd = fop_git::build_base_command(repo, parent);
 
                 // Check for banned domains before commit
-                if !fop_git::check_banned_domains_prompt(args.no_color).unwrap_or(true) {
-                    println!("Commit aborted due to banned domains.");
-                    return;
-                }
+                fop_git::show_banned_domains_removed(args.no_color);
 
                 if let Err(e) = fop_git::commit_changes(
                     repo,

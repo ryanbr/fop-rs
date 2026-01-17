@@ -147,6 +147,11 @@ fn extract_banned_domain(line: &str) -> Option<&str> {
 /// Check if line matches a banned domain
 #[inline]
 pub fn check_banned_domain(line: &str, banned: &ahash::AHashSet<String>) -> Option<String> {
+    // Quick check - if banned list is empty, skip
+    if banned.is_empty() {
+        return None;
+    }
+
     // Check ||domain.com style rules
     if let Some(domain) = extract_banned_domain(line) {
         let domain_lower = domain.to_ascii_lowercase();
