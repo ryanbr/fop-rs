@@ -1139,10 +1139,10 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if let Some(ref banned) = config.banned_domains {
             if let Some(domain) = check_banned_domain(&line, banned) {
                 write_warning(&format!("Banned domain detected: {} in rule: {}", domain, line));
-                // Track for commit prompt
                 if let Ok(mut changes) = SORT_CHANGES.lock() {
                     changes.banned_domains_found.push((domain, line.clone()));
                 }
+                continue; // Remove banned domain from output
             }
         }
 
