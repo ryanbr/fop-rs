@@ -1069,7 +1069,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         // Process blocking rules
 
         // Skip short domain rules
-        if !config.disable_domain_limit && line.len() <= 7 && SHORT_DOMAIN_PATTERN.is_match(&line) {
+        if !config.disable_domain_limit && line.len() <= 6 && SHORT_DOMAIN_PATTERN.is_match(&line) {
             if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(&line) {
                 let domain = &caps[1];
                 if !IGNORE_DOMAINS.contains(domain) {
