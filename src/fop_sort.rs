@@ -1125,7 +1125,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Validate localhost entries when in localhost mode
-        if config.localhost && !LOCALHOST_PATTERN.is_match(&line) {
+        if config.localhost && !LOCALHOST_PATTERN.is_match(line) {
             write_warning(&format!("Removed invalid localhost entry: {}", line));
             continue;
 
@@ -1144,16 +1144,16 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Handle regex domain rules (uBO) - pass through unchanged
-        if REGEX_ELEMENT_PATTERN.is_match(&line) {
-            section.push(filter_tidy(&line, config.convert_ubo));
+        if REGEX_ELEMENT_PATTERN.is_match(line) {
+            section.push(filter_tidy(line, config.convert_ubo));
             continue;
         }
 
         // Process element hiding rules
         let element_caps = if config.alt_sort {
-            ELEMENT_PATTERN.captures(&line)
+            ELEMENT_PATTERN.captures(line)
         } else {
-            FOPPY_ELEMENT_PATTERN.captures(&line)
+            FOPPY_ELEMENT_PATTERN.captures(line)
         };
         if let Some(caps) = element_caps {
             let domains = caps[1].to_ascii_lowercase();
@@ -1193,7 +1193,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if (line.starts_with("||") || line.starts_with('|'))
             && !SKIP_SCHEMES.iter().any(|s| line.starts_with(s))
         {
-            if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(&line) {
+            if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(line) {
                 let domain = &caps[1];
                 let is_ip = domain.starts_with('[') || IP_ADDRESS_PATTERN.is_match(domain);
                 let has_wildcard = domain.contains('*');
@@ -1214,7 +1214,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Remove TLD-only patterns
-        if is_tld_only(&line) {
+        if is_tld_only(line) {
             write_warning(&format!("Removed overly broad TLD-only rule: {}", line));
             continue;
         }
@@ -1224,7 +1224,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             lines_checked += 1;
         }
 
-        let mut tidied = filter_tidy(&line, config.convert_ubo);
+        let mut tidied = filter_tidy(line, config.convert_ubo);
 
         // Fix typos if enabled (network rules)
         if config.fix_typos {
