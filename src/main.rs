@@ -938,6 +938,7 @@ fn process_location(
     banned_domains: &Option<ahash::AHashSet<String>>,
     auto_banned_remove: bool,
     direct_push_users: &[String],
+    banned_list_file: Option<&str>,
     fix_typos: bool,
     fix_typos_on_add: bool,
     auto_fix: bool,
@@ -1141,6 +1142,12 @@ fn process_location(
                 if !banned.is_empty() {
                     if let Some(additions) = get_added_lines(&base_cmd) {
                         for add in &additions {
+                            // Skip the banned list file itself
+                            if let Some(banned_file) = banned_list_file {
+                                if add.file.ends_with(banned_file) {
+                                    continue;
+                                }
+                            }
                             if let Some(domain) = fop_sort::check_banned_domain(&add.content, banned) {
                                 eprintln!("Warning: Banned domain in new addition: {} in rule: {}", domain, add.content);
                                 if let Ok(mut changes) = fop_sort::SORT_CHANGES.lock() {
@@ -1518,6 +1525,7 @@ fn main() {
             &banned_domains,
             args.auto_banned_remove,
             &args.direct_push_users,
+            args.check_banned_list.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
             args.fix_typos,
             args.fix_typos_on_add,
             args.auto_fix,
