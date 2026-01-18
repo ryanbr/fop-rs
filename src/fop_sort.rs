@@ -1057,7 +1057,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     };
 
     for line in reader.lines() {
-        let line = line?.trim().to_string();
+        let line_owned = line?;
+        let line = line_owned.trim();
 
         if line.is_empty() {
             if config.keep_empty_lines {
@@ -1122,13 +1123,13 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         // [$path=/\/(dom|pro)/]rambler.ru##div[style^="order:"][style*="-1"]
         // AdGuard cosmetic rule modifiers - pass through unchanged
         if line.starts_with("[$") {
-            section.push(line);
+            section.push(line.to_string());
             continue;
         }
 
         // Handle regex domain rules (uBO) - pass through unchanged
         if REGEX_ELEMENT_PATTERN.is_match(&line) {
-            section.push(line);
+            section.push(line.to_string());
             continue;
         }
 
