@@ -301,8 +301,11 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Skip filters with regex values in options (contain =/.../ patterns)
     // ||example.com$removeparam=/^\\$ja=/
     // ||example.com$removeparam=/regex/
-    if filter_in.contains("=/") && filter_in.contains("$") {
-        return filter_in.to_string();
+    if let Some(dollar_pos) = filter_in.rfind('$') {
+        let options_part = &filter_in[dollar_pos..];
+        if options_part.contains("=/") {
+            return filter_in.to_string();
+        }
     }
 
     // Fast path: no options to process (no $ in filter)
@@ -1142,7 +1145,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Handle regex domain rules (uBO) - pass through unchanged
         if REGEX_ELEMENT_PATTERN.is_match(&line) {
-            section.push(line.to_string());
+            section.push(filter_tidy(&line, config.convert_ubo));
             continue;
         }
 
