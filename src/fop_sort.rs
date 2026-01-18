@@ -139,7 +139,7 @@ fn extract_banned_domain(line: &str) -> Option<&str> {
     }
     
     // Find end of domain (^ or $ or end of string)
-    let end = s.find(|c| c == '^' || c == '$').unwrap_or(s.len());
+    let end = s.find(['^', '$']).unwrap_or(s.len());
     
     if end > 0 {
         Some(&s[..end])
