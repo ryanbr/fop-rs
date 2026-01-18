@@ -140,8 +140,6 @@ struct Args {
     keep_empty_lines: bool,
     /// Don't skip rules without dot in domain
     ignore_dot_domains: bool,
-    /// Files to disable short domain length check (comma-separated)
-    disable_domain_limit: Vec<String>,
     /// Output warnings to file instead of stderr
     warning_output: Option<PathBuf>,
     /// Create PR branch instead of committing to master (optional: PR title)
@@ -330,7 +328,6 @@ impl Args {
             backup: parse_bool(&config, "backup", false),
             keep_empty_lines: parse_bool(&config, "keep-empty-lines", false),
             ignore_dot_domains: parse_bool(&config, "ignore-dot-domains", false),
-            disable_domain_limit: parse_list(&config, "disable-domain-limit"),
             warning_output: config.get("warning-output").map(PathBuf::from),
             create_pr: config.get("create-pr").and_then(|v| {
                 match v.to_lowercase().as_str() {
@@ -408,13 +405,6 @@ impl Args {
                 "--backup" => args.backup = true,
                 "--keep-empty-lines" => args.keep_empty_lines = true,
                 "--ignore-dot-domains" => args.ignore_dot_domains = true,
-                _ if arg.starts_with("--disable-domain-limit=") => {
-                    args.disable_domain_limit = arg
-                        .trim_start_matches("--disable-domain-limit=")
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .collect();
-                }
                 _ if arg.starts_with("--warning-output=") => {
                     args.warning_output =
                         Some(PathBuf::from(arg.trim_start_matches("--warning-output=")));
@@ -625,14 +615,6 @@ impl Args {
         println!("  backup          = {}", self.backup);
         println!("  keep-empty-lines= {}", self.keep_empty_lines);
         println!("  ignore-dot-domains= {}", self.ignore_dot_domains);
-        if self.disable_domain_limit.is_empty() {
-            println!("  disable-domain-limit= (none)");
-        } else {
-            println!(
-                "  disable-domain-limit= {}",
-                self.disable_domain_limit.join(",")
-            );
-        }
         if let Some(ref path) = self.warning_output {
             println!("  warning-output  = {}", path.display());
         } else {
