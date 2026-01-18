@@ -33,6 +33,11 @@ static HAS_TEXT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(.+?):(has-text|-?abp-contains)\((.+)\)$").unwrap()
 });
 
+// Skip network-rule scheme/edge prefixes that don't require a dot in the "domain" part.
+const SKIP_SCHEMES: [&str; 6] = [
+    "|javascript", "|data:", "|dddata:", "|about:", "|blob:", "|http",
+];
+
 /// Case-insensitive ASCII comparison without allocation
 #[inline]
 fn cmp_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
@@ -1171,17 +1176,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         // Process blocking rules
 
         // Skip network rules without dot in domain
-        let skip_schemes = [
-            "|javascript",
-            "|data:",
-            "|dddata:",
-            "|about:",
-            "|blob:",
-            "|http",
-            "||edge-client",
-        ];
         if (line.starts_with("||") || line.starts_with('|'))
-            && !skip_schemes.iter().any(|s| line.starts_with(s))
+            && !SKIP_SCHEMES.iter().any(|s| line.starts_with(s))
         {
             if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(&line) {
                 let domain = &caps[1];
