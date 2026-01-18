@@ -103,7 +103,7 @@ pub struct SortChanges {
     pub domains_combined: Vec<(Vec<String>, String)>,     // (original rules, combined rule)
     pub has_text_merged: Vec<(Vec<String>, String)>,      // (original rules, merged rule)
     pub duplicates_removed: ahash::AHashSet<String>,      // removed duplicate rules (deduped)
-    pub banned_domains_found: Vec<(String, String, String)>,  // (domain, rule, file}
+    pub banned_domains_found: Vec<(String, String, String)>,  // (domain, rule, file)
 }
 
 use std::sync::Mutex;
@@ -190,6 +190,21 @@ pub fn load_banned_list(path: &std::path::Path) -> io::Result<ahash::AHashSet<St
         .map(|l| l.trim().to_ascii_lowercase())
         .collect();
     Ok(domains)
+}
+
+/// Run a change-tracking mutation only when TRACK_CHANGES is enabled.
+/// Keeps call sites small and avoids repeating the load+lock boilerplate.
+#[inline]
+fn with_tracked_changes<F>(f: F)
+where
+    F: FnOnce(&mut SortChanges),
+{
+    if !TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    if let Ok(mut changes) = SORT_CHANGES.lock() {
+        f(&mut changes);
+    }
 }
 
 /// Clear tracked changes (call before processing)
@@ -748,17 +763,17 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
         };
         
         // Track merge
-        if was_merged && TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
-            let originals: Vec<String> = args.iter().map(|arg| {
-                if domains.is_empty() {
-                    format!("##{}:{}({})", base, pseudo, arg)
-                } else {
-                    format!("{}##{}:{}({})", domains, base, pseudo, arg)
-                }
-            }).collect();
-            if let Ok(mut changes) = SORT_CHANGES.lock() {
+        if was_merged {
+            with_tracked_changes(|changes| {
+                let originals: Vec<String> = args.iter().map(|arg| {
+                    if domains.is_empty() {
+                        format!("##{}:{}({})", base, pseudo, arg)
+                    } else {
+                        format!("{}##{}:{}({})", domains, base, pseudo, arg)
+                    }
+                }).collect();
                 changes.has_text_merged.push((originals, merged_rule.clone()));
-            }
+            });
         }
         
         order.push((pos, merged_rule));
@@ -902,14 +917,12 @@ fn combine_filters(
             .to_string();
             
         // Track combination
-        if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
-            if let Ok(mut changes) = SORT_CHANGES.lock() {
-                changes.domains_combined.push((
-                    vec![uncombined[i].clone(), uncombined[i + 1].clone()],
-                    combined_filter.clone(),
-                ));
-            }
-        }
+        with_tracked_changes(|changes| {
+            changes.domains_combined.push((
+                vec![uncombined[i].clone(), uncombined[i + 1].clone()],
+                combined_filter.clone(),
+            ));
+        });
 
         uncombined[i + 1] = combined_filter;
 
@@ -1155,12 +1168,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             if config.fix_typos {
                 let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
                 if !fixes.is_empty() {
-                    // Track for PR body
-                    if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
-                        if let Ok(mut changes) = SORT_CHANGES.lock() {
-                            changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));
-                        }
-                    }
+                with_tracked_changes(|changes| {
+                    changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));
+                });
                     write_warning(&format!(
                         "Fixed typo: {} ? {} ({})",
                         tidied,
@@ -1217,12 +1227,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if config.fix_typos {
             let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
             if !fixes.is_empty() {
-                // Track for PR body
-                if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
-                    if let Ok(mut changes) = SORT_CHANGES.lock() {
+                    with_tracked_changes(|changes| {
                         changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));
-                    }
-                }
+                    });
                 write_warning(&format!(
                     "Fixed typo: {} ? {} ({})",
                     tidied, fixed, fixes.join(", ")
