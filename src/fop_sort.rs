@@ -510,87 +510,109 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
                               selector.contains(":where(");
     
     if !skip_tree_normalize {
-        for caps in TREE_SELECTOR.captures_iter(&selector.clone()) {
-        let full_match = caps.get(0).unwrap().as_str();
-        if selector_only_strings.contains(full_match)
-            || !selector_without_strings.contains(full_match)
-        {
-            continue;
-        }
+        // Collect matches once to avoid cloning the whole selector just for iteration.
+        let tree_caps: Vec<(String, String, String, String)> = TREE_SELECTOR
+            .captures_iter(&selector)
+            .map(|caps| {
+                (
+                    caps.get(0).unwrap().as_str().to_string(),
+                    caps[1].to_string(),
+                    caps[2].to_string(),
+                    caps[3].to_string(),
+                )
+            })
+            .collect();
 
-        let g1 = &caps[1];
-        let g2 = &caps[2];
-        let g3 = &caps[3];
+        for (full_match, g1, g2, g3) in tree_caps {
+            if selector_only_strings.contains(&full_match)
+                || !selector_without_strings.contains(&full_match)
+            {
+                continue;
+           }
 
-        // Skip if g1 is a backslash - this means g2 is part of an escape sequence (\~, \+, etc.)
-        // Not a CSS combinator
-        if g1 == "\\" {
-            continue;
-        }
+            // Skip if g1 is a backslash - this means g2 is part of an escape sequence (\~, \+, etc.)
+            // Not a CSS combinator
+            if g1 == "\\" {
+                continue;
+            }
 
-        // Skip if g1 is an escaped quote (we're at a string boundary)
-        // This prevents mangling content like url('~/path') where ~ is not a combinator
-        if g1 == "\\'" || g1 == "\\\"" {
-            continue;
-        }
+            // Skip if g1 is an escaped quote (we're at a string boundary)
+            // This prevents mangling content like url('~/path') where ~ is not a combinator
+            if g1 == "\\'" || g1 == "\\\"" {
+                continue;
+            }
 
             // Skip CSS attribute selector operator ~= (e.g., [rel~="sponsored"])
             if g2 == "~" && g3 == "=" {
                 continue;
             }
 
-        let replace_by = if g1 == "(" {
-            format!("{} ", g2)
-        } else {
-            format!(" {} ", g2)
-        };
+            let replace_by = if g1 == "(" {
+                format!("{} ", g2)
+            } else {
+                format!(" {} ", g2)
+            };
 
-        let replace_by = if replace_by == "   " {
-            " ".to_string()
-        } else {
-            replace_by
-        };
-        selector = selector.replacen(full_match, &format!("{}{}{}", g1, replace_by, g3), 1);
-    }
-  }
+            let replace_by = if replace_by == "   " {
+                " ".to_string()
+            } else {
+                replace_by
+            };
 
-    // Remove unnecessary tags (asterisks)
-    for caps in REMOVAL_PATTERN.captures_iter(&selector.clone()) {
-        if let Some(untag) = caps.get(2) {
-            let untag_name = untag.as_str();
-            if selector_only_strings.contains(untag_name)
-                || !selector_without_strings.contains(untag_name)
-            {
-                continue;
-            }
-
-            let bc = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-            let ac = caps.get(3).map(|m| m.as_str()).unwrap_or("");
-
-            // Skip if this is a :not(-abp-contains...) pattern
-            if ac == ":" {
-                let match_end = caps.get(0).unwrap().end();
-                let remaining = &selector[match_end..];
-                if remaining.starts_with("-abp-contains")
-                    || remaining.starts_with("-abp-has")
-                    || remaining.starts_with("not(")
-                    || remaining.starts_with("has(")
-                {
-                    continue;
-                }
-            }
-
-            let old = format!("{}{}{}", bc, untag_name, ac);
-            let new = format!("{}{}", bc, ac);
-            selector = selector.replacen(&old, &new, 1);
+            selector = selector.replacen(&full_match, &format!("{}{}{}", g1, replace_by, g3), 1);
         }
     }
 
+    // Remove unnecessary tags (asterisks)
+    let removal_caps: Vec<(String, String, String, usize)> = REMOVAL_PATTERN
+        .captures_iter(&selector)
+        .filter_map(|caps| {
+            let bc = caps.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+            let untag = caps.get(2)?.as_str().to_string();
+            let ac = caps.get(3).map(|m| m.as_str()).unwrap_or("").to_string();
+            let end = caps.get(0).unwrap().end();
+            Some((bc, untag, ac, end))
+        })
+        .collect();
+
+    for (bc, untag_name, ac, match_end) in removal_caps {
+        if selector_only_strings.contains(&untag_name)
+            || !selector_without_strings.contains(&untag_name)
+        {
+            continue;
+        }
+
+        // Skip if this is a :not(-abp-contains...) pattern
+        if ac == ":" && match_end <= selector.len() {
+            let remaining = &selector[match_end..];
+            if remaining.starts_with("-abp-contains")
+                || remaining.starts_with("-abp-has")
+                || remaining.starts_with("not(")
+                || remaining.starts_with("has(")
+            {
+                continue;
+            }
+        }
+
+        let old = format!("{}{}{}", bc, untag_name, ac);
+        let new = format!("{}{}", bc, ac);
+        selector = selector.replacen(&old, &new, 1);
+    }
+
     // Make pseudo classes lowercase
-    for caps in PSEUDO_PATTERN.captures_iter(&selector.clone()) {
-        let pseudo_class = &caps[1];
-        if selector_only_strings.contains(pseudo_class)
-            || !selector_without_strings.contains(pseudo_class)
+    let pseudo_caps: Vec<(String, String)> = PSEUDO_PATTERN
+        .captures_iter(&selector)
+        .map(|caps| {
+            (
+                caps[1].to_string(),
+                caps.get(2).map(|m| m.as_str()).unwrap_or("").to_string(),
+            )
+        })
+        .collect();
+
+    for (pseudo_class, ac) in pseudo_caps {
+        if selector_only_strings.contains(&pseudo_class)
+            || !selector_without_strings.contains(&pseudo_class)
         {
             continue;
         }
@@ -599,7 +621,6 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
             break;
         }
 
-        let ac = caps.get(2).map(|m| m.as_str()).unwrap_or("");
         let old = format!("{}{}", pseudo_class, ac);
         let new = format!("{}{}", pseudo_class.to_ascii_lowercase(), ac);
         selector = selector.replacen(&old, &new, 1);
