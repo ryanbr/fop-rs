@@ -140,12 +140,13 @@ pub fn check_banned_domains(no_color: bool, auto_remove: bool, base_cmd: &[Strin
 /// Remove banned lines from files and commit
 fn remove_banned_lines(banned: &[(String, String, String)], base_cmd: &[String]) -> bool {
     use std::collections::HashMap;
+    use std::collections::HashSet;
     use std::fs;
     
     // Group by file
-    let mut files_to_fix: HashMap<String, Vec<String>> = HashMap::new();
+    let mut files_to_fix: HashMap<String, HashSet<String>> = HashMap::new();
     for (_, rule, file) in banned {
-        files_to_fix.entry(file.clone()).or_default().push(rule.clone());
+        files_to_fix.entry(file.clone()).or_default().insert(rule.clone());
     }
     
     // Process each file
@@ -167,7 +168,7 @@ fn remove_banned_lines(banned: &[(String, String, String)], base_cmd: &[String])
         // Filter out banned lines
         let new_content: String = content
             .lines()
-            .filter(|line| !rules_to_remove.contains(&line.to_string()))
+            .filter(|line| !rules_to_remove.contains(*line))
             .collect::<Vec<_>>()
             .join("\n");
         
@@ -626,7 +627,8 @@ fn get_default_branch(base_cmd: &[String], remote: &str) -> Option<String> {
         .ok()?;
 
     if output.status.success() {
-        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let branch = String::from_utf8_lossy(&output.stdout);
+        let branch = branch.trim();
         let prefix = format!("{}/", remote);
         return branch.strip_prefix(&prefix).map(|s| s.to_string());
     }
