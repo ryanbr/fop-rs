@@ -942,6 +942,10 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             return Ok(());
         }
 
+        // Collect duplicates locally, merge once (reduces lock contention)
+        let track_changes = TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed);
+        let mut dupes_local: HashSet<String> = HashSet::new();
+
         // Remove duplicates while preserving order if no_sort
         let mut unique: Vec<String> = if no_sort {
             let mut seen = HashSet::new();
@@ -949,11 +953,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 .drain(..)
                 .filter(|x| {
                     if !seen.insert(x.clone()) {
-                        // Track duplicate
-                        if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
-                            if let Ok(mut changes) = SORT_CHANGES.lock() {
-                                changes.duplicates_removed.insert(x.clone());
-                            }
+                        if track_changes {
+                            dupes_local.insert(x.clone());
                         }
                         false
                     } else {
@@ -967,11 +968,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 .drain(..)
                 .filter(|x| {
                     if !seen.insert(x.clone()) {
-                        // Track duplicate
-                        if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
-                            if let Ok(mut changes) = SORT_CHANGES.lock() {
-                                changes.duplicates_removed.insert(x.clone());
-                            }
+                        if track_changes {
+                            dupes_local.insert(x.clone());
                         }
                         false
                     } else {
@@ -981,6 +979,13 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 .collect();
             unique
         };
+
+        // Merge tracked duplicates into global changes once
+        if track_changes && !dupes_local.is_empty() {
+            if let Ok(mut changes) = SORT_CHANGES.lock() {
+                changes.duplicates_removed.extend(dupes_local);
+            }
+        }
 
         if localhost {
             // Sort hosts file entries by domain
