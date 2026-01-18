@@ -2,12 +2,30 @@
 
 use colored::Colorize;
 use regex::Regex;
-use std::io::BufRead;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
 use crate::fop_sort::SORT_CHANGES;
 use std::sync::LazyLock;
+use rustyline::DefaultEditor;
+
+/// Read a line with arrow key support and editing
+fn read_input(prompt: &str) -> String {
+    match DefaultEditor::new() {
+        Ok(mut rl) => match rl.readline(prompt) {
+            Ok(line) => line.trim().to_string(),
+            Err(_) => String::new(),
+        },
+        Err(_) => {
+            // Fallback to basic input
+            print!("{}", prompt);
+            io::stdout().flush().ok();
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).ok();
+            input.trim().to_string()
+        }
+    }
+}
 
 /// Format changes for PR body
 pub fn format_pr_changes() -> String {
@@ -355,17 +373,10 @@ fn is_large_change(diff: &str) -> bool {
 
 /// Prompt user to restore changes
 fn prompt_restore(base_cmd: &[String], no_color: bool) -> io::Result<bool> {
-    if no_color {
-        print!("Would you like to restore the previous state before this change? [y/N]: ");
-    } else {
-        print!("{}", "Would you like to restore the previous state before this change? [y/N]: ".yellow());
-    }
-    io::stdout().flush()?;
+    let _ = no_color; // rustyline doesn't support colored prompts
+    let input = read_input("Would you like to restore the previous state before this change? [y/N]: ");
     
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    
-    if input.trim().eq_ignore_ascii_case("y") {
+    if input.eq_ignore_ascii_case("y") {
         let status = Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
             .args(["restore", "."])
@@ -500,17 +511,12 @@ fn prompt_for_remote(remotes: &[String], no_color: bool) -> Option<String> {
     );
     
     loop {
-        print!("Enter remote name: ");
-        io::stdout().flush().ok();
-        
-        let mut input = String::new();
-        if io::stdin().lock().read_line(&mut input).is_err() {
+        let input = read_input("Enter remote name: ");
+        if input.is_empty() {
             return None;
         }
-        let input = input.trim();
-        
-        if remotes.iter().any(|r| r == input) {
-            return Some(input.to_string());
+        if remotes.iter().any(|r| r == &input) {
+            return Some(input);
         }
         
         eprintln!("Remote \"{}\" not found. Please try again.", input);
@@ -871,20 +877,14 @@ pub fn commit_changes(
     if !no_large_warning && !original_difference && is_large_change(&diff) {
         if no_color {
             println!("\nThis is a large change. Are you sure you want to proceed?");
-            print!("Please type 'YES' to continue: ");
         } else {
             println!(
                 "\n{}",
                 "This is a large change. Are you sure you want to proceed?".yellow()
             );
-            print!("{}", "Please type 'YES' to continue: ".white().bold());
         }
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        if input.trim() != "YES" {
+        let input = read_input("Please type 'YES' to continue: ");
+        if input != "YES" {
             println!("Commit aborted.");
             let _ = prompt_restore(base_cmd, no_color);
             return Ok(());
@@ -903,15 +903,7 @@ pub fn commit_changes(
                     .bold()
             );
         }
-        io::stdout().flush()?;
-
-        let mut comment = String::new();
-        if io::stdin().read_line(&mut comment).is_err() {
-            println!("\nCommit aborted.");
-            return Ok(());
-        }
-
-        let comment = comment.trim();
+        let comment = read_input("");
         if comment.is_empty() {
             println!("\nCommit aborted.");
             return Ok(());
@@ -934,7 +926,7 @@ pub fn commit_changes(
             return Ok(());
         }
 
-        if no_msg_check || check_comment(comment, original_difference) {
+        if no_msg_check || check_comment(&comment, original_difference) {
             if no_color {
                 println!("Comment \"{}\" accepted.", comment);
             } else {

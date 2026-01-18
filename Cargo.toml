@@ -12,6 +12,7 @@ categories = ["command-line-utilities"]
 [dependencies]
 regex = "1.12"
 walkdir = "2.5"
+rustyline = "17"
 rayon = "1.11"
 ahash = "0.8"
 colored = "3.0"
