@@ -974,7 +974,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Remove duplicates while preserving order if no_sort
         let mut unique: Vec<String> = if no_sort {
-            let mut seen = HashSet::new();
+            let mut seen = HashSet::with_capacity(section.len());
             section
                 .drain(..)
                 .filter(|x| {
@@ -989,7 +989,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 })
                 .collect()
         } else {
-            let mut seen = HashSet::new();
+            let mut seen = HashSet::with_capacity(section.len());
             let unique: Vec<String> = section
                 .drain(..)
                 .filter(|x| {
