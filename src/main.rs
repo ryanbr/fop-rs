@@ -1334,6 +1334,38 @@ fn main() {
     use rayon::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    // CI mode: Check PR/push changes for banned domains
+    if args.ci && banned_domains.is_some() {
+        let banned = banned_domains.as_ref().unwrap();
+        let mut found: Vec<(String, String)> = Vec::new();
+
+        // If HEAD equals origin/master (push), use HEAD~1; otherwise (PR) use origin/master
+        let base = if std::process::Command::new("git")
+            .args(["diff", "--quiet", "HEAD", "origin/master"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        { "HEAD~1" } else { "origin/master" };
+
+        if let Ok(output) = std::process::Command::new("git").args(["diff", base, "--unified=0"]).output() {
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if line.starts_with('+') && !line.starts_with("+++") {
+                    if let Some(domain) = fop_sort::check_banned_domain(&line[1..], banned) {
+                        found.push((domain, line[1..].to_string()));
+                    }
+                }
+            }
+        }
+
+        if !found.is_empty() {
+            eprintln!("\n{} banned domain(s) found:", found.len());
+            for (domain, rule) in &found {
+                eprintln!("  {} -> {}", domain, rule);
+            }
+            std::process::exit(1);
+        }
+    }
+
     // Standalone typo scan and fix mode
     if args.fix_typos {
         let total_typos = AtomicUsize::new(0);
