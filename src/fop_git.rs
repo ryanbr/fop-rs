@@ -31,6 +31,7 @@ fn read_input(prompt: &str) -> String {
 pub fn format_pr_changes() -> String {
     const MAX_ITEMS: usize = 40; // Limit to avoid huge PR bodies
     const MAX_BODY_LEN: usize = 1700;  // Leave room for base URL
+    use std::fmt::Write as _;
     
     if let Ok(changes) = SORT_CHANGES.lock() {
         // Estimate capacity: ~100 chars per item
@@ -43,20 +44,20 @@ pub fn format_pr_changes() -> String {
         if !changes.typos_fixed.is_empty() {
             body.push_str("## Typos Fixed\n\n");
             for (before, after, reason) in changes.typos_fixed.iter().take(MAX_ITEMS) {
-                body.push_str(&format!("- `{}` -> `{}` ({})\n", before, after, reason));
+                let _ = writeln!(body, "- `{}` -> `{}` ({})", before, after, reason);
             }
             if changes.typos_fixed.len() > MAX_ITEMS {
-                body.push_str(&format!("- ... and {} more\n", changes.typos_fixed.len() - MAX_ITEMS));
+                let _ = writeln!(body, "- ... and {} more", changes.typos_fixed.len() - MAX_ITEMS);
             }
             body.push('\n');
         }
         if !changes.domains_combined.is_empty() {
             body.push_str("## Domains Combined\n\n");
             for (originals, combined) in changes.domains_combined.iter().take(MAX_ITEMS) {
-                body.push_str(&format!("- `{}` -> `{}`\n", originals.join("` + `"), combined));
+                let _ = writeln!(body, "- `{}` -> `{}`", originals.join("` + `"), combined);
             }
             if changes.domains_combined.len() > MAX_ITEMS {
-                body.push_str(&format!("- ... and {} more\n", changes.domains_combined.len() - MAX_ITEMS));
+                let _ = writeln!(body, "- ... and {} more", changes.domains_combined.len() - MAX_ITEMS);
             }
             body.push('\n');
         }
@@ -64,22 +65,21 @@ pub fn format_pr_changes() -> String {
         if !changes.has_text_merged.is_empty() {
             body.push_str("## :has-text() Merged\n\n");
             for (originals, merged) in changes.has_text_merged.iter().take(MAX_ITEMS) {
-                body.push_str(&format!("- {} rules -> `{}`\n", originals.len(), merged));
+                let _ = writeln!(body, "- {} rules -> `{}`", originals.len(), merged);
             }
             if changes.has_text_merged.len() > MAX_ITEMS {
-                body.push_str(&format!("- ... and {} more\n", changes.has_text_merged.len() - MAX_ITEMS));
+                let _ = writeln!(body, "- ... and {} more", changes.has_text_merged.len() - MAX_ITEMS);
             }
             body.push('\n');
         }
         
         if !changes.duplicates_removed.is_empty() {
             body.push_str("## Duplicates Removed\n\n");
-            let dupes: Vec<_> = changes.duplicates_removed.iter().collect();
-            for dup in dupes.iter().take(MAX_ITEMS) {
-                body.push_str(&format!("- `{}`\n", dup));
+            for dup in changes.duplicates_removed.iter().take(MAX_ITEMS) {
+                let _ = writeln!(body, "- `{}`", dup);
             }
             if changes.duplicates_removed.len() > MAX_ITEMS {
-                body.push_str(&format!("- ... and {} more\n", changes.duplicates_removed.len() - MAX_ITEMS));
+                let _ = writeln!(body, "- ... and {} more", changes.duplicates_removed.len() - MAX_ITEMS);
             }
             body.push('\n');
         }
