@@ -119,9 +119,8 @@ jobs:
     needs: build-linux-windows
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Pull latest changes
-        run: git pull origin main
+        with:
+          ref: v${{ needs.build-linux-windows.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -147,9 +146,8 @@ jobs:
     needs: build-linux-windows
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Pull latest changes
-        run: git pull origin main
+        with:
+          ref: v${{ needs.build-linux-windows.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -160,6 +158,9 @@ jobs:
         run: |
           VERSION=${{ needs.build-linux-windows.outputs.version }}
           
+          # Verify Cargo.toml has correct version
+          grep "version = \"$VERSION\"" Cargo.toml || { echo "Version mismatch!"; exit 1; }
+
           # macOS x86_64 (Intel)
           cargo build --release --target x86_64-apple-darwin
           cp target/x86_64-apple-darwin/release/fop "fop-${VERSION}-macos-x86_64"
