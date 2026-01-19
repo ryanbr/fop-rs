@@ -58,6 +58,7 @@ pub(crate) fn write_warning(message: &str) {
             buffer.push(message.to_string());
         }
     } else {
+        drop(guard);
         eprintln!("{}", message);
     }
 }
@@ -1006,8 +1007,8 @@ fn process_location(
         .collect();
 
     // Get list of changed files from git (if flag enabled)
-    let changed_files = if only_sort_changed {
-        get_git_changed_files(location)
+    let changed_files: Option<HashSet<PathBuf>> = if only_sort_changed {
+        get_git_changed_files(location).map(|v| v.into_iter().collect())
     } else {
         None
     };
@@ -1026,7 +1027,7 @@ fn process_location(
         .filter_map(|entry| {
         // Skip files git says are unchanged
         if let Some(ref changed) = changed_files {
-            if !changed.contains(&entry.path().to_path_buf()) {
+            if !changed.contains(entry.path()) {
                 return None;
             }
         }
