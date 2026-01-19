@@ -169,14 +169,16 @@ fn remove_banned_lines(banned: &[(String, String, String)], base_cmd: &[String])
         };
         
         // Filter out banned lines
-        let new_content: String = content
-            .lines()
-            .filter(|line| !rules_to_remove.contains(*line))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let mut new_content = String::with_capacity(content.len());
+        for line in content.lines() {
+            if !rules_to_remove.contains(line) {
+                new_content.push_str(line);
+                new_content.push('\n');
+            }
+        }
         
         // Write back
-        if let Err(e) = fs::write(path, new_content + "\n") {
+        if let Err(e) = fs::write(path, new_content) {
             eprintln!("Error writing {}: {}", file, e);
             return false;
         }
