@@ -120,8 +120,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v${{ needs.build-linux-windows.outputs.version }}
           fetch-depth: 0
+
+      - name: Fetch and checkout version tag
+        run: |
+          git fetch --tags --force origin
+          git checkout v${{ needs.build-linux-windows.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -148,8 +152,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v${{ needs.build-linux-windows.outputs.version }}
           fetch-depth: 0
+
+      - name: Fetch and checkout version tag
+        run: |
+          git fetch --tags --force origin
+          git checkout v${{ needs.build-linux-windows.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
