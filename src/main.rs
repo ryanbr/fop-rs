@@ -442,6 +442,7 @@ impl Args {
                     args.check_file = Some(PathBuf::from(arg.trim_start_matches("--check-file=")));
                 }
                 "--quiet" | "-q" => args.quiet = true,
+                "--ci" => args.ci = true,
                 "--output-diff" => {
                     // Individual mode: create .diff file for each source file
                     args.output_diff_individual = true;
