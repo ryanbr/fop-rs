@@ -65,8 +65,11 @@ pub(crate) fn write_warning(message: &str) {
 
 /// Flush buffered warnings to file
 pub(crate) fn flush_warnings() {
-    let path_guard = WARNING_OUTPUT.lock().unwrap();
-    if let Some(ref path) = *path_guard {
+    let path = {
+        let path_guard = WARNING_OUTPUT.lock().unwrap();
+        (*path_guard).clone()
+    };
+    if let Some(path) = path {
         let mut buffer = WARNING_BUFFER.lock().unwrap();
         if !buffer.is_empty() {
             use std::fs::OpenOptions;
