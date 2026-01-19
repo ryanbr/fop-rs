@@ -1368,7 +1368,7 @@ fn main() {
 
                     let mut file_modified = false;
                     let mut file_typo_count = 0;
-                    let mut new_lines = Vec::with_capacity(content.lines().count());
+                    let mut new_lines: Vec<String> = Vec::new();
 
                     for (line_num, line) in content.lines().enumerate() {
                         let (fixed, fixes) = fop_typos::fix_all_typos(line);
