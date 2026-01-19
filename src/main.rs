@@ -180,6 +180,8 @@ struct Args {
     only_sort_changed: bool,
     /// Auto rebase and retry if push fails
     rebase_on_fail: bool,
+    /// CI mode - exit with error code on failures
+    ci: bool,
     /// Show applied configuration
     show_config: bool,
     /// Show help
@@ -357,6 +359,7 @@ impl Args {
             output_changed: false,
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
             rebase_on_fail: parse_bool(&config, "rebase-on-fail", false),
+            ci: parse_bool(&config, "ci", false),
             help: false,
             version: false,
         };
@@ -578,6 +581,7 @@ impl Args {
         println!("  no-commit       = {}", self.no_commit);
         println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  rebase-on-fail  = {}", self.rebase_on_fail);
+        println!("  ci              = {}", self.ci);
         println!("  pr-show-changes = {}", self.pr_show_changes);
         println!("  check-banned-list = {:?}", self.check_banned_list);
         println!("  no-ubo-convert  = {}", self.no_ubo_convert);
@@ -930,6 +934,7 @@ fn process_location(
     auto_fix: bool,
     only_sort_changed: bool,
     rebase_on_fail: bool,
+    ci: bool,
     quiet: bool,
     output_diff_individual: bool,
     diff_output: &std::sync::Mutex<Vec<String>>,
@@ -1188,7 +1193,7 @@ fn process_location(
                 let base_branch = git_pr_branch.clone();
 
                 // Check for banned domains before creating PR
-                if !check_banned_domains(no_color, auto_banned_remove, &base_cmd) {
+                if !check_banned_domains(no_color, auto_banned_remove, &base_cmd, ci) {
                     return Ok(());
                 }
                 
@@ -1197,7 +1202,7 @@ fn process_location(
             } else {
 
                 // Check for banned domains before commit
-                if !check_banned_domains(no_color, auto_banned_remove, &base_cmd) {
+                if !check_banned_domains(no_color, auto_banned_remove, &base_cmd, ci) {
                     return Ok(());
                 }
 
@@ -1455,7 +1460,7 @@ fn main() {
                 let base_cmd = fop_git::build_base_command(repo, parent);
 
                 // Check for banned domains before commit
-                if !fop_git::check_banned_domains(args.no_color, args.auto_banned_remove, &base_cmd) {
+                if !fop_git::check_banned_domains(args.no_color, args.auto_banned_remove, &base_cmd, args.ci) {
                     return;
                 }
 
@@ -1517,6 +1522,7 @@ fn main() {
             args.auto_fix,
             args.only_sort_changed,
             args.rebase_on_fail,
+            args.ci,
             args.quiet,
             args.output_diff_individual,
             &diff_output,

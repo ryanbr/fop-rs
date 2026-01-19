@@ -100,7 +100,7 @@ pub fn format_pr_changes() -> String {
 }
 
 /// Check if banned domains were found and abort if so
-pub fn check_banned_domains(no_color: bool, auto_remove: bool, base_cmd: &[String]) -> bool {
+pub fn check_banned_domains(no_color: bool, auto_remove: bool, base_cmd: &[String], ci_mode: bool) -> bool {
     let banned_found = if let Ok(mut changes) = SORT_CHANGES.lock() {
         let found = changes.banned_domains_found.clone();
         changes.banned_domains_found.clear(); // Clear for next run
@@ -131,6 +131,11 @@ pub fn check_banned_domains(no_color: bool, auto_remove: bool, base_cmd: &[Strin
             println!("\nFailed to remove banned domains.");
             return false;
         }
+    }
+
+    // In CI mode, exit with error code
+    if ci_mode {
+        std::process::exit(1);
     }
 
     println!("\nCommit aborted. Run 'git checkout .' to restore, remove banned domains, and try again.");

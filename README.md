@@ -105,6 +105,9 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
 | `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
 | `--only-sort-changed` | Only process files changed according to git |
+| `--check-banned-list=FILE` | Check for banned domains in git additions |
+| `--auto-banned-remove` | Auto-remove banned domains and commit |
+| `--ci` | CI mode - exit with error code on failures (banned domains) |
 | `--rebase-on-fail` | Auto rebase and retry push if it fails |
 | `--ignore-config` | Ignore .fopconfig file, use only CLI args |
 | `--output` | Output changed files with --changed suffix (no overwrite) |
@@ -192,6 +195,15 @@ auto-fix = false
 
 # Only sort git-changed files (skip unchanged)
 only-sort-changed = false
+
+# Path to banned domain list file
+check-banned-list =
+
+# Auto-remove banned domains and commit
+auto-banned-remove = false
+
+# CI mode - exit with error code on failures
+ci = false
 
 # Auto rebase and retry if push fails
 rebase-on-fail = false
