@@ -146,6 +146,15 @@ fn extract_banned_domain(line: &str) -> Option<&str> {
     // Find end of domain (^ or $ or end of string)
     let end = s.find(['^', '$']).unwrap_or(s.len());
     
+    // Check for path/pattern after ^ (like ^*.bmp or ^/path)
+    // Only match if ^ is followed by nothing, $, or end of line
+    if let Some(caret_pos) = s.find('^') {
+        let after_caret = &s[caret_pos + 1..];
+        if !after_caret.is_empty() && !after_caret.starts_with('$') {
+            return None;
+        }
+    }
+
     if end > 0 {
         Some(&s[..end])
     } else {
