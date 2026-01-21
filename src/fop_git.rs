@@ -10,12 +10,18 @@ use std::sync::LazyLock;
 use rustyline::DefaultEditor;
 
 /// Read a line with arrow key support and editing
-fn read_input(prompt: &str) -> String {
+fn read_input(prompt: &str, history: &[String]) -> String {
     match DefaultEditor::new() {
-        Ok(mut rl) => match rl.readline(prompt) {
+        Ok(mut rl) => {
+            // Add history items in reverse so most recent is first on up-arrow
+            for item in history.iter().rev() {
+                let _ = rl.add_history_entry(item);
+            }
+            match rl.readline(prompt) {
             Ok(line) => line.trim().to_string(),
             Err(_) => String::new(),
-        },
+            }
+        }
         Err(_) => {
             // Fallback to basic input
             print!("{}", prompt);
@@ -380,7 +386,7 @@ fn is_large_change(diff: &str) -> bool {
 /// Prompt user to restore changes
 fn prompt_restore(base_cmd: &[String], no_color: bool) -> io::Result<bool> {
     let _ = no_color; // rustyline doesn't support colored prompts
-    let input = read_input("Would you like to restore the previous state before this change? [y/N]: ");
+    let input = read_input("Would you like to restore the previous state before this change? [y/N]: ", &[]);
     
     if input.eq_ignore_ascii_case("y") {
         let status = Command::new(&base_cmd[0])
@@ -517,7 +523,7 @@ fn prompt_for_remote(remotes: &[String], no_color: bool) -> Option<String> {
     );
     
     loop {
-        let input = read_input("Enter remote name: ");
+        let input = read_input("Enter remote name: ", &[]);
         if input.is_empty() {
             return None;
         }
@@ -812,6 +818,7 @@ pub fn commit_changes(
     quiet: bool,
     rebase_on_fail: bool,
     git_message: &Option<String>,
+    history: &[String],
 ) -> io::Result<()> {
     let diff = match get_diff(base_cmd, repo) {
         Some(d) if !d.is_empty() => d,
@@ -890,7 +897,7 @@ pub fn commit_changes(
                 "This is a large change. Are you sure you want to proceed?".yellow()
             );
         }
-        let input = read_input("Please type 'YES' to continue: ");
+        let input = read_input("Please type 'YES' to continue: ", &[]);
         if input != "YES" {
             println!("Commit aborted.");
             let _ = prompt_restore(base_cmd, no_color);
@@ -910,7 +917,7 @@ pub fn commit_changes(
                     .bold()
             );
         }
-        let comment = read_input("");
+        let comment = read_input("", history);
         if comment.is_empty() {
             println!("\nCommit aborted.");
             return Ok(());

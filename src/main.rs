@@ -184,6 +184,8 @@ struct Args {
     ci: bool,
     /// Show applied configuration
     show_config: bool,
+    /// Predefined commit message history for arrow key selection
+    history: Vec<String>,
     /// Show help
     help: bool,
     /// Show version
@@ -360,6 +362,11 @@ impl Args {
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
             rebase_on_fail: parse_bool(&config, "rebase-on-fail", false),
             ci: parse_bool(&config, "ci", false),
+            history: config.get("history")
+                .map(|s| s.split(',')
+                    .map(|item| item.trim().trim_matches('"').to_string())
+                    .collect())
+                .unwrap_or_default(),
             help: false,
             version: false,
         };
@@ -443,6 +450,12 @@ impl Args {
                 }
                 "--quiet" | "-q" => args.quiet = true,
                 "--ci" => args.ci = true,
+                _ if arg.starts_with("--history=") => {
+                    args.history = arg.trim_start_matches("--history=")
+                        .split(',')
+                        .map(|s| s.trim_matches('"').to_string())
+                        .collect();
+                }
                 "--output-diff" => {
                     // Individual mode: create .diff file for each source file
                     args.output_diff_individual = true;
@@ -940,6 +953,7 @@ fn process_location(
     output_diff_individual: bool,
     diff_output: &std::sync::Mutex<Vec<String>>,
     git_message: &Option<String>,
+    history: &[String],
 ) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
@@ -1168,7 +1182,7 @@ fn process_location(
                     if !quiet {
                         println!("Direct push authorized for user.");
                     }
-                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, rebase_on_fail, git_message)?;
+                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, rebase_on_fail, git_message, history)?;
                 } else {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
@@ -1217,6 +1231,7 @@ fn process_location(
                     quiet,
                     rebase_on_fail,
                     git_message,
+                    history,
                 )?;
             }
         }
@@ -1334,12 +1349,11 @@ fn main() {
     use rayon::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    // CI mode: Check PR/push changes for banned domains
-    if args.ci && banned_domains.is_some() {
-        let banned = banned_domains.as_ref().unwrap();
+    // CI mode: Check diff for banned domains
+    if let Some(banned) = args.ci.then_some(()).and(banned_domains.as_ref()) {
         let mut found: Vec<(String, String)> = Vec::new();
+        let mut current_file = String::new();
 
-        // If HEAD equals origin/master (push), use HEAD~1; otherwise (PR) use origin/master
         let base = if std::process::Command::new("git")
             .args(["diff", "--quiet", "HEAD", "origin/master"])
             .status()
@@ -1349,6 +1363,10 @@ fn main() {
 
         if let Ok(output) = std::process::Command::new("git").args(["diff", base, "--unified=0"]).output() {
             for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if let Some(file) = line.strip_prefix("+++ b/") {
+                    current_file = file.to_string();
+                }
+                if args.ignore_files.iter().any(|f| current_file.ends_with(f)) { continue; }
                 if line.starts_with('+') && !line.starts_with("+++") {
                     if let Some(domain) = fop_sort::check_banned_domain(&line[1..], banned) {
                         found.push((domain, line[1..].to_string()));
@@ -1507,6 +1525,7 @@ fn main() {
                     args.quiet,
                     args.rebase_on_fail,
                     &args.git_message,
+                    &args.history,
                 ) {
                     eprintln!("Git error: {}", e);
                 }
@@ -1560,6 +1579,7 @@ fn main() {
             args.output_diff_individual,
             &diff_output,
             &args.git_message,
+            &args.history,
         ) {
             eprintln!("Error: {}", e);
         }
