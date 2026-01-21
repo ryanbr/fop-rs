@@ -13,6 +13,10 @@ use rustyline::DefaultEditor;
 fn read_input(prompt: &str, history: &[String]) -> String {
     match DefaultEditor::new() {
         Ok(mut rl) => {
+            // Skip history loop if empty
+            if history.is_empty() {
+                return rl.readline(prompt).map(|s| s.trim().to_string()).unwrap_or_default();
+            }
             // Add history items in reverse so most recent is first on up-arrow
             for item in history.iter().rev() {
                 let _ = rl.add_history_entry(item);
