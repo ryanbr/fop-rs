@@ -1365,8 +1365,9 @@ fn main() {
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 if let Some(file) = line.strip_prefix("+++ b/") {
                     current_file = file.to_string();
+                    continue;
                 }
-                if args.ignore_files.iter().any(|f| current_file.ends_with(f)) { continue; }
+                if current_file.is_empty() || args.ignore_files.iter().any(|f| current_file.ends_with(f)) { continue; }
                 if line.starts_with('+') && !line.starts_with("+++") {
                     if let Some(domain) = fop_sort::check_banned_domain(&line[1..], banned) {
                         found.push((domain, line[1..].to_string()));
