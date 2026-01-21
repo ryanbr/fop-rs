@@ -248,7 +248,7 @@ pub const REPO_TYPES: &[RepoDefinition] = &[GIT];
 // =============================================================================
 
 static COMMIT_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(A|M|P):\s((\(.+\))\s)?(.*)$").unwrap());
+    LazyLock::new(|| Regex::new(r"^(A|M|P):\s((\(.+\))\s)?(.+)$").unwrap());
 
 #[inline]
 pub fn valid_url(url_str: &str) -> bool {
@@ -278,27 +278,31 @@ pub fn check_comment(comment: &str, user_changes: bool) -> bool {
     match COMMIT_PATTERN.captures(comment) {
         None => {
             eprintln!(
-                "The comment \"{}\" is not in the recognised format.",
-                comment
+                "Invalid format. Use: A: <url>, M: <text>, or P: <url>"
             );
             false
         }
         Some(caps) => {
             let indicator = &caps[1];
+            let content = &caps[4];
             match indicator {
-                "M" => true,
+                "M" => {
+                    if content.trim().is_empty() {
+                        eprintln!("M: commits require a description (e.g., M: Update filters)");
+                        false
+                    } else {
+                        true
+                    }
+                }
                 "A" | "P" => {
                     if !user_changes {
                         eprintln!("You have indicated that you have added or removed a rule, but no changes were initially noted by the repository.");
                         false
+                    } else if !valid_url(content) {
+                        eprintln!("A: and P: commits require a URL (e.g., A: https://github.com/...)");
+                        false
                     } else {
-                        let address = &caps[4];
-                        if !valid_url(address) {
-                            eprintln!("Unrecognised address \"{}\".", address);
-                            false
-                        } else {
-                            true
-                        }
+                        true
                     }
                 }
                 _ => false,
