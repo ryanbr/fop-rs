@@ -98,6 +98,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--disable-domain-limit=` | Files to skip short domain check (comma-separated) |
 | `--warning-output=` | Output warnings to file instead of stderr |
 | `--git-message=` | Git commit message (skip interactive prompt) |
+| `--history=` | Predefined commit messages for arrow key selection (comma-separated) |
 | `--create-pr[=TITLE]` | Create PR branch instead of committing to current branch |
 | `--git-pr-branch=NAME` | Base branch for PR (default: auto-detect main/master) |
 | `--pr-show-changes` | Include rule changes (combines, merges, typos) in PR body |
@@ -213,6 +214,10 @@ quiet = false
 
 # Users allowed to push directly when create-pr is enabled (comma-separated, case-insensitive)
 direct-push-users =
+
+# Predefined commit messages for arrow key selection (comma-separated)
+# Use up/down arrows at commit prompt to cycle through these
+history = A: ,P: ,M: Update,M: Cleanup,M: Sort,M: Adjust
 ```
 
 Command line arguments override config file settings.
