@@ -505,6 +505,15 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
         || separator == "#@%#";
 
     if is_extended {
+        // Normalize scriptlet spacing (only simple args without quotes)
+        if selector.starts_with("+js(") && !selector.contains('"') && !selector.contains('\'') {
+            if let Some(start) = selector.find('(') {
+                if let Some(end) = selector.rfind(')') {
+                    let args = selector[start + 1..end].split(',').map(|a| a.trim()).collect::<Vec<_>>().join(", ");
+                    return format!("{}{}{}{}", domains, separator, &selector[..start + 1], args) + &selector[end..];
+                }
+            }
+        }
         return format!("{}{}{}", domains, separator, selector);
     }
 
