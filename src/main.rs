@@ -1240,22 +1240,50 @@ fn process_location(
     Ok(())
 }
 
-fn print_greeting(no_commit: bool, config_path: Option<&str>) {
+fn print_greeting(no_commit: bool, no_color: bool, config_path: Option<&str>, banned_info: Option<(usize, &str)>) {
+    use owo_colors::OwoColorize;
+
     let mode = if no_commit { " (sort only)" } else { "" };
-    let greeting = format!(
-        "FOP (Filter Orderer and Preener) version {}{}",
-        VERSION, mode
-    );
-    let separator = "=".repeat(greeting.len());
-    println!("{}", separator);
-    println!("{}", greeting);
-    println!(
-        "Copyright (C) 2025 FanboyNZ - https://github.com/ryanbr/fop-rs (Licensed under GPL-3.0)"
-    );
-    if let Some(path) = config_path {
-        println!("Using config file: {}", path);
+    let version_line = format!("FOP (Filter Orderer and Preener) version {}{}", VERSION, mode);
+    let copyright = "Copyright (C) 2025 FanboyNZ";
+    let url = "https://github.com/ryanbr/fop-rs (GPL-3.0)";
+    let config_line = config_path.map(|p| format!("Using config file: {}", p));
+    let banned_line = banned_info.map(|(count, file)| format!("Loaded {} banned domains from {}", count, file));
+
+    if no_color {
+        let separator = "=".repeat(version_line.len());
+        println!("{}", separator);
+        println!("{}", version_line);
+        println!("{} - {}", copyright, url);
+        if let Some(ref cfg) = config_line {
+            println!("{}", cfg);
+        }
+        if let Some(ref banned) = banned_line {
+            println!("{}", banned);
+        }
+        println!("{}", separator);
+    } else {
+        let logo = [
+            "\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} ",
+            "\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255D} \u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2588}\u{2588}\u{2557}",
+            "\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}   \u{2588}\u{2588}\u{2551}   \u{2588}\u{2588}\u{2551} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2554}\u{255D}",
+            "\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{255D}   \u{2588}\u{2588}\u{2551}   \u{2588}\u{2588}\u{2551} \u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{255D} ",
+            "\u{2588}\u{2588}\u{2551}       \u{255A}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2554}\u{255D} \u{2588}\u{2588}\u{2551}     ",
+            "\u{255A}\u{2550}\u{255D}        \u{255A}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255D}  \u{255A}\u{2550}\u{255D}     ",
+        ];
+        let info = [
+            version_line.as_str(),
+            copyright,
+            url,
+            config_line.as_deref().unwrap_or(""),
+            banned_line.as_deref().unwrap_or(""),
+            "",
+        ];
+
+        for (logo_line, info_line) in logo.iter().zip(info.iter()) {
+            println!("{}  {}", logo_line.white(), info_line);
+        }
     }
-    println!("{}", separator);
 }
 
 fn main() {
@@ -1277,8 +1305,14 @@ fn main() {
         return;
     }
 
+    // Load banned list early so we can show count in greeting
+    let banned_info = args.check_banned_list.as_ref().and_then(|list_path| {
+        fop_sort::load_banned_list(list_path).ok().map(|set| (set.len(), list_path.to_string_lossy().to_string()))
+    });
+
     if !args.quiet {
-        print_greeting(args.no_commit, config_path.as_deref());
+        print_greeting(args.no_commit, args.no_color, config_path.as_deref(),
+            banned_info.as_ref().map(|(count, path)| (*count, path.as_str())));
     }
 
     // Set warning output path
@@ -1299,9 +1333,6 @@ fn main() {
 
         match fop_sort::load_banned_list(path) {
             Ok(domains) => {
-                if !args.quiet {
-                    println!("Loaded {} banned domains from {}", domains.len(), path.display());
-                }
                 Some(domains)
             }
             Err(e) => {

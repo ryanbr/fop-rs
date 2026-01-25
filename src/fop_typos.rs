@@ -213,7 +213,7 @@ pub fn report_addition_typos(typos: &[(Addition, Typo)], no_color: bool) {
                 add.file, add.line_num, typo.original, typo.fixed
             );
         } else {
-            use colored::Colorize;
+            use owo_colors::OwoColorize;
             println!(
                 "  {}:{}: {} ? {}",
                 add.file.cyan(),
