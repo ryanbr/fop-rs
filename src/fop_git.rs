@@ -1,6 +1,6 @@
 //! Git repository operations for FOP
 
-use colored::Colorize;
+use owo_colors::OwoColorize;
 use regex::Regex;
 use std::io::{self, Write};
 use std::path::Path;
