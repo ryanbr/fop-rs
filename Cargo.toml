@@ -15,7 +15,7 @@ walkdir = "2.5"
 rustyline = "17"
 rayon = "1.11"
 ahash = "0.8"
-colored = "3.0"
+owo-colors = "4"
 similar = "2"
 urlencoding ="2.1"
 
