@@ -1188,7 +1188,7 @@ fn process_location(
                     if !quiet {
                         println!("Direct push authorized for user.");
                     }
-                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, rebase_on_fail, git_message, history)?;
+                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history)?;
                 } else {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
@@ -1235,6 +1235,7 @@ fn process_location(
                     no_color,
                     no_large_warning,
                     quiet,
+                    limited_quiet,
                     rebase_on_fail,
                     git_message,
                     history,
@@ -1562,6 +1563,7 @@ fn main() {
                     args.no_color,
                     args.no_large_warning,
                     args.quiet,
+                    args.limited_quiet,
                     args.rebase_on_fail,
                     &args.git_message,
                     &args.history,

@@ -793,24 +793,83 @@ pub fn create_pull_request(
 // Commit Operations
 // =============================================================================
 
+/// Execute pull and push, return true if push failed
+#[inline]
+fn pull_and_push(
+    base_cmd: &[String],
+    repo: &RepoDefinition,
+    git_quiet: bool,
+) -> bool {
+    let mut push_failed = false;
+    for (i, op) in [repo.pull, repo.push].iter().enumerate() {
+        let output = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(*op)
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                if !git_quiet && !out.stdout.is_empty() {
+                    print!("{}", String::from_utf8_lossy(&out.stdout));
+                }
+                if !git_quiet && !out.stderr.is_empty() {
+                    eprint!("{}", String::from_utf8_lossy(&out.stderr));
+                }
+            }
+            Ok(out) => {
+                if !out.stderr.is_empty() {
+                    eprint!("{}", String::from_utf8_lossy(&out.stderr));
+                }
+                if i == 1 { push_failed = true; }
+            }
+            Err(e) => {
+                eprintln!("Git command failed: {}", e);
+                if i == 1 { push_failed = true; }
+            }
+        }
+    }
+    push_failed
+}
+
 /// Attempt rebase and retry push after initial push failure
 #[inline]
-fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition) {
-    eprintln!("Push failed. Attempting rebase...");
-    let rebase_status = Command::new(&base_cmd[0])
+fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool) {
+    if !quiet {
+        eprintln!("Push failed. Attempting rebase...");
+    }
+    let Ok(output) = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
         .args(["pull", "--rebase"])
-        .status();
-    
-    if rebase_status.map(|s| s.success()).unwrap_or(false) {
-        let retry = Command::new(&base_cmd[0])
+        .output() else {
+        eprintln!("Rebase failed to execute");
+        return;
+    };
+
+    if !output.status.success() {
+        if !output.stderr.is_empty() {
+            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        }
+        eprintln!("Push still failed. Resolve manually.");
+        return;
+    }
+
+    let Ok(retry) = Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
             .args(repo.push)
-            .status();
-        if retry.map(|s| s.success()).unwrap_or(false) {
+        .output() else {
+        eprintln!("Push failed to execute");
+        return;
+    };
+
+    if retry.status.success() {
+        if !quiet {
             println!("Push succeeded after rebase.");
-            return;
         }
+        return;
+    }
+
+    if !retry.stderr.is_empty() {
+        eprint!("{}", String::from_utf8_lossy(&retry.stderr));
     }
     eprintln!("Push still failed. Resolve manually.");
 }
@@ -824,10 +883,12 @@ pub fn commit_changes(
     no_color: bool,
     no_large_warning: bool,
     quiet: bool,
+    limited_quiet: bool,
     rebase_on_fail: bool,
     git_message: &Option<String>,
     history: &[String],
 ) -> io::Result<()> {
+    let git_quiet = quiet || limited_quiet;
     let diff = match get_diff(base_cmd, repo) {
         Some(d) if !d.is_empty() => d,
         _ => {
@@ -862,23 +923,9 @@ pub fn commit_changes(
             .arg(message)
             .status()?;
 
-        // Pull and push
-        let mut push_failed = false;
-        for (i, op) in [repo.pull, repo.push].iter().enumerate() {
-            let mut cmd = Command::new(&base_cmd[0]);
-            cmd.args(&base_cmd[1..]).args(*op);
-            if quiet {
-                cmd.arg("--quiet");
-            }
-            let status = cmd.status();
-            if i == 1 && !status.map(|s| s.success()).unwrap_or(false) {
-                push_failed = true;
-            }
-        }
-
-        if push_failed {
+        if pull_and_push(base_cmd, repo, git_quiet) {
             if rebase_on_fail {
-                rebase_and_retry_push(base_cmd, repo);
+                rebase_and_retry_push(base_cmd, repo, git_quiet);
             } else {
                 eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
             }
@@ -984,25 +1031,9 @@ pub fn commit_changes(
                 }
             }
 
-            let mut push_failed = false;
-            for (i, op) in [repo.pull, repo.push].iter().enumerate() {
-                let mut cmd = Command::new(&base_cmd[0]);
-                cmd.args(&base_cmd[1..]).args(*op);
-                if quiet {
-                    cmd.arg("--quiet");
-                }
-                let status = cmd.status();
-                if i == 1 && !status.map(|s| s.success()).unwrap_or(false) {
-                    push_failed = true;
-                }
-                if !quiet {
-                    println!();
-                }
-            }
-
-            if push_failed {
+            if pull_and_push(base_cmd, repo, git_quiet) {
                 if rebase_on_fail {
-                    rebase_and_retry_push(base_cmd, repo);
+                    rebase_and_retry_push(base_cmd, repo, git_quiet);
                 } else {
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
