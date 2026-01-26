@@ -275,39 +275,30 @@ pub fn valid_url(url_str: &str) -> bool {
 }
 
 pub fn check_comment(comment: &str, user_changes: bool) -> bool {
-    match COMMIT_PATTERN.captures(comment) {
-        None => {
-            eprintln!(
-                "Invalid format. Use: A: <url>, M: <text>, or P: <url>"
-            );
+    let Some(caps) = COMMIT_PATTERN.captures(comment) else {
+        eprintln!("Invalid format. Use: A: <url>, M: <text>, or P: <url>");
+        return false;
+    };
+
+    let indicator = &caps[1];
+    let content = &caps[4];
+
+    match indicator {
+        "M" if content.trim().is_empty() => {
+            eprintln!("M: commits require a description (e.g., M: Update filters)");
             false
         }
-        Some(caps) => {
-            let indicator = &caps[1];
-            let content = &caps[4];
-            match indicator {
-                "M" => {
-                    if content.trim().is_empty() {
-                        eprintln!("M: commits require a description (e.g., M: Update filters)");
-                        false
-                    } else {
-                        true
-                    }
-                }
-                "A" | "P" => {
-                    if !user_changes {
-                        eprintln!("You have indicated that you have added or removed a rule, but no changes were initially noted by the repository.");
-                        false
-                    } else if !valid_url(content) {
-                        eprintln!("A: and P: commits require a URL (e.g., A: https://github.com/...)");
-                        false
-                    } else {
-                        true
-                    }
-                }
-                _ => false,
-            }
+        "M" => true,
+        "A" | "P" if !user_changes => {
+            eprintln!("You have indicated that you have added or removed a rule, but no changes were initially noted by the repository.");
+            false
         }
+        "A" | "P" if !valid_url(content) => {
+            eprintln!("A: and P: commits require a URL (e.g., A: https://github.com/...)");
+            false
+        }
+        "A" | "P" => true,
+        _ => false,
     }
 }
 
@@ -491,9 +482,8 @@ fn get_remote_url(base_cmd: &[String], remote: &str) -> Option<String> {
         .output()
         .ok()?;
 
-    String::from_utf8(output.stdout)
-        .ok()
-        .map(|s| s.trim().to_string())
+    let s = String::from_utf8_lossy(&output.stdout);
+    Some(s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 /// Get current branch name
