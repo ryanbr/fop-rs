@@ -170,6 +170,8 @@ struct Args {
     output_diff_individual: bool,
     /// Suppress most output (for CI)
     quiet: bool,
+    /// Suppress directory listing only
+    limited_quiet: bool,
     /// Output changed files with --changed suffix (no overwrite)
     output_changed: bool,
     /// Process a single file instead of directory
@@ -354,6 +356,7 @@ impl Args {
                 .map(|s| s.split(',').map(|u| u.trim().to_lowercase()).collect())
                 .unwrap_or_default(),
             quiet: parse_bool(&config, "quiet", false),
+            limited_quiet: parse_bool(&config, "limited-quiet", false),
             auto_fix: parse_bool(&config, "auto-fix", false),
             output_diff: config.get("output-diff").map(PathBuf::from),
             output_diff_individual: false,
@@ -449,6 +452,7 @@ impl Args {
                     args.check_file = Some(PathBuf::from(arg.trim_start_matches("--check-file=")));
                 }
                 "--quiet" | "-q" => args.quiet = true,
+                "--limited-quiet" => args.limited_quiet = true,
                 "--ci" => args.ci = true,
                 _ if arg.starts_with("--history=") => {
                     args.history = arg.trim_start_matches("--history=")
@@ -552,6 +556,7 @@ impl Args {
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("    -q, --quiet                Suppress most output (for CI)");
+        println!("        --limited-quiet        Suppress directory listing only");
         println!("        --check-file=FILE      Process a single file");
         println!("        --output-diff=FILE     Output changes as diff (no files modified)");
         println!("        --output-diff          Output individual .diff files per source file");
@@ -950,6 +955,7 @@ fn process_location(
     rebase_on_fail: bool,
     ci: bool,
     quiet: bool,
+    limited_quiet: bool,
     output_diff_individual: bool,
     diff_output: &std::sync::Mutex<Vec<String>>,
     git_message: &Option<String>,
@@ -1006,7 +1012,7 @@ fn process_location(
     // Print directories first (sequential for ordered output)
     for entry in &entries {
         let path = entry.path();
-        if entry_is_dir(entry) && !quiet {
+        if entry_is_dir(entry) && !quiet && !limited_quiet {
             println!("Current directory: {}", path.display());
         }
     }
@@ -1280,6 +1286,7 @@ fn print_greeting(no_commit: bool, no_color: bool, config_path: Option<&str>, ba
             "",
         ];
 
+        println!();
         for (logo_line, info_line) in logo.iter().zip(info.iter()) {
             println!("{}  {}", logo_line.white(), info_line);
         }
@@ -1608,6 +1615,7 @@ fn main() {
             args.rebase_on_fail,
             args.ci,
             args.quiet,
+            args.limited_quiet,
             args.output_diff_individual,
             &diff_output,
             &args.git_message,
