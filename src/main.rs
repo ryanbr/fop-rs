@@ -24,6 +24,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use owo_colors::OwoColorize;
 
 use std::sync::LazyLock;
 /// Thread-safe warning output
@@ -993,7 +994,11 @@ fn process_location(
     };
 
     if !quiet {
-        println!("\nPrimary location: {}", location.display());
+        if no_color {
+            println!("\nPrimary location: {}", location.display());
+        } else {
+            println!("\n{} {}", "Primary location:".bold(), location.display());
+        }
     }
 
     // Collect directories and files
@@ -1013,7 +1018,11 @@ fn process_location(
     for entry in &entries {
         let path = entry.path();
         if entry_is_dir(entry) && !quiet && !limited_quiet {
-            println!("Current directory: {}", path.display());
+            if no_color {
+                println!("Current directory: {}", path.display());
+            } else {
+                println!("{} {}", "Current directory:".bold(), path.display());
+            }
         }
     }
 
@@ -1073,6 +1082,7 @@ fn process_location(
             ignore_dot_domains: sort_config.ignore_dot_domains,
             fix_typos,
             quiet,
+            no_color,
             dry_run: sort_config.dry_run,
             output_changed: sort_config.output_changed,
         };
@@ -1248,7 +1258,6 @@ fn process_location(
 }
 
 fn print_greeting(no_commit: bool, no_color: bool, config_path: Option<&str>, banned_info: Option<(usize, &str)>) {
-    use owo_colors::OwoColorize;
 
     let mode = if no_commit { " (sort only)" } else { "" };
     let version_line = format!("FOP (Filter Orderer and Preener) version {}{}", VERSION, mode);
@@ -1364,6 +1373,7 @@ fn main() {
         ignore_dot_domains: args.ignore_dot_domains,
         fix_typos: args.fix_typos,
         quiet: args.quiet,
+        no_color: args.no_color,
         dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed,
         output_changed: args.output_changed,
     };

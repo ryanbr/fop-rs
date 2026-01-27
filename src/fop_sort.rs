@@ -11,6 +11,7 @@ use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::io::Cursor;
 use std::path::Path;
 
+use owo_colors::OwoColorize;
 use ahash::AHashSet as HashSet;
 use ahash::AHashMap;
 use regex::Regex;
@@ -91,6 +92,7 @@ pub struct SortConfig<'a> {
     pub ignore_dot_domains: bool,
     pub fix_typos: bool,
     pub quiet: bool,
+    pub no_color: bool,
     pub dry_run: bool,
     /// Output changed files with --changed suffix
     pub output_changed: bool,
@@ -1318,7 +1320,11 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             }
             fs::rename(&temp_file, filename)?;
             if !config.quiet {
-                let _ = writeln!(std::io::stdout().lock(), "Sorted: {}", filename.display());
+                if config.no_color {
+                    let _ = writeln!(std::io::stdout().lock(), "Sorted: {}", filename.display());
+                } else {
+                    println!("{} {}", "Sorted:".bold(), filename.display());
+                }
             }
         }
     } else {
