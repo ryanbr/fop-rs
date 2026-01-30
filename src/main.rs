@@ -185,6 +185,8 @@ struct Args {
     help: bool,
     /// Show version
     version: bool,
+    /// Update timestamp in file header
+    add_timestamp: bool,
     /// Custom git binary path
     git_binary: Option<String>,
 }
@@ -367,6 +369,7 @@ impl Args {
                 .unwrap_or_default(),
             help: false,
             version: false,
+            add_timestamp: parse_bool(&config, "add-timestamp", false),
             git_binary: config.get("git-binary").cloned(),
         };
 
@@ -443,6 +446,7 @@ impl Args {
                 "--fix-typos" => args.fix_typos = true,
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
+                "--add-timestamp" => args.add_timestamp = true,
                 "--ignore-config" => {} // Already handled early
                 _ if arg.starts_with("--check-file=") => {
                     args.check_file = Some(PathBuf::from(arg.trim_start_matches("--check-file=")));
@@ -561,6 +565,7 @@ impl Args {
         println!("        --output-diff          Output individual .diff files per source file");
         println!("        --output               Output changed files with --changed suffix");
         println!("        --ignore-config        Ignore .fopconfig file");
+        println!("        --add-timestamp        Update 'Last modified/updated' timestamp in header");
         println!("        --show-config   Show applied configuration and exit");
         println!("        --git-binary=<path>    Path to git binary (default: git in PATH)");
         println!("    -h, --help          Show this help message");
@@ -1085,6 +1090,7 @@ fn process_location(
             no_color,
             dry_run: sort_config.dry_run,
             output_changed: sort_config.output_changed,
+            add_timestamp: sort_config.add_timestamp,
         };
 
         match fop_sort(path, &config) {
@@ -1376,6 +1382,7 @@ fn main() {
         no_color: args.no_color,
         dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed,
         output_changed: args.output_changed,
+        add_timestamp: args.add_timestamp,
     };
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());

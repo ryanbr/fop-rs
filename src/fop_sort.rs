@@ -10,6 +10,7 @@ use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::io::Cursor;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use owo_colors::OwoColorize;
 use ahash::AHashSet as HashSet;
@@ -96,6 +97,8 @@ pub struct SortConfig<'a> {
     pub dry_run: bool,
     /// Output changed files with --changed suffix
     pub output_changed: bool,
+    /// Update timestamp in file header
+    pub add_timestamp: bool,
 }
 
 /// Track changes made during sorting
@@ -959,6 +962,71 @@ fn combine_filters(
 // Main Sorting Function
 // =============================================================================
 
+/// Format Unix timestamp as "30 Jan 2026 08:31 UTC"
+#[inline]
+fn format_timestamp_utc(secs: u64) -> String {
+    // Pre-allocate: "30 Jan 2026 08:31 UTC" = ~21 chars
+    let mut result = String::with_capacity(24);
+    const DAYS_IN_MONTH: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    let secs_per_day = 86400u64;
+    let secs_per_hour = 3600u64;
+    let secs_per_min = 60u64;
+    
+    let mut days = secs / secs_per_day;
+    let remaining = secs % secs_per_day;
+    let hours = remaining / secs_per_hour;
+    let minutes = (remaining % secs_per_hour) / secs_per_min;
+    
+    // Start from 1970
+    let mut year = 1970u64;
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if days < days_in_year {
+            break;
+        }
+        days -= days_in_year;
+        year += 1;
+    }
+    
+    let leap = is_leap_year(year);
+    let mut month = 0usize;
+    for (i, &d) in DAYS_IN_MONTH.iter().enumerate() {
+        let days_in_month = if i == 1 && leap { 29 } else { d };
+        if days < days_in_month {
+            month = i;
+            break;
+        }
+        days -= days_in_month;
+    }
+    
+    let day = days + 1;
+    use std::fmt::Write;
+    let _ = write!(result, "{} {} {} {:02}:{:02} UTC", day, MONTHS[month], year, hours, minutes);
+    result
+}
+
+#[inline]
+fn is_leap_year(year: u64) -> bool {
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
+}
+
+/// Update timestamp in header line
+#[inline]
+fn update_timestamp_line(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    if lower.contains("last modified:") || lower.contains("last updated:") {
+        let prefix = if line.trim_start().starts_with('#') { "#" } else { "!" };
+        let keyword = if lower.contains("last modified:") { "Last modified" } else { "Last updated" };
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        Some(format!("{} {}: {}", prefix, keyword, format_timestamp_utc(now)))
+    } else {
+        None
+    }
+}
+
 /// Sort the sections of a filter file and save modifications
 pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<String>> {
     let temp_file = filename.with_extension("temp");
@@ -1095,6 +1163,19 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     for line in reader.lines() {
         let line_owned = line?;
         let line = line_owned.trim();
+
+        // Update timestamp if enabled and within first 10 lines
+        let updated_line;
+        let line = if config.add_timestamp && lines_checked <= CHECK_LINES {
+            if let Some(updated) = update_timestamp_line(line) {
+                updated_line = updated;
+                updated_line.as_str()
+            } else {
+                line
+            }
+        } else {
+            line
+        };
 
         if line.is_empty() {
             if config.keep_empty_lines {
