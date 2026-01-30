@@ -63,13 +63,10 @@ pub(crate) fn write_warning(message: &str) {
 
 /// Flush buffered warnings to file
 pub(crate) fn flush_warnings() {
-    let path = {
-        let path_guard = WARNING_OUTPUT.lock().unwrap();
-        (*path_guard).clone()
-    };
-    if let Some(path) = path {
-        let mut buffer = WARNING_BUFFER.lock().unwrap();
-        if !buffer.is_empty() {
+    let Ok(guard) = WARNING_OUTPUT.lock() else { return };
+    let Some(ref path) = *guard else { return };
+    let Ok(mut buffer) = WARNING_BUFFER.lock() else { return };
+    if buffer.is_empty() { return; }
             use std::fs::OpenOptions;
             use std::io::{BufWriter, Write};
             if let Ok(file) = OpenOptions::new()
@@ -83,8 +80,6 @@ pub(crate) fn flush_warnings() {
                     let _ = writeln!(writer, "{}", msg);
                 }
             }
-        }
-    }
 }
 
 use rayon::prelude::*;
