@@ -117,6 +117,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--quiet` | Limit console output, less verbose |
 | `--config-file=` | Custom config file path |
 | `--show-config` | Show applied configuration and exit |
+| `--git-binary=<path>` | Path to git binary (default: git in PATH)") |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
 

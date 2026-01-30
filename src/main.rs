@@ -185,6 +185,8 @@ struct Args {
     help: bool,
     /// Show version
     version: bool,
+    /// Custom git binary path
+    git_binary: Option<String>,
 }
 
 /// Load configuration from .fopconfig file
@@ -365,6 +367,7 @@ impl Args {
                 .unwrap_or_default(),
             help: false,
             version: false,
+            git_binary: config.get("git-binary").cloned(),
         };
 
         // Command line args override config
@@ -467,6 +470,9 @@ impl Args {
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
                 }
+                _ if arg.starts_with("--git-binary=") => {
+                    args.git_binary = Some(arg.trim_start_matches("--git-binary=").to_string());
+                }
                 _ if arg.starts_with('-') => {
                     eprintln!("Unknown option: {}", arg);
                     eprintln!("Use --help for usage information");
@@ -556,6 +562,7 @@ impl Args {
         println!("        --output               Output changed files with --changed suffix");
         println!("        --ignore-config        Ignore .fopconfig file");
         println!("        --show-config   Show applied configuration and exit");
+        println!("        --git-binary=<path>    Path to git binary (default: git in PATH)");
         println!("    -h, --help          Show this help message");
         println!("    -V, --version       Show version number");
         println!();
@@ -953,6 +960,7 @@ fn process_location(
     diff_output: &std::sync::Mutex<Vec<String>>,
     git_message: &Option<String>,
     history: &[String],
+    git_binary: Option<&str>,
 ) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
@@ -971,7 +979,7 @@ fn process_location(
 
     // Check initial repository state
     let (base_cmd, original_difference) = if let Some(repo) = repository {
-        let base_cmd = build_base_command(repo, location);
+        let base_cmd = build_base_command(repo, location, git_binary);
         match check_repo_changes(&base_cmd, repo) {
             Some(diff) => (Some(base_cmd), diff),
             None => {
@@ -1550,7 +1558,7 @@ fn main() {
                 .iter()
                 .find(|r| parent.join(r.directory).is_dir())
             {
-                let base_cmd = fop_git::build_base_command(repo, parent);
+                let base_cmd = fop_git::build_base_command(repo, parent, args.git_binary.as_deref());
 
                 // Check for banned domains before commit
                 if !fop_git::check_banned_domains(args.no_color, args.auto_banned_remove, &base_cmd, args.ci) {
@@ -1624,6 +1632,7 @@ fn main() {
             &diff_output,
             &args.git_message,
             &args.history,
+            args.git_binary.as_deref(),
         ) {
             eprintln!("Error: {}", e);
         }

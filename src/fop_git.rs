@@ -306,8 +306,8 @@ pub fn check_comment(comment: &str, user_changes: bool) -> bool {
 // Repository Commands
 // =============================================================================
 
-pub fn build_base_command(repo: &RepoDefinition, location: &Path) -> Vec<String> {
-    let mut cmd = vec![repo.name.to_string()];
+pub fn build_base_command(repo: &RepoDefinition, location: &Path, git_binary: Option<&str>) -> Vec<String> {
+    let mut cmd = vec![git_binary.unwrap_or(repo.name).to_string()];
 
     if repo.location_option.ends_with('=') {
         cmd.push(format!("{}{}", repo.location_option, location.display()));
