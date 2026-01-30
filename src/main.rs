@@ -52,14 +52,11 @@ fn get_git_username() -> Option<String> {
 
 /// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
-    let guard = WARNING_OUTPUT.lock().unwrap();
-    if guard.is_some() {
-        drop(guard); // Release lock before acquiring buffer lock
+    if WARNING_OUTPUT.lock().map(|g| g.is_some()).unwrap_or(false) {
         if let Ok(mut buffer) = WARNING_BUFFER.lock() {
             buffer.push(message.to_string());
         }
     } else {
-        drop(guard);
         eprintln!("{}", message);
     }
 }
