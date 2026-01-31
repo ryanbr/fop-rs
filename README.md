@@ -115,6 +115,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--check-file=FILE` | Process a single file | 
 | `--output-diff=FILE` | Output changes as diff (no files modified) | 
 | `--quiet` | Limit console output, less verbose |
+| `--add-checksum=FILES` | Add/update checksum for specific files (comma-separated)") |
 | `--config-file=` | Custom config file path |
 | `--show-config` | Show applied configuration and exit |
 | `--git-binary=<path>` | Path to git binary (default: git in PATH)") |

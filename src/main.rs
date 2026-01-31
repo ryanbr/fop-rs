@@ -10,6 +10,7 @@
 //! Rust port maintains GPL-3.0 license compatibility.
 
 mod fop_git;
+mod fop_checksum;
 mod fop_sort;
 mod fop_typos;
 
@@ -187,6 +188,8 @@ struct Args {
     version: bool,
     /// Update timestamp in file header
     add_timestamp: bool,
+    /// Add/update checksum for specific files
+    add_checksum: Vec<String>,
     /// Custom git binary path
     git_binary: Option<String>,
 }
@@ -370,6 +373,9 @@ impl Args {
             help: false,
             version: false,
             add_timestamp: parse_bool(&config, "add-timestamp", false),
+            add_checksum: config.get("add-checksum")
+                .map(|s| s.split(',').map(|f| f.trim().to_string()).collect())
+                .unwrap_or_default(),
             git_binary: config.get("git-binary").cloned(),
         };
 
@@ -447,6 +453,12 @@ impl Args {
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
                 "--add-timestamp" => args.add_timestamp = true,
+                _ if arg.starts_with("--add-checksum=") => {
+                    args.add_checksum = arg.trim_start_matches("--add-checksum=")
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                }
                 "--ignore-config" => {} // Already handled early
                 _ if arg.starts_with("--check-file=") => {
                     args.check_file = Some(PathBuf::from(arg.trim_start_matches("--check-file=")));
@@ -566,6 +578,7 @@ impl Args {
         println!("        --output               Output changed files with --changed suffix");
         println!("        --ignore-config        Ignore .fopconfig file");
         println!("        --add-timestamp        Update 'Last modified/updated' timestamp in header");
+        println!("        --add-checksum=FILES   Add/update checksum for specific files (comma-separated)");
         println!("        --show-config   Show applied configuration and exit");
         println!("        --git-binary=<path>    Path to git binary (default: git in PATH)");
         println!("    -h, --help          Show this help message");
@@ -966,6 +979,8 @@ fn process_location(
     git_message: &Option<String>,
     history: &[String],
     git_binary: Option<&str>,
+    add_checksum: &[String],
+    localhost: bool,
 ) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
@@ -1130,6 +1145,21 @@ fn process_location(
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if extension == "orig" || extension == "temp" {
                 let _ = fs::remove_file(path);
+            }
+        }
+    }
+
+    // Add checksums to specified files (after sorting, before commit)
+    if !add_checksum.is_empty() {
+        for entry in &entries {
+            if entry_is_file(entry) {
+                let path = entry.path();
+                let filename = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if add_checksum.iter().any(|f| filename.contains(f) || path.ends_with(f)) {
+                    let _ = fop_checksum::add_checksum(path, localhost, quiet, no_color);
+                }
             }
         }
     }
@@ -1640,6 +1670,8 @@ fn main() {
             &args.git_message,
             &args.history,
             args.git_binary.as_deref(),
+            &args.add_checksum,
+            args.localhost,
         ) {
             eprintln!("Error: {}", e);
         }
