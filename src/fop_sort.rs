@@ -1039,12 +1039,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     }
 
     // Read entire file into memory (avoids double-read for diff)
-    let original_content = match fs::read(filename) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Cannot open {}: {}", filename.display(), e);
-            return Ok(None);
-        }
+    let Ok(original_content) = fs::read(filename) else {
+        eprintln!("Cannot open {}", filename.display());
+        return Ok(None);
     };
     let reader = BufReader::new(Cursor::new(&original_content));
     let mut output = match File::create(&temp_file) {
