@@ -1008,6 +1008,27 @@ fn format_timestamp_utc(secs: u64) -> String {
     result
 }
 
+/// Format Unix timestamp as version "YYYYMMDDHHMM"
+#[inline]
+fn format_version_utc(secs: u64) -> String {
+    // Reuse timestamp logic - parse the formatted string
+    let ts = format_timestamp_utc(secs);
+    // "30 Jan 2026 08:31 UTC" -> extract parts
+    let parts: Vec<&str> = ts.split_whitespace().collect();
+    let day: u64 = parts[0].parse().unwrap_or(1);
+    let month = match parts[1] {
+        "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4,
+        "May" => 5, "Jun" => 6, "Jul" => 7, "Aug" => 8,
+        "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12,
+        _ => 1,
+    };
+    let year: u64 = parts[2].parse().unwrap_or(2026);
+    let time: Vec<&str> = parts[3].split(':').collect();
+    let hours: u64 = time[0].parse().unwrap_or(0);
+    let minutes: u64 = time[1].parse().unwrap_or(0);
+    format!("{}{:02}{:02}{:02}{:02}", year, month, day, hours, minutes)
+}
+
 #[inline]
 fn is_leap_year(year: u64) -> bool {
     (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
@@ -1022,6 +1043,20 @@ fn update_timestamp_line(line: &str) -> Option<String> {
         let keyword = if lower.contains("last modified:") { "Last modified" } else { "Last updated" };
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         Some(format!("{} {}: {}", prefix, keyword, format_timestamp_utc(now)))
+    } else {
+        None
+    }
+}
+
+/// Update version line in header
+#[inline]
+fn update_version_line(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let trimmed = lower.trim_start().trim_start_matches(['!', '#']).trim_start();
+    if trimmed.starts_with("version:") {
+        let prefix = if line.trim_start().starts_with('#') { "#" } else { "!" };
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        Some(format!("{} Version: {}", prefix, format_version_utc(now)))
     } else {
         None
     }
@@ -1165,6 +1200,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         let updated_line;
         let line = if config.add_timestamp && lines_checked <= CHECK_LINES {
             if let Some(updated) = update_timestamp_line(line) {
+                updated_line = updated;
+                updated_line.as_str()
+            } else if let Some(updated) = update_version_line(line) {
                 updated_line = updated;
                 updated_line.as_str()
             } else {
