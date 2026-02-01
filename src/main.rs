@@ -1588,6 +1588,16 @@ fn main() {
             Err(e) => eprintln!("Error processing {}: {}", file_path.display(), e),
         }
 
+        // Add checksum if requested
+        if !args.add_checksum.is_empty() {
+            let filename = file_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if args.add_checksum.iter().any(|f| filename.contains(f) || file_path.ends_with(f)) {
+                let _ = fop_checksum::add_checksum(file_path, args.localhost, args.quiet, args.no_color);
+            }
+        }
+
         // Handle git commit (unless no_commit mode)
         if !args.no_commit {
             let parent = file_path.parent().unwrap_or(std::path::Path::new("."));
