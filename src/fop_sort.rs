@@ -362,6 +362,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                 if let Some(domains) = option.strip_prefix("domain=") {
                     domain_list.extend(
                         domains.split('|')
+                            .map(|d| d.trim())                                    // Remove spaces
                             .map(|d| d.trim_start_matches(['=', '.', '&', '@', ',', '#', '$']))
                             .filter(|d| !d.is_empty())
                             .map(String::from)
