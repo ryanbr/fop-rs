@@ -315,6 +315,21 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Skip filters with regex values in options (contain =/.../ patterns)
     // ||example.com$removeparam=/^\\$ja=/
     // ||example.com$removeparam=/regex/
+    
+    // Remove errant spaces from network filters only
+    // Skip: element rules, regex patterns, and options with legitimate spaces
+    let is_element_rule = ["##", "#@#", "#?#", "#$#", "#@$#"]
+        .iter().any(|s| filter_in.contains(s));
+    let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=", 
+                             "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam="]
+        .iter().any(|s| filter_in.contains(s));
+    let filter_in = if !is_element_rule && !filter_in.starts_with('/') && !has_space_options {
+        filter_in.split_whitespace().collect::<String>()
+    } else {
+        filter_in.to_string()
+    };
+    let filter_in = filter_in.as_str();
+
     if let Some(dollar_pos) = filter_in.rfind('$') {
         let options_part = &filter_in[dollar_pos..];
         if options_part.contains("=/") {
