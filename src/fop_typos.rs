@@ -66,14 +66,10 @@ fn detect_space_after_comma(line: &str) -> Option<Typo> {
     }
 
     let fixed = format!("{}{}", fixed_domains, &line[sep_pos..]);
-    if fixed != line {
-        Some(Typo {
-            fixed,
-            description: Cow::Borrowed("Space after comma in domain list"),
-        })
-    } else {
-        None
-    }
+    Some(Typo {
+        fixed,
+        description: Cow::Borrowed("Space after comma in domain list"),
+    })
 }
 
 /// Wrong cosmetic domain separator (using | instead of ,)
@@ -84,12 +80,6 @@ static WRONG_COSMETIC_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| {
 // =============================================================================
 // Network Rule Typo Patterns
 // =============================================================================
-
-/// Triple $$$ before domain= ($$$domain= ? $domain=)
-static TRIPLE_DOLLAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\$\$domain=").unwrap());
-
-/// Double $$ before domain= ($$domain= ? $domain=)
-static DOUBLE_DOLLAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\$domain=").unwrap());
 
 /// Missing $ before domain= (after common file extensions)
 static MISSING_DOLLAR: LazyLock<Regex> = LazyLock::new(|| {
@@ -124,6 +114,18 @@ fn try_fix(line: &str, pattern: &Regex, replacement: &str, description: &'static
         }),
         Cow::Borrowed(_) => None,
     }
+}
+
+/// Fix literal substring typos without regex.
+#[inline]
+fn try_fix_literal(line: &str, needle: &str, replacement: &str, description: &'static str) -> Option<Typo> {
+    if !line.contains(needle) {
+        return None;
+    }
+    Some(Typo {
+        fixed: line.replacen(needle, replacement, 1),
+        description: Cow::Borrowed(description),
+    })
 }
 
 /// Strip leading commas without regex.
@@ -164,12 +166,11 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         || line.contains("$domain=")
         || line.contains(",domain=")
     {
-        // Use try_fix to avoid running the regex twice (is_match + replace)
-        // Note: in regex replacements, "$$" is a literal "$"
-        if let Some(typo) = try_fix(line, &TRIPLE_DOLLAR, "$$domain=", "Triple $ ($$$ ? $)") {
+        // Check for $ typos (literal match) then regex-based checks
+        if let Some(typo) = try_fix_literal(line, "$$$domain=", "$domain=", "Triple $ ($$$ ? $)") {
             return Some(typo);
         }
-        if let Some(typo) = try_fix(line, &DOUBLE_DOLLAR, "$$domain=", "Double $ ($$ ? $)") {
+        if let Some(typo) = try_fix_literal(line, "$$domain=", "$domain=", "Double $ ($$ ? $)") {
             return Some(typo);
         }
         if let Some(typo) = try_fix(line, &MISSING_DOLLAR, "$1$$domain=$3", "Missing $ before domain=") {
