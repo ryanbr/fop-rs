@@ -235,18 +235,15 @@ pub struct Addition {
 }
 
 /// Check added lines for typos
-pub fn check_additions(additions: &[Addition]) -> Vec<(Addition, Typo)> {
-    let mut results = Vec::new();
-    for add in additions {
-        if let Some(typo) = detect_typo(&add.content) {
-            results.push((add.clone(), typo));
-        }
-    }
-    results
+pub fn check_additions(additions: &[Addition]) -> Vec<(&Addition, Typo)> {
+    additions
+        .iter()
+        .filter_map(|add| detect_typo(&add.content).map(|typo| (add, typo)))
+        .collect()
 }
 
 /// Report typos in additions (formatted output)
-pub fn report_addition_typos(typos: &[(Addition, Typo)], no_color: bool) {
+pub fn report_addition_typos(typos: &[(&Addition, Typo)], no_color: bool) {
     if typos.is_empty() {
         return;
     }
