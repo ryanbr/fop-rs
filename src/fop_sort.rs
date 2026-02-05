@@ -279,7 +279,7 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> String {
     let skip = result.bytes()
         .take_while(|&b| b == b'*')
         .count()
-        .min(result.len() - 1);
+        .min(result.len().saturating_sub(1));
     // Check char after leading *s isn't | or !
     if skip > 0 && !matches!(result.as_bytes().get(skip), Some(b'|' | b'!')) {
         result = result[skip..].to_string();
@@ -987,44 +987,11 @@ fn combine_filters(
 /// Format Unix timestamp as "30 Jan 2026 08:31 UTC"
 #[inline]
 fn format_timestamp_utc(secs: u64) -> String {
+    const MONTHS: [&str; 12] = ["Jan","Feb","Mar","Apr","May","Jun",
+                                 "Jul","Aug","Sep","Oct","Nov","Dec"];
     // Pre-allocate: "30 Jan 2026 08:31 UTC" = ~21 chars
     let mut result = String::with_capacity(24);
-    const DAYS_IN_MONTH: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
-                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    
-    let secs_per_day = 86400u64;
-    let secs_per_hour = 3600u64;
-    let secs_per_min = 60u64;
-    
-    let mut days = secs / secs_per_day;
-    let remaining = secs % secs_per_day;
-    let hours = remaining / secs_per_hour;
-    let minutes = (remaining % secs_per_hour) / secs_per_min;
-    
-    // Start from 1970
-    let mut year = 1970u64;
-    loop {
-        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
-        if days < days_in_year {
-            break;
-        }
-        days -= days_in_year;
-        year += 1;
-    }
-    
-    let leap = is_leap_year(year);
-    let mut month = 0usize;
-    for (i, &d) in DAYS_IN_MONTH.iter().enumerate() {
-        let days_in_month = if i == 1 && leap { 29 } else { d };
-        if days < days_in_month {
-            month = i;
-            break;
-        }
-        days -= days_in_month;
-    }
-    
-    let day = days + 1;
+    let (year, month, day, hours, minutes) = decompose_utc(secs);
     use std::fmt::Write;
     let _ = write!(result, "{} {} {} {:02}:{:02} UTC", day, MONTHS[month], year, hours, minutes);
     result
@@ -1033,22 +1000,32 @@ fn format_timestamp_utc(secs: u64) -> String {
 /// Format Unix timestamp as version "YYYYMMDDHHMM"
 #[inline]
 fn format_version_utc(secs: u64) -> String {
-    // Reuse timestamp logic - parse the formatted string
-    let ts = format_timestamp_utc(secs);
-    // "30 Jan 2026 08:31 UTC" -> extract parts
-    let parts: Vec<&str> = ts.split_whitespace().collect();
-    let day: u64 = parts[0].parse().unwrap_or(1);
-    let month = match parts[1] {
-        "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4,
-        "May" => 5, "Jun" => 6, "Jul" => 7, "Aug" => 8,
-        "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12,
-        _ => 1,
-    };
-    let year: u64 = parts[2].parse().unwrap_or(2026);
-    let time: Vec<&str> = parts[3].split(':').collect();
-    let hours: u64 = time[0].parse().unwrap_or(0);
-    let minutes: u64 = time[1].parse().unwrap_or(0);
-    format!("{}{:02}{:02}{:02}{:02}", year, month, day, hours, minutes)
+    let (year, month, day, hours, minutes) = decompose_utc(secs);
+    format!("{}{:02}{:02}{:02}{:02}", year, month + 1, day, hours, minutes)
+}
+
+/// Decompose Unix timestamp into (year, month_0indexed, day, hours, minutes)
+fn decompose_utc(secs: u64) -> (u64, usize, u64, u64, u64) {
+    const DAYS_IN_MONTH: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut days = secs / 86400;
+    let remaining = secs % 86400;
+    let hours = remaining / 3600;
+    let minutes = (remaining % 3600) / 60;
+    let mut year = 1970u64;
+    loop {
+        let diy = if is_leap_year(year) { 366 } else { 365 };
+        if days < diy { break; }
+        days -= diy;
+        year += 1;
+    }
+    let leap = is_leap_year(year);
+    let mut month = 0usize;
+    for (i, &d) in DAYS_IN_MONTH.iter().enumerate() {
+        let dim = if i == 1 && leap { 29 } else { d };
+        if days < dim { month = i; break; }
+        days -= dim;
+    }
+    (year, month, days + 1, hours, minutes)
 }
 
 #[inline]
