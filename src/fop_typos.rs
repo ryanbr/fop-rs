@@ -195,7 +195,7 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
     if let Some(caps) = EXTRA_HASH.captures(line) {
         let hashes = &caps[2];
         if hashes.len() > 2 {
-            let fixed = EXTRA_HASH.replace(line, "${1}##${3}").to_string();
+            let fixed = format!("{}##{}", &caps[1], &caps[3]);
             return Some(Typo {
                 fixed,
                 description: Cow::Owned(format!("Extra # ({} ? ##)", hashes)),
