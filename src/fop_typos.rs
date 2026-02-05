@@ -20,7 +20,7 @@ static EXTRA_HASH: LazyLock<Regex> =
 
 /// Single # that should be ## (domain#.class)
 static SINGLE_HASH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([^#]+)#([.#\[\*][a-zA-Z])").unwrap());
+    LazyLock::new(|| Regex::new(r"^([^#]+)#([.#\[\*\+][a-zA-Z])").unwrap());
 
 /// Double dot in cosmetic selector (##..class)
 static DOUBLE_DOT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(##)\.\.([a-zA-Z])").unwrap());
@@ -322,6 +322,9 @@ mod tests {
 
         let typo = detect_typo("domain#[class]").unwrap();
         assert_eq!(typo.fixed, "domain##[class]");
+
+        let typo = detect_typo("domain#+js(aopr)").unwrap();
+        assert_eq!(typo.fixed, "domain##+js(aopr)");
     }
 
     #[test]
