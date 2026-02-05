@@ -764,8 +764,6 @@ pub fn create_pull_request(
     let pr_url = get_remote_url(base_cmd, remote)
         .and_then(|remote| generate_pr_url(&remote, &base_branch, &pr_branch, pr_body.as_deref()));
 
-    eprintln!("DEBUG: pr_body = {:?}", pr_body);
-
     if let Some(ref url) = pr_url {
         println!("\n{}", "Pull request branch pushed successfully!".green());
         println!("\nCreate PR at:\n  {}", url.cyan());
