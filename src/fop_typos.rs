@@ -33,6 +33,52 @@ static TRAILING_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r",+(#[@?$%
 /// Leading comma after domain start (,domain##.ad)
 static LEADING_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^,+([a-zA-Z])").unwrap());
 
+/// Detect space after comma in cosmetic domain list (before ## separator only).
+/// Uses string splitting rather than regex to avoid matching inside selectors.
+fn detect_space_after_comma(line: &str) -> Option<Typo> {
+    // Find the ## separator (any variant: ##, #@#, #?#, #$#, #@$#, #%#, #@%#, #+js)
+    // Look for first occurrence of # followed by another # or +
+    let bytes = line.as_bytes();
+    let mut sep_pos = None;
+    for i in 0..bytes.len().saturating_sub(1) {
+        if bytes[i] == b'#' && (bytes[i + 1] == b'#' || bytes[i + 1] == b'+' || bytes[i + 1] == b'@' || bytes[i + 1] == b'?' || bytes[i + 1] == b'$' || bytes[i + 1] == b'%') {
+            sep_pos = Some(i);
+            break;
+        }
+    }
+
+    let sep_pos = sep_pos?;
+    let domain_part = &line[..sep_pos];
+
+    // Check if domain part has ", " (comma followed by space)
+    if !domain_part.contains(", ") {
+        return None;
+    }
+
+    // Remove spaces after commas in domain part only
+    let mut fixed_domains = String::with_capacity(domain_part.len());
+    let mut chars = domain_part.chars().peekable();
+    while let Some(ch) = chars.next() {
+        fixed_domains.push(ch);
+        if ch == ',' {
+            while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
+                chars.next();
+            }
+        }
+    }
+
+    let fixed = format!("{}{}", fixed_domains, &line[sep_pos..]);
+    if fixed != line {
+        Some(Typo {
+            original: line.to_string(),
+            fixed,
+            description: "Space after comma in domain list".to_string(),
+        })
+    } else {
+        None
+    }
+}
+
 /// Wrong cosmetic domain separator (using | instead of ,)
 static WRONG_COSMETIC_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^([a-zA-Z0-9~][a-zA-Z0-9\.\-,]*\.[a-zA-Z]{2,})\|([a-zA-Z0-9~][a-zA-Z0-9\.\-\|,]*)(#[@?$%]?#|#@[$%?]#|#\+js)").unwrap()
@@ -54,8 +100,10 @@ static MISSING_DOLLAR: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Wrong domain separator (using , instead of |)
+/// Lookahead ensures the token after the comma is also a domain (has a dot + TLD),
+/// preventing false positives on option names like "image" or "script".
 static WRONG_DOMAIN_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(domain=|\|)([a-zA-Z0-9~\*][a-zA-Z0-9\.\-\*]*\.[a-zA-Z]{2,}),([a-zA-Z0-9~\*])")
+    Regex::new(r"(domain=|\|)([a-zA-Z0-9~\*][a-zA-Z0-9\.\-\*]*\.[a-zA-Z]{2,}),([a-zA-Z0-9~\*][a-zA-Z0-9\.\-\*]*\.[a-zA-Z]{2,})")
         .unwrap()
 });
 
@@ -100,6 +148,7 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         || line.contains(",domain=")
     {
         // Use try_fix to avoid running the regex twice (is_match + replace)
+        // Note: in regex replacements, "$$" is a literal "$"
         if let Some(typo) = try_fix(line, &TRIPLE_DOLLAR, "$$domain=", "Triple $ ($$$ ? $)") {
             return Some(typo);
         }
@@ -156,6 +205,7 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         .or_else(|| try_fix(line, &DOUBLE_COMMA, ",", "Double comma (,, ? ,)"))
         .or_else(|| try_fix(line, &TRAILING_COMMA, "${1}", "Trailing comma before ##"))
         .or_else(|| try_fix(line, &LEADING_COMMA, "${1}", "Leading comma removed"))
+        .or_else(|| detect_space_after_comma(line))
 }
 
 /// Fix all typos in a line (iterates until no more fixes)
@@ -317,6 +367,38 @@ mod tests {
         assert!(detect_typo("domain##+js(aopr, ads)").is_none());
     }
 
+     #[test]
+    fn test_space_after_comma() {
+        // Space after comma in domain list
+        let typo = detect_typo("domain.com, domain2.com##.ad").unwrap();
+        assert_eq!(typo.fixed, "domain.com,domain2.com##.ad");
+
+        // Multiple spaces
+        let typo = detect_typo("domain.com,  domain2.com##.ad").unwrap();
+        assert_eq!(typo.fixed, "domain.com,domain2.com##.ad");
+
+        // Multiple domains with spaces
+        let (fixed, _) = fix_all_typos("a.com, b.com, c.com##.ad");
+        assert_eq!(fixed, "a.com,b.com,c.com##.ad");
+
+        // With +js
+        let typo = detect_typo("domain.com, domain2.com##+js(aopr)").unwrap();
+        assert_eq!(typo.fixed, "domain.com,domain2.com##+js(aopr)");
+
+        // No space should not match
+        assert!(detect_typo("domain.com,domain2.com##.ad").is_none());
+
+        // Spaces inside selector must NOT be touched
+        assert!(detect_typo("domain.com##+js(set-cookie, cookieAcknowledged, true)").is_none());
+        assert!(detect_typo("domain.com##body:has-text(hello, world)").is_none());
+        assert!(detect_typo("##.ad:has(.banner, .popup)").is_none());
+
+        // Real-world case: domain list + js with spaces in args
+        let (fixed, fixes) = fix_all_typos("domain.com, stromnetz.berlin##+js(set-cookie, cookieAgree, true)");
+        assert_eq!(fixed, "domain.com,stromnetz.berlin##+js(set-cookie, cookieAgree, true)");
+        assert_eq!(fixes.len(), 1);
+    }
+
     #[test]
     fn test_triple_dollar() {
         let result = detect_typo("@@||example.com/cc.js$$$domain=asket.com");
@@ -415,6 +497,13 @@ mod tests {
 
         // Valid pipe separator should not match
         let result = detect_typo("||example.com$domain=site1.com|site2.com");
+        assert!(result.is_none());
+
+        // Option name after domain should not be treated as domain separator typo
+        let result = detect_typo("||example.com$domain=site1.com,image");
+        assert!(result.is_none());
+
+        let result = detect_typo("||example.com$image,domain=site1.com");
         assert!(result.is_none());
     }
 }
