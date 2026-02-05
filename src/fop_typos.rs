@@ -220,18 +220,20 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
 
 /// Fix all typos in a line (iterates until no more fixes)
 pub fn fix_all_typos(line: &str) -> (String, Vec<String>) {
-    let mut current = line.to_string();
     let mut all_fixes = Vec::new();
 
+    // Fast path: no typo on first check - return without allocating
+    let Some(first) = detect_typo(line) else {
+        return (line.to_string(), all_fixes);
+    };
+    all_fixes.push(first.description.into_owned());
+    let mut current = first.fixed;
+
     // Limit iterations to prevent infinite loops
-    for _ in 0..10 {
-        match detect_typo(&current) {
-            Some(typo) => {
-                all_fixes.push(typo.description.into_owned());
-                current = typo.fixed;
-            }
-            None => break,
-        }
+    for _ in 0..9 {
+        let Some(typo) = detect_typo(&current) else { break };
+        all_fixes.push(typo.description.into_owned());
+        current = typo.fixed;
     }
 
     (current, all_fixes)
