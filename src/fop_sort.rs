@@ -276,12 +276,13 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> String {
     let original_len = result.len();
 
     // Remove leading asterisks
-    while result.len() > 1
-        && result.starts_with('*')
-        && !result[1..].starts_with('|')
-        && !result[1..].starts_with('!')
-    {
-        result.remove(0);
+    let skip = result.bytes()
+        .take_while(|&b| b == b'*')
+        .count()
+        .min(result.len() - 1);
+    // Check char after leading *s isn't | or !
+    if skip > 0 && !matches!(result.as_bytes().get(skip), Some(b'|' | b'!')) {
+        result = result[skip..].to_string();
     }
 
     // Remove trailing asterisks
