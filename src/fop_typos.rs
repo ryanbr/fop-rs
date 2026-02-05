@@ -7,6 +7,7 @@
 //! - domain,,domain##.ad ? domain,domain##.ad
 
 use regex::Regex;
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 // =============================================================================
@@ -71,7 +72,7 @@ fn detect_space_after_comma(line: &str) -> Option<Typo> {
     if fixed != line {
         Some(Typo {
             fixed,
-            description: "Space after comma in domain list".to_string(),
+            description: Cow::Borrowed("Space after comma in domain list"),
         })
     } else {
         None
@@ -113,20 +114,19 @@ static WRONG_DOMAIN_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| {
 #[derive(Debug, Clone)]
 pub struct Typo {
     pub fixed: String,
-    pub description: String,
+    pub description: Cow<'static, str>,
 }
 
 /// Helper to create Typo if regex matches and changes line
 #[inline]
-fn try_fix(line: &str, pattern: &Regex, replacement: &str, description: &str) -> Option<Typo> {
-    let fixed = pattern.replace_all(line, replacement);
-    if fixed != line {
-        return Some(Typo {
-            fixed: fixed.to_string(),
-            description: description.to_string(),
-        });
+fn try_fix(line: &str, pattern: &Regex, replacement: &str, description: &'static str) -> Option<Typo> {
+    match pattern.replace_all(line, replacement) {
+        Cow::Owned(fixed) => Some(Typo {
+            fixed,
+            description: Cow::Borrowed(description),
+        }),
+        Cow::Borrowed(_) => None,
     }
-    None
 }
 
 /// Check a cosmetic rule for typos
@@ -184,7 +184,7 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
             let fixed = EXTRA_HASH.replace(line, "${1}##${3}").to_string();
             return Some(Typo {
                 fixed,
-                description: format!("Extra # ({} ? ##)", hashes),
+                description: Cow::Owned(format!("Extra # ({} ? ##)", hashes)),
             });
         }
     }
@@ -213,7 +213,7 @@ pub fn fix_all_typos(line: &str) -> (String, Vec<String>) {
     for _ in 0..10 {
         match detect_typo(&current) {
             Some(typo) => {
-                all_fixes.push(typo.description);
+                all_fixes.push(typo.description.into_owned());
                 current = typo.fixed;
             }
             None => break,
