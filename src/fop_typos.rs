@@ -70,7 +70,6 @@ fn detect_space_after_comma(line: &str) -> Option<Typo> {
     let fixed = format!("{}{}", fixed_domains, &line[sep_pos..]);
     if fixed != line {
         Some(Typo {
-            original: line.to_string(),
             fixed,
             description: "Space after comma in domain list".to_string(),
         })
@@ -113,7 +112,6 @@ static WRONG_DOMAIN_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| {
 
 #[derive(Debug, Clone)]
 pub struct Typo {
-    pub original: String,
     pub fixed: String,
     pub description: String,
 }
@@ -124,7 +122,6 @@ fn try_fix(line: &str, pattern: &Regex, replacement: &str, description: &str) ->
     let fixed = pattern.replace_all(line, replacement);
     if fixed != line {
         return Some(Typo {
-            original: line.to_string(),
             fixed: fixed.to_string(),
             description: description.to_string(),
         });
@@ -186,7 +183,6 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         if hashes.len() > 2 {
             let fixed = EXTRA_HASH.replace(line, "${1}##${3}").to_string();
             return Some(Typo {
-                original: line.to_string(),
                 fixed,
                 description: format!("Extra # ({} ? ##)", hashes),
             });
@@ -260,7 +256,7 @@ pub fn report_addition_typos(typos: &[(Addition, Typo)], no_color: bool) {
         if no_color {
             println!(
                 "  {}:{}: {} ? {}",
-                add.file, add.line_num, typo.original, typo.fixed
+                add.file, add.line_num, add.content, typo.fixed
             );
         } else {
             use owo_colors::OwoColorize;
@@ -268,7 +264,7 @@ pub fn report_addition_typos(typos: &[(Addition, Typo)], no_color: bool) {
                 "  {}:{}: {} ? {}",
                 add.file.cyan(),
                 add.line_num,
-                typo.original.red(),
+                add.content.red(),
                 typo.fixed.green()
             );
         }
@@ -367,7 +363,7 @@ mod tests {
         assert!(detect_typo("domain##+js(aopr, ads)").is_none());
     }
 
-     #[test]
+    #[test]
     fn test_space_after_comma() {
         // Space after comma in domain list
         let typo = detect_typo("domain.com, domain2.com##.ad").unwrap();
