@@ -151,6 +151,12 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         return None;
     }
 
+    // Fast reject: no trigger characters means no possible typo
+    // All patterns require at least one of: # $ , |
+    if !line.bytes().any(|b| b == b'#' || b == b'$' || b == b',' || b == b'|') {
+        return None;
+    }
+
     // Network rules - check for $$ and $$$ typos
     if line.starts_with("||")
         || line.starts_with('|')
