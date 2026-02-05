@@ -668,17 +668,12 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
     }
 
     // Make pseudo classes lowercase
-    let pseudo_caps: Vec<(String, String)> = PSEUDO_PATTERN
+    let pseudo_caps: Vec<String> = PSEUDO_PATTERN
         .captures_iter(&selector)
-        .map(|caps| {
-            (
-                caps[1].to_string(),
-                caps.get(2).map(|m| m.as_str()).unwrap_or("").to_string(),
-            )
-        })
+        .map(|caps| caps[1].to_string())
         .collect();
 
-    for (pseudo_class, ac) in pseudo_caps {
+    for pseudo_class in pseudo_caps {
         if selector_only_strings.contains(&pseudo_class)
             || !selector_without_strings.contains(&pseudo_class)
         {
@@ -689,9 +684,7 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
             break;
         }
 
-        let old = format!("{}{}", pseudo_class, ac);
-        let new = format!("{}{}", pseudo_class.to_ascii_lowercase(), ac);
-        selector = selector.replacen(&old, &new, 1);
+        selector = selector.replacen(&pseudo_class, &pseudo_class.to_ascii_lowercase(), 1);
     }
 
     // Remove markers and return complete rule
