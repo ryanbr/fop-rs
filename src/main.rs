@@ -1359,9 +1359,17 @@ fn main() {
     }
 
     // Load banned list early so we can show count in greeting
-    let banned_info = args.check_banned_list.as_ref().and_then(|list_path| {
-        fop_sort::load_banned_list(list_path).ok().map(|set| (set.len(), list_path.to_string_lossy().to_string()))
+    let banned_domains_early = args.check_banned_list.as_ref().and_then(|list_path| {
+        match fop_sort::load_banned_list(list_path) {
+            Ok(set) => Some(set),
+            Err(e) => {
+                eprintln!("Warning: Could not load banned list {}: {}", list_path.display(), e);
+                None
+            }
+        }
     });
+    let banned_info = banned_domains_early.as_ref()
+        .map(|set| (set.len(), args.check_banned_list.as_ref().unwrap().to_string_lossy().to_string()));
 
     if !args.quiet {
         print_greeting(args.no_commit, args.no_color, config_path.as_deref(),
@@ -1383,16 +1391,7 @@ fn main() {
                 args.ignore_files.push(filename.to_string());
             }
         }
-
-        match fop_sort::load_banned_list(path) {
-            Ok(domains) => {
-                Some(domains)
-            }
-            Err(e) => {
-                eprintln!("Warning: Could not load banned list {}: {}", path.display(), e);
-                None
-            }
-        }
+        banned_domains_early
     } else {
         None
     };
