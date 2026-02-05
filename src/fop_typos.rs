@@ -31,9 +31,6 @@ static DOUBLE_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r",,+").unwra
 /// Trailing comma before ## (domain,##.ad)
 static TRAILING_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r",+(#[@?$%]?#)").unwrap());
 
-/// Leading comma after domain start (,domain##.ad)
-static LEADING_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^,+([a-zA-Z])").unwrap());
-
 /// Detect space after comma in cosmetic domain list (before ## separator only).
 /// Uses string splitting rather than regex to avoid matching inside selectors.
 fn detect_space_after_comma(line: &str) -> Option<Typo> {
@@ -129,6 +126,23 @@ fn try_fix(line: &str, pattern: &Regex, replacement: &str, description: &'static
     }
 }
 
+/// Strip leading commas without regex.
+#[inline]
+fn fix_leading_comma(line: &str) -> Option<Typo> {
+    if !line.starts_with(',') {
+        return None;
+    }
+    let trimmed = line.trim_start_matches(',');
+    if trimmed.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) {
+        Some(Typo {
+            fixed: trimmed.to_string(),
+            description: Cow::Borrowed("Leading comma removed"),
+        })
+    } else {
+        None
+    }
+}
+
 /// Check a cosmetic rule for typos
 #[inline]
 pub fn detect_typo(line: &str) -> Option<Typo> {
@@ -200,7 +214,7 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
     try_fix(line, &DOUBLE_DOT, "${1}.${2}", "Double dot (.. ? .)")
         .or_else(|| try_fix(line, &DOUBLE_COMMA, ",", "Double comma (,, ? ,)"))
         .or_else(|| try_fix(line, &TRAILING_COMMA, "${1}", "Trailing comma before ##"))
-        .or_else(|| try_fix(line, &LEADING_COMMA, "${1}", "Leading comma removed"))
+        .or_else(|| fix_leading_comma(line))
         .or_else(|| detect_space_after_comma(line))
 }
 
