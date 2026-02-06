@@ -68,19 +68,19 @@ pub(crate) fn flush_warnings() {
     let Some(ref path) = *guard else { return };
     let Ok(mut buffer) = WARNING_BUFFER.lock() else { return };
     if buffer.is_empty() { return; }
-            use std::fs::OpenOptions;
-            use std::io::{BufWriter, Write};
-            if let Ok(file) = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(path)
-            {
-                let mut writer = BufWriter::new(file);
-                for msg in buffer.drain(..) {
-                    let _ = writeln!(writer, "{}", msg);
-                }
-            }
+    use std::fs::OpenOptions;
+    use std::io::{BufWriter, Write};
+    if let Ok(file) = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)
+    {
+        let mut writer = BufWriter::new(file);
+        for msg in buffer.drain(..) {
+            let _ = writeln!(writer, "{}", msg);
+        }
+    }
 }
 
 use rayon::prelude::*;
@@ -1173,8 +1173,15 @@ fn process_location(
             }
 
             // Check for typos in added lines
+            // Get added lines once for both typo and banned domain checks
+            let additions = if fix_typos_on_add || banned_domains.as_ref().is_some_and(|b| !b.is_empty()) {
+                get_added_lines(&base_cmd)
+            } else {
+                None
+            };
+
             if fix_typos_on_add {
-                if let Some(additions) = get_added_lines(&base_cmd) {
+                if let Some(ref additions) = additions {
                     let typos = fop_typos::check_additions(&additions);
                     if !typos.is_empty() {
                         fop_typos::report_addition_typos(&typos, no_color);
@@ -1198,8 +1205,8 @@ fn process_location(
            // Check for banned domains in added lines
            if let Some(ref banned) = banned_domains {
                 if !banned.is_empty() {
-                    if let Some(additions) = get_added_lines(&base_cmd) {
-                        for add in &additions {
+                    if let Some(ref additions) = additions {
+                        for add in additions {
                             // Skip the banned list file itself
                             if let Some(banned_file) = banned_list_file {
                                 if add.file.ends_with(banned_file) {
