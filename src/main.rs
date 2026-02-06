@@ -736,10 +736,6 @@ pub(crate) static TREE_SELECTOR: LazyLock<Regex> =
 pub(crate) static UNICODE_SELECTOR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap());
 
-#[allow(dead_code)]
-pub(crate) static SHORT_DOMAIN_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\|*[a-zA-Z0-9]").unwrap());
-
 pub(crate) static DOMAIN_EXTRACT_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\|*([^/\^\$]+)").unwrap());
 
@@ -755,14 +751,6 @@ const IGNORE_FILES: &[&str] = &["test-files-to-ingore.txt"];
 
 /// Directories to ignore
 const IGNORE_DIRS: &[&str] = &["folders-to-ingore"];
-
-/// Domains that should ignore the 7 character size restriction
-#[allow(dead_code)]
-pub(crate) static IGNORE_DOMAINS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    let mut set = HashSet::new();
-    set.insert("a.sampl");
-    set
-});
 
 /// Known Adblock Plus options (HashSet for O(1) lookup)
 pub(crate) static KNOWN_OPTIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
@@ -1182,7 +1170,7 @@ fn process_location(
 
             if fix_typos_on_add {
                 if let Some(ref additions) = additions {
-                    let typos = fop_typos::check_additions(&additions);
+                    let typos = fop_typos::check_additions(additions);
                     if !typos.is_empty() {
                         fop_typos::report_addition_typos(&typos, no_color);
                         println!("\nFound {} typo(s) in added lines.", typos.len());
