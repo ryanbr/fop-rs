@@ -64,10 +64,19 @@ pub(crate) fn write_warning(message: &str) {
 
 /// Flush buffered warnings to file
 pub(crate) fn flush_warnings() {
-    let Ok(guard) = WARNING_OUTPUT.lock() else { return };
-    let Some(ref path) = *guard else { return };
-    let Ok(mut buffer) = WARNING_BUFFER.lock() else { return };
-    if buffer.is_empty() { return; }
+    // Clone the output path and take the warnings out of the mutex so we don't hold locks during I/O.
+    let path = {
+        let Ok(guard) = WARNING_OUTPUT.lock() else { return };
+        let Some(ref path) = *guard else { return };
+        path.clone()
+    };
+
+    let warnings = {
+        let Ok(mut buffer) = WARNING_BUFFER.lock() else { return };
+        if buffer.is_empty() { return; }
+        std::mem::take(&mut *buffer)
+    };
+    
     use std::fs::OpenOptions;
     use std::io::{BufWriter, Write};
     if let Ok(file) = OpenOptions::new()
@@ -77,7 +86,7 @@ pub(crate) fn flush_warnings() {
         .open(path)
     {
         let mut writer = BufWriter::new(file);
-        for msg in buffer.drain(..) {
+        for msg in warnings {
             let _ = writeln!(writer, "{}", msg);
         }
     }
