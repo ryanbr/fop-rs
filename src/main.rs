@@ -305,12 +305,15 @@ fn parse_comment_chars(config: &HashMap<String, String>, key: &str) -> Vec<Strin
 
 impl Args {
     fn parse() -> (Self, Option<String>) {
+        // Collect args once so we don't re-iterate env::args() multiple times.
+        let argv: Vec<String> = env::args().skip(1).collect();
+
         // First pass: look for --ignore-config and --config-file arguments
-        let ignore_config = env::args().any(|arg| arg == "--ignore-config");
+        let ignore_config = argv.iter().any(|arg| arg == "--ignore-config");
 
         let mut config_file: Option<PathBuf> = None;
         if !ignore_config {
-            for arg in env::args().skip(1) {
+            for arg in &argv {
                 if arg.starts_with("--config-file=") {
                     let path = arg.trim_start_matches("--config-file=");
                     config_file = Some(PathBuf::from(path));
@@ -392,7 +395,7 @@ impl Args {
         };
 
         // Command line args override config
-        for arg in env::args().skip(1) {
+        for arg in argv {
             match arg.as_str() {
                 "-h" | "--help" => args.help = true,
                 "-V" | "--version" => args.version = true,
