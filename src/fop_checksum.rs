@@ -24,36 +24,25 @@ fn is_checksum_line(line: &str) -> bool {
 
 /// Calculate ABP-compatible checksum: MD5 of normalized content, Base64 without padding.
 /// Normalization: remove \r, collapse consecutive \n.
+/// Matches Perl: `$data =~ s/\r//g; $data =~ s/\n+/\n/g; md5_base64(encode_utf8($data))`
 #[inline]
 fn calculate_checksum(data: &str) -> String {
     let mut hasher = Context::new();
-    let mut last_was_newline = false;
-    let mut pending_newline = false;
+    let mut prev_newline = false;
 
-    for ch in data.chars() {
-        match ch {
-            '\r' => continue,
-            '\n' => {
-                if !last_was_newline {
-                    pending_newline = true;
-                    last_was_newline = true;
-                }
+    for byte in data.bytes() {
+        match byte {
+            b'\r' => continue,
+            b'\n' if prev_newline => continue,
+            b'\n' => {
+                hasher.consume(b"\n");
+                prev_newline = true;
             }
             _ => {
-                if pending_newline {
-                    hasher.consume(b"\n");
-                    pending_newline = false;
-                }
-                let mut buf = [0u8; 4];
-                let encoded = ch.encode_utf8(&mut buf);
-                hasher.consume(encoded.as_bytes());
-                last_was_newline = false;
+                hasher.consume([byte]);
+                prev_newline = false;
             }
         }
-    }
-
-    if pending_newline {
-        hasher.consume(b"\n");
     }
 
     let digest = hasher.finalize();
@@ -122,36 +111,13 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
             })
             .collect()
     } else {
-        // Insert new checksum line after header/timestamp
-        let mut insert_idx = 0;
-        for (i, line) in without_checksum.iter().enumerate() {
-            let trimmed = line.trim();
-            // After [Adblock...] header
-            if i == 0 && trimmed.starts_with('[') && trimmed.ends_with(']') {
-                insert_idx = 1;
-                continue;
-            }
-            // After timestamp lines
-            let lower = trimmed.to_ascii_lowercase();
-            if lower.contains("last modified:") || lower.contains("last updated:") {
-                insert_idx = i + 1;
-                break;
-            }
-            if i >= 10 {
-                break;
-            }
-        }
-
+        // Insert checksum after line 1 (matches Perl: $data =~ s/(\r?\n)/$1! Checksum: $checksum$1/)
         let mut result: Vec<String> = Vec::with_capacity(without_checksum.len() + 1);
         for (i, line) in without_checksum.iter().enumerate() {
-            if i == insert_idx {
+            result.push(line.to_string());
+            if i == 0 {
                 result.push(checksum_line.clone());
             }
-            result.push(line.to_string());
-        }
-        // Handle insert at position 0
-        if insert_idx == 0 && !result.iter().any(|l| l == &checksum_line) {
-            result.insert(0, checksum_line);
         }
         result
     };
