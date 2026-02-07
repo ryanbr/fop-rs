@@ -252,7 +252,10 @@ fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Optio
 fn parse_bool(config: &HashMap<String, String>, key: &str, default: bool) -> bool {
     config
         .get(key)
-        .map(|v| matches!(v.to_lowercase().as_str(), "true" | "yes" | "1"))
+        .map(|v| {
+            let v = v.trim();
+            v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+        })
         .unwrap_or(default)
 }
 
