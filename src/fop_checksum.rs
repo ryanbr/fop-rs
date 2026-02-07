@@ -16,7 +16,8 @@ use md5::Context;
 fn is_checksum_line(line: &str) -> bool {
     let trimmed = line.trim();
     if let Some(rest) = trimmed.strip_prefix('!').or_else(|| trimmed.strip_prefix('#')) {
-        rest.trim_start().to_ascii_lowercase().starts_with("checksum")
+        let rest = rest.trim_start();
+        rest.len() >= 8 && rest[..8].eq_ignore_ascii_case("checksum")
     } else {
         false
     }
