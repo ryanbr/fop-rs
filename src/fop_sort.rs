@@ -845,18 +845,14 @@ fn combine_filters(
         let (domain1_str, domains1_full) = if i + 1 < uncombined.len() {
             if let Some(ref caps) = domains1 {
                 (
-                    caps.get(1)
-                        .map(|m| m.as_str().to_string())
-                        .unwrap_or_default(),
-                    caps.get(0)
-                        .map(|m| m.as_str().to_string())
-                        .unwrap_or_default(),
+                    caps.get(1).map(|m| m.as_str()).unwrap_or(""),
+                    caps.get(0).map(|m| m.as_str()).unwrap_or(""),
                 )
             } else {
-                (String::new(), String::new())
+                ("", "")
             }
         } else {
-            (String::new(), String::new())
+            ("", "")
         };
 
         let domains2 = if i + 1 < uncombined.len() {
@@ -893,7 +889,7 @@ fn combine_filters(
             .unwrap_or("");
 
         // Check if domain patterns are compatible (same structure except domain list)
-        let pattern1_with_domain2 = domains1_full.replace(&domain1_str, domain2_str);
+        let pattern1_with_domain2 = domains1_full.replace(domain1_str, domain2_str);
         if pattern1_with_domain2 != domains2_full {
             combined.push(std::mem::take(&mut uncombined[i]));
             continue;
@@ -941,7 +937,7 @@ fn combine_filters(
         let new_domain_str = new_domains.join(separator);
 
         // Create the substitution pattern (full match with new domains)
-        let domains_substitute = domains1_full.replace(&domain1_str, &new_domain_str);
+        let domains_substitute = domains1_full.replace(domain1_str, &new_domain_str);
 
         // Escape $ for regex replacement ($ is special in replacement strings)
         let escaped_substitute = if domains_substitute.contains('$') {
