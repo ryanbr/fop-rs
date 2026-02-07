@@ -55,6 +55,53 @@ fn calculate_checksum(data: &str) -> String {
     encoded
 }
 
+/// Result of checksum verification
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChecksumResult {
+    /// Checksum matches
+    Valid,
+    /// Checksum doesn't match (expected, found)
+    Invalid { expected: String, found: String },
+    /// No checksum line in file
+    Missing,
+}
+
+/// Verify checksum in a filter list file.
+/// Returns the verification result without modifying the file.
+pub fn verify_checksum(filename: &Path) -> io::Result<ChecksumResult> {
+    let content = fs::read_to_string(filename)?;
+    if content.is_empty() {
+        return Ok(ChecksumResult::Missing);
+    }
+
+    let lines: Vec<&str> = content.lines().collect();
+
+    // Find existing checksum
+    let found_checksum = lines.iter()
+        .find(|line| is_checksum_line(line))
+        .and_then(|line| line.split(':').nth(1))
+        .map(|s| s.trim().to_string());
+
+    let Some(found) = found_checksum else {
+        return Ok(ChecksumResult::Missing);
+    };
+
+    // Calculate expected checksum
+    let data_for_hash: String = lines.iter()
+        .filter(|line| !is_checksum_line(line))
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n") + "\n";
+
+    let expected = calculate_checksum(&data_for_hash);
+
+    if expected == found {
+        Ok(ChecksumResult::Valid)
+    } else {
+        Ok(ChecksumResult::Invalid { expected, found })
+    }
+}
+
 /// Add or update checksum in a filter list file.
 /// - `use_hash`: if true, use `#` prefix (for localhost/hosts files), otherwise `!`
 ///

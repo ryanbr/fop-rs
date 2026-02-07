@@ -199,6 +199,8 @@ struct Args {
     add_timestamp: bool,
     /// Add/update checksum for specific files
     add_checksum: Vec<String>,
+    /// Validate checksum for specific files
+    validate_checksum: Vec<String>,
     /// Custom git binary path
     git_binary: Option<String>,
 }
@@ -388,6 +390,7 @@ impl Args {
             help: false,
             version: false,
             add_timestamp: parse_bool(&config, "add-timestamp", false),
+            validate_checksum: Vec::new(),
             add_checksum: config.get("add-checksum")
                 .map(|s| s.split(',').map(|f| f.trim().to_string()).collect())
                 .unwrap_or_default(),
@@ -501,6 +504,12 @@ impl Args {
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
                 }
+                _ if arg.starts_with("--validate-checksum=") => {
+                    args.validate_checksum = arg.trim_start_matches("--validate-checksum=")
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                }
                 _ if arg.starts_with("--git-binary=") => {
                     args.git_binary = Some(arg.trim_start_matches("--git-binary=").to_string());
                 }
@@ -594,6 +603,7 @@ impl Args {
         println!("        --ignore-config        Ignore .fopconfig file");
         println!("        --add-timestamp        Update 'Last modified/updated' timestamp in header");
         println!("        --add-checksum=FILES   Add/update checksum for specific files (comma-separated)");
+        println!("        --validate-checksum=FILES  Validate checksum for specific files (exit 1 on failure)");
         println!("        --show-config   Show applied configuration and exit");
         println!("        --git-binary=<path>    Path to git binary (default: git in PATH)");
         println!("    -h, --help          Show this help message");
@@ -1160,7 +1170,9 @@ fn process_location(
                 let filename = path.file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("");
-                if add_checksum.iter().any(|f| filename.contains(f) || path.ends_with(f)) {
+                if add_checksum.iter().any(|f| filename == f.as_str())
+                    || add_checksum.iter().any(|f| path.ends_with(f.as_str()))
+                {
                     let _ = fop_checksum::add_checksum(path, localhost, quiet, no_color);
                 }
             }
@@ -1480,6 +1492,51 @@ fn main() {
         }
     }
 
+    // Validate checksums if requested
+    if !args.validate_checksum.is_empty() {
+        let mut any_failed = false;
+
+        for location in &locations {
+            for entry in WalkDir::new(location)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_file())
+            {
+                let path = entry.path();
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+                if args.validate_checksum.iter().any(|f| filename == f.as_str())
+                    || args.validate_checksum.iter().any(|f| path.ends_with(f.as_str()))
+                {
+                    match fop_checksum::verify_checksum(path) {
+                        Ok(fop_checksum::ChecksumResult::Valid) => {
+                            if !args.quiet {
+                                println!("Checksum OK: {}", path.display());
+                            }
+                        }
+                        Ok(fop_checksum::ChecksumResult::Invalid { expected, found }) => {
+                            eprintln!("Checksum FAILED: {} (expected {}, found {})", path.display(), expected, found);
+                            any_failed = true;
+                        }
+                        Ok(fop_checksum::ChecksumResult::Missing) => {
+                            if !args.quiet {
+                                eprintln!("Warning: No checksum found in {}", path.display());
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error reading {}: {}", path.display(), e);
+                            any_failed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if any_failed {
+            std::process::exit(1);
+        }
+    }
+
     // Standalone typo scan and fix mode
     if args.fix_typos {
         let total_typos = AtomicUsize::new(0);
@@ -1602,7 +1659,9 @@ fn main() {
             let filename = file_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            if args.add_checksum.iter().any(|f| filename.contains(f) || file_path.ends_with(f)) {
+                if args.add_checksum.iter().any(|f| filename == f.as_str())
+                    || args.add_checksum.iter().any(|f| file_path.ends_with(f.as_str()))
+                {
                 let _ = fop_checksum::add_checksum(file_path, args.localhost, args.quiet, args.no_color);
             }
         }
