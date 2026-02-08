@@ -10,7 +10,9 @@ use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::io::Cursor;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::fop_datestamp::{update_timestamp_line, update_version_line};
+
 
 use owo_colors::OwoColorize;
 use ahash::AHashSet as HashSet;
@@ -972,83 +974,6 @@ fn combine_filters(
 // =============================================================================
 // Main Sorting Function
 // =============================================================================
-
-/// Format Unix timestamp as "30 Jan 2026 08:31 UTC"
-#[inline]
-fn format_timestamp_utc(secs: u64) -> String {
-    const MONTHS: [&str; 12] = ["Jan","Feb","Mar","Apr","May","Jun",
-                                 "Jul","Aug","Sep","Oct","Nov","Dec"];
-    // Pre-allocate: "30 Jan 2026 08:31 UTC" = ~21 chars
-    let mut result = String::with_capacity(24);
-    let (year, month, day, hours, minutes) = decompose_utc(secs);
-    use std::fmt::Write;
-    let _ = write!(result, "{} {} {} {:02}:{:02} UTC", day, MONTHS[month], year, hours, minutes);
-    result
-}
-
-/// Format Unix timestamp as version "YYYYMMDDHHMM"
-#[inline]
-fn format_version_utc(secs: u64) -> String {
-    let (year, month, day, hours, minutes) = decompose_utc(secs);
-    format!("{}{:02}{:02}{:02}{:02}", year, month + 1, day, hours, minutes)
-}
-
-/// Decompose Unix timestamp into (year, month_0indexed, day, hours, minutes)
-fn decompose_utc(secs: u64) -> (u64, usize, u64, u64, u64) {
-    const DAYS_IN_MONTH: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut days = secs / 86400;
-    let remaining = secs % 86400;
-    let hours = remaining / 3600;
-    let minutes = (remaining % 3600) / 60;
-    let mut year = 1970u64;
-    loop {
-        let diy = if is_leap_year(year) { 366 } else { 365 };
-        if days < diy { break; }
-        days -= diy;
-        year += 1;
-    }
-    let leap = is_leap_year(year);
-    let mut month = 0usize;
-    for (i, &d) in DAYS_IN_MONTH.iter().enumerate() {
-        let dim = if i == 1 && leap { 29 } else { d };
-        if days < dim { month = i; break; }
-        days -= dim;
-    }
-    (year, month, days + 1, hours, minutes)
-}
-
-#[inline]
-fn is_leap_year(year: u64) -> bool {
-    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
-}
-
-/// Update timestamp in header line
-#[inline]
-fn update_timestamp_line(line: &str) -> Option<String> {
-    let lower = line.to_ascii_lowercase();
-    if lower.contains("last modified:") || lower.contains("last updated:") {
-        let prefix = if line.trim_start().starts_with('#') { "#" } else { "!" };
-        let keyword = if lower.contains("last modified:") { "Last modified" } else { "Last updated" };
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        Some(format!("{} {}: {}", prefix, keyword, format_timestamp_utc(now)))
-    } else {
-        None
-    }
-}
-
-/// Update version line in header
-#[inline]
-fn update_version_line(line: &str) -> Option<String> {
-    let lower = line.to_ascii_lowercase();
-    let trimmed = lower.trim_start().trim_start_matches(['!', '#']).trim_start();
-    if trimmed.starts_with("version:") {
-        let prefix = if line.trim_start().starts_with('#') { "#" } else { "!" };
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        Some(format!("{} Version: {}", prefix, format_version_utc(now)))
-    } else {
-        None
-    }
-}
 
 /// Sort the sections of a filter file and save modifications
 pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<String>> {

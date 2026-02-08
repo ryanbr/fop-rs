@@ -13,6 +13,7 @@ mod fop_git;
 mod fop_checksum;
 mod fop_sort;
 mod fop_typos;
+mod fop_datestamp;
 
 #[cfg(test)]
 mod tests;
@@ -196,7 +197,7 @@ struct Args {
     /// Show version
     version: bool,
     /// Update timestamp in file header
-    add_timestamp: bool,
+    add_timestamp: Vec<String>,
     /// Add/update checksum for specific files
     add_checksum: Vec<String>,
     /// Validate checksum for specific files
@@ -389,7 +390,7 @@ impl Args {
                 .unwrap_or_default(),
             help: false,
             version: false,
-            add_timestamp: parse_bool(&config, "add-timestamp", false),
+            add_timestamp: parse_list(&config, "add-timestamp"),
             validate_checksum: Vec::new(),
             add_checksum: config.get("add-checksum")
                 .map(|s| s.split(',').map(|f| f.trim().to_string()).collect())
@@ -470,7 +471,12 @@ impl Args {
                 "--fix-typos" => args.fix_typos = true,
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
-                "--add-timestamp" => args.add_timestamp = true,
+                _ if arg.starts_with("--add-timestamp=") => {
+                    args.add_timestamp = arg.trim_start_matches("--add-timestamp=")
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                }
                 _ if arg.starts_with("--add-checksum=") => {
                     args.add_checksum = arg.trim_start_matches("--add-checksum=")
                         .split(',')
@@ -503,6 +509,12 @@ impl Args {
                 }
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
+                }
+                _ if arg.starts_with("--add-timestamp=") => {
+                    args.add_timestamp = arg.trim_start_matches("--add-timestamp=")
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
                 }
                 _ if arg.starts_with("--validate-checksum=") => {
                     args.validate_checksum = arg.trim_start_matches("--validate-checksum=")
@@ -602,6 +614,7 @@ impl Args {
         println!("        --output               Output changed files with --changed suffix");
         println!("        --ignore-config        Ignore .fopconfig file");
         println!("        --add-timestamp        Update 'Last modified/updated' timestamp in header");
+        println!("        --add-timestamp=FILES  Add/update timestamp for specific files (comma-separated)");
         println!("        --add-checksum=FILES   Add/update checksum for specific files (comma-separated)");
         println!("        --validate-checksum=FILES  Validate checksum for specific files (exit 1 on failure)");
         println!("        --show-config   Show applied configuration and exit");
@@ -993,6 +1006,7 @@ fn process_location(
     history: &[String],
     git_binary: Option<&str>,
     add_checksum: &[String],
+    add_timestamp: &[String],
     localhost: bool,
 ) -> io::Result<()> {
     if !location.is_dir() {
@@ -1158,6 +1172,23 @@ fn process_location(
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if extension == "orig" || extension == "temp" {
                 let _ = fs::remove_file(path);
+            }
+        }
+    }
+
+    // Add timestamps to specified files (after sorting, before checksum)
+    if !add_timestamp.is_empty() {
+        for entry in &entries {
+            if entry_is_file(entry) {
+                let path = entry.path();
+                let filename = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if add_timestamp.iter().any(|f| filename == f.as_str())
+                    || add_timestamp.iter().any(|f| path.ends_with(f.as_str()))
+                {
+                    let _ = fop_datestamp::add_timestamp(path, localhost, quiet, no_color);
+                }
             }
         }
     }
@@ -1433,7 +1464,7 @@ fn main() {
         no_color: args.no_color,
         dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed,
         output_changed: args.output_changed,
-        add_timestamp: args.add_timestamp,
+        add_timestamp: !args.add_timestamp.is_empty(),
     };
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -1749,6 +1780,7 @@ fn main() {
             &args.history,
             args.git_binary.as_deref(),
             &args.add_checksum,
+            &args.add_timestamp,
             args.localhost,
         ) {
             eprintln!("Error: {}", e);
