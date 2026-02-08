@@ -1204,7 +1204,23 @@ fn process_location(
                 if add_checksum.iter().any(|f| filename == f.as_str())
                     || add_checksum.iter().any(|f| path.ends_with(f.as_str()))
                 {
-                    let _ = fop_checksum::add_checksum(path, localhost, quiet, no_color);
+                    if let Err(e) = fop_checksum::add_checksum(path, localhost, quiet, no_color) {
+                        eprintln!("Error adding checksum to {}: {}", path.display(), e);
+                        continue;
+                    }
+                    match fop_checksum::verify_checksum(path) {
+                        Ok(fop_checksum::ChecksumResult::Valid) => {}
+                        Ok(fop_checksum::ChecksumResult::Invalid { expected, found }) => {
+                            eprintln!("Error: Checksum verification failed for {}: expected {} but found {}",
+                                path.display(), expected, found);
+                        }
+                        Ok(fop_checksum::ChecksumResult::Missing) => {
+                            eprintln!("Error: Checksum missing after write for {}", path.display());
+                        }
+                        Err(e) => {
+                            eprintln!("Error verifying checksum for {}: {}", path.display(), e);
+                        }
+                    }
                 }
             }
         }
