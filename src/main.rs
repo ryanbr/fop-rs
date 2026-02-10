@@ -735,7 +735,7 @@ impl Args {
 
 /// Pattern for extracting domain from blocking filter options
 pub(crate) static FILTER_DOMAIN_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\$(?:[^,]*,)?domain=([^,]+)").unwrap());
+    LazyLock::new(|| Regex::new(r"\$(?:[^,]*,)*domain=([^,]+)").unwrap());
 
 /// Pattern for extracting domain from element hiding rules  
 pub(crate) static ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> =
