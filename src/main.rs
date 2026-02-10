@@ -202,6 +202,8 @@ struct Args {
     add_checksum: Vec<String>,
     /// Validate checksum for specific files
     validate_checksum: Vec<String>,
+    /// Validate and fix checksum for specific files
+    validate_checksum_and_fix: Vec<String>,
     /// Custom git binary path
     git_binary: Option<String>,
 }
@@ -392,6 +394,7 @@ impl Args {
             version: false,
             add_timestamp: parse_list(&config, "add-timestamp"),
             validate_checksum: Vec::new(),
+            validate_checksum_and_fix: Vec::new(),
             add_checksum: config.get("add-checksum")
                 .map(|s| s.split(',').map(|f| f.trim().to_string()).collect())
                 .unwrap_or_default(),
@@ -522,6 +525,12 @@ impl Args {
                         .map(|s| s.trim().to_string())
                         .collect();
                 }
+                _ if arg.starts_with("--validate-checksum-and-fix=") => {
+                    args.validate_checksum_and_fix = arg.trim_start_matches("--validate-checksum-and-fix=")
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                }
                 _ if arg.starts_with("--git-binary=") => {
                     args.git_binary = Some(arg.trim_start_matches("--git-binary=").to_string());
                 }
@@ -617,6 +626,7 @@ impl Args {
         println!("        --add-timestamp=FILES  Add/update timestamp for specific files (comma-separated)");
         println!("        --add-checksum=FILES   Add/update checksum for specific files (comma-separated)");
         println!("        --validate-checksum=FILES  Validate checksum for specific files (exit 1 on failure)");
+        println!("        --validate-checksum-and-fix=FILES  Validate and fix invalid checksums");
         println!("        --show-config   Show applied configuration and exit");
         println!("        --git-binary=<path>    Path to git binary (default: git in PATH)");
         println!("    -h, --help          Show this help message");
@@ -1006,6 +1016,7 @@ fn process_location(
     history: &[String],
     git_binary: Option<&str>,
     add_checksum: &[String],
+    validate_checksum_and_fix: &[String],
     add_timestamp: &[String],
     localhost: bool,
 ) -> io::Result<()> {
@@ -1219,6 +1230,50 @@ fn process_location(
                         }
                         Err(e) => {
                             eprintln!("Error verifying checksum for {}: {}", path.display(), e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    // Validate and fix checksums (after sorting, before commit)
+    if !validate_checksum_and_fix.is_empty() {
+        for entry in &entries {
+            if entry_is_file(entry) {
+                let path = entry.path();
+                let filename = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if validate_checksum_and_fix.iter().any(|f| filename == f.as_str())
+                    || validate_checksum_and_fix.iter().any(|f| path.ends_with(f.as_str()))
+                {
+                    match fop_checksum::verify_checksum(path) {
+                        Ok(fop_checksum::ChecksumResult::Valid) => {
+                            if !quiet {
+                                println!("Checksum OK: {}", path.display());
+                            }
+                        }
+                        Ok(fop_checksum::ChecksumResult::Invalid { expected, found }) => {
+                            if !quiet {
+                                eprintln!("Checksum INVALID: {} (expected {}, found {}) - fixing...",
+                                    path.display(), expected, found);
+                            }
+                            if let Err(e) = fop_checksum::add_checksum(path, localhost, quiet, no_color) {
+                                eprintln!("Error fixing checksum for {}: {}", path.display(), e);
+                            }
+                        }
+                        Ok(fop_checksum::ChecksumResult::Missing) => {
+                            if !quiet {
+                                eprintln!("Checksum MISSING: {} - adding...", path.display());
+                            }
+                            if let Err(e) = fop_checksum::add_checksum(path, localhost, quiet, no_color) {
+                                eprintln!("Error adding checksum for {}: {}", path.display(), e);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error reading {}: {}", path.display(), e);
                         }
                     }
                 }
@@ -1796,6 +1851,7 @@ fn main() {
             &args.history,
             args.git_binary.as_deref(),
             &args.add_checksum,
+            &args.validate_checksum_and_fix,
             &args.add_timestamp,
             args.localhost,
         ) {

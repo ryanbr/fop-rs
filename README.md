@@ -95,7 +95,6 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--ignore-all-but=` |  Only process these files, ignore all others (comma-separated) |
 | `--file-extensions=` | File extensions to process (default: .txt) |
 | `--comments=` | Comment line prefixes (default: !) |
-| `--disable-domain-limit=` | Files to skip short domain check (comma-separated) |
 | `--warning-output=` | Output warnings to file instead of stderr |
 | `--git-message=` | Git commit message (skip interactive prompt) |
 | `--history=` | Predefined commit messages for arrow key selection (comma-separated) |
@@ -115,6 +114,10 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--check-file=FILE` | Process a single file | 
 | `--output-diff=FILE` | Output changes as diff (no files modified) | 
 | `--quiet` | Limit console output, less verbose |
+| `--limited-quiet` | Suppress directory listing only |
+| `--add-timestamp=FILES` | Update timestamp for specific files only (comma-separated) |
+| `--validate-checksum=FILES` | Validate checksum for specific files (exit 1 on failure) |
+| `--validate-checksum-and-fix=FILES` | Validate and fix invalid checksums |
 | `--add-checksum=FILES` | Add/update checksum for specific files (comma-separated) |
 | `--add-timestamp` | Update timestamp in file header (Last Modified/Last Updated) |
 | `--config-file=` | Custom config file path |
