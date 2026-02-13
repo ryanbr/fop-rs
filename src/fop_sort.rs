@@ -359,7 +359,11 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                              "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam="]
         .iter().any(|s| filter_in.contains(s));
     let filter_in = if !is_element_rule && !filter_in.starts_with('/') && !has_space_options {
-        filter_in.split_whitespace().collect::<String>()
+        if filter_in.contains(' ') || filter_in.contains('\t') {
+            filter_in.split_whitespace().collect::<String>()
+        } else {
+            filter_in.to_string()
+        }
     } else {
         filter_in.to_string()
     };
