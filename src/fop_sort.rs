@@ -293,6 +293,13 @@ pub(crate) fn sort_domains(domains: &mut [String]) {
 
 /// Remove unnecessary wildcards from filter text
 pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> String {
+    // Fast path: no wildcards to process
+    if !(filter_text.starts_with('*') || filter_text.ends_with('*')
+        || filter_text.starts_with("@@") && filter_text.get(2..3) == Some("*"))
+    {
+        return filter_text.to_string();
+    }
+
     let mut result = filter_text.to_string();
     let allowlist = result.starts_with("@@");
 
