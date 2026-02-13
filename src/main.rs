@@ -193,6 +193,8 @@ struct Args {
     ci: bool,
     /// Show applied configuration
     show_config: bool,
+    /// Files to sort as localhost/hosts format (comma-separated)
+    localhost_files: Vec<String>,
     /// Predefined commit message history for arrow key selection
     history: Vec<String>,
     /// Show help
@@ -349,6 +351,7 @@ impl Args {
             no_sort: parse_bool(&config, "no-sort", false),
             alt_sort: parse_bool(&config, "alt-sort", false),
             localhost: parse_bool(&config, "localhost", false),
+            localhost_files: parse_list(&config, "localhost-files"),
             no_color: parse_bool(&config, "no-color", false),
             ignore_files: parse_list(&config, "ignorefiles"),
             ignore_dirs: parse_list(&config, "ignoredirs"),
@@ -416,6 +419,10 @@ impl Args {
                 "--no-sort" => args.no_sort = true,
                 "--alt-sort" => args.alt_sort = true,
                 "--localhost" => args.localhost = true,
+                _ if arg.starts_with("--localhost-files=") => {
+                    args.localhost_files = arg.trim_start_matches("--localhost-files=")
+                        .split(',').map(|s| s.trim().to_string()).collect();
+                }
                 "--no-color" => args.no_color = true,
                 "--no-large-warning" => args.no_large_warning = true,
                 "--show-config" => args.show_config = true,
@@ -599,6 +606,7 @@ impl Args {
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
+        println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
         println!("        --no-color      Disable colored output");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
@@ -677,6 +685,11 @@ impl Args {
         println!("  no-sort         = {}", self.no_sort);
         println!("  alt-sort        = {}", self.alt_sort);
         println!("  localhost       = {}", self.localhost);
+        if self.localhost_files.is_empty() {
+            println!("  localhost-files = (none)");
+        } else {
+            println!("  localhost-files = {}", self.localhost_files.join(","));
+        }
         println!("  no-color        = {}", self.no_color);
         println!("  no-large-warning= {}", self.no_large_warning);
         println!();
@@ -1021,6 +1034,7 @@ fn process_location(
     validate_checksum_and_fix: &[String],
     add_timestamp: &[String],
     localhost: bool,
+    localhost_files: &[String],
 ) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
@@ -1135,7 +1149,11 @@ fn process_location(
             convert_ubo: sort_config.convert_ubo,
             no_sort: sort_config.no_sort,
             alt_sort: sort_config.alt_sort,
-            localhost: sort_config.localhost,
+            localhost: sort_config.localhost || {
+                let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                localhost_files.iter().any(|f| fname == f.as_str())
+                    || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
+            },
             comment_chars: sort_config.comment_chars,
             backup: sort_config.backup,
             keep_empty_lines: sort_config.keep_empty_lines,
@@ -1200,7 +1218,11 @@ fn process_location(
                 if add_timestamp.iter().any(|f| filename == f.as_str())
                     || add_timestamp.iter().any(|f| path.ends_with(f.as_str()))
                 {
-                    let _ = fop_datestamp::add_timestamp(path, localhost, quiet, no_color);
+                    let is_localhost = localhost || {
+                        localhost_files.iter().any(|f| filename == f.as_str())
+                            || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
+                    };
+                    let _ = fop_datestamp::add_timestamp(path, is_localhost, quiet, no_color);
                 }
             }
         }
@@ -1217,7 +1239,11 @@ fn process_location(
                 if add_checksum.iter().any(|f| filename == f.as_str())
                     || add_checksum.iter().any(|f| path.ends_with(f.as_str()))
                 {
-                    match fop_checksum::add_checksum(path, localhost, quiet, no_color) {
+                    let is_localhost = localhost || {
+                        localhost_files.iter().any(|f| filename == f.as_str())
+                            || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
+                    };
+                    match fop_checksum::add_checksum(path, is_localhost, quiet, no_color) {
                         Ok(Some(_checksum)) => {
                             // File was modified, checksum written successfully
                         }
@@ -1256,7 +1282,11 @@ fn process_location(
                                 eprintln!("Checksum INVALID: {} (expected {}, found {}) - fixing...",
                                     path.display(), expected, found);
                             }
-                            if let Err(e) = fop_checksum::add_checksum(path, localhost, quiet, no_color) {
+                            let is_localhost = localhost || {
+                                localhost_files.iter().any(|f| filename == f.as_str())
+                                    || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
+                            };
+                            if let Err(e) = fop_checksum::add_checksum(path, is_localhost, quiet, no_color) {
                                 eprintln!("Error fixing checksum for {}: {}", path.display(), e);
                             }
                         }
@@ -1264,7 +1294,11 @@ fn process_location(
                             if !quiet {
                                 eprintln!("Checksum MISSING: {} - adding...", path.display());
                             }
-                            if let Err(e) = fop_checksum::add_checksum(path, localhost, quiet, no_color) {
+                            let is_localhost = localhost || {
+                                localhost_files.iter().any(|f| filename == f.as_str())
+                                    || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
+                            };
+                            if let Err(e) = fop_checksum::add_checksum(path, is_localhost, quiet, no_color) {
                                 eprintln!("Error adding checksum for {}: {}", path.display(), e);
                             }
                         }
@@ -1735,7 +1769,15 @@ fn main() {
             println!("Processing file: {}", file_path.display());
         }
 
-        match fop_sort::fop_sort(file_path, &sort_config) {
+        let check_file_config = SortConfig {
+            localhost: sort_config.localhost || {
+                let fname = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                args.localhost_files.iter().any(|f| fname == f.as_str())
+                    || args.localhost_files.iter().any(|f| file_path.ends_with(f.as_str()))
+            },
+            ..sort_config
+        };
+        match fop_sort::fop_sort(file_path, &check_file_config) {
             Ok(Some(diff)) => {
                 if args.output_diff_individual {
                     // Individual mode: write .diff file alongside source
@@ -1761,7 +1803,12 @@ fn main() {
                 if args.add_checksum.iter().any(|f| filename == f.as_str())
                     || args.add_checksum.iter().any(|f| file_path.ends_with(f.as_str()))
                 {
-                let _ = fop_checksum::add_checksum(file_path, args.localhost, args.quiet, args.no_color);
+                let is_localhost = args.localhost || {
+                    let fname = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    args.localhost_files.iter().any(|f| fname == f.as_str())
+                        || args.localhost_files.iter().any(|f| file_path.ends_with(f.as_str()))
+                };
+                let _ = fop_checksum::add_checksum(file_path, is_localhost, args.quiet, args.no_color);
             }
         }
 
@@ -1851,6 +1898,7 @@ fn main() {
             &args.validate_checksum_and_fix,
             &args.add_timestamp,
             args.localhost,
+            &args.localhost_files,
         ) {
             eprintln!("Error: {}", e);
         }
