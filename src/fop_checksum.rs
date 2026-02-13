@@ -105,11 +105,12 @@ pub fn verify_checksum(filename: &Path) -> io::Result<ChecksumResult> {
 /// Add or update checksum in a filter list file.
 /// - `use_hash`: if true, use `#` prefix (for localhost/hosts files), otherwise `!`
 ///
-/// Returns true if the file was modified.
-pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool) -> io::Result<bool> {
+/// Returns `Ok(None)` if the file was unchanged (checksum already correct),
+/// or `Ok(Some(checksum))` with the written checksum if the file was modified.
+pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool) -> io::Result<Option<String>> {
     let content = fs::read_to_string(filename)?;
     if content.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
 
     // Detect line ending from file
@@ -141,7 +142,7 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
     // Check if checksum would be unchanged
     if let Some(idx) = checksum_idx {
         if lines[idx].ends_with(&checksum) {
-            return Ok(false);
+            return Ok(None);
         }
     }
 
@@ -177,7 +178,7 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
 
     // Only write if changed
     if result == content {
-        return Ok(false);
+        return Ok(None);
     }
 
     fs::write(filename, &result)?;
@@ -196,5 +197,5 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
         }
     }
 
-    Ok(true)
+    Ok(Some(checksum))
 }
