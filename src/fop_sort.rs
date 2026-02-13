@@ -1054,7 +1054,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         let mut dupes_local: HashSet<String> = HashSet::new();
 
         // Remove duplicates while preserving order if no_sort
-        let mut unique: Vec<String> = if no_sort {
+        let mut unique: Vec<String> = {
             let mut seen = HashSet::with_capacity(section.len());
             section
                 .drain(..)
@@ -1069,22 +1069,6 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     }
                 })
                 .collect()
-        } else {
-            let mut seen = HashSet::with_capacity(section.len());
-            let unique: Vec<String> = section
-                .drain(..)
-                .filter(|x| {
-                    if !seen.insert(x.clone()) {
-                        if track_changes {
-                            dupes_local.insert(x.clone());
-                        }
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .collect();
-            unique
         };
 
         // Merge tracked duplicates into global changes once
