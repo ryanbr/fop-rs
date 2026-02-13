@@ -34,6 +34,9 @@ pub(crate) static WARNING_BUFFER: LazyLock<Mutex<Vec<String>>> =
     LazyLock::new(|| Mutex::new(Vec::with_capacity(100)));
 pub(crate) static WARNING_OUTPUT: LazyLock<Mutex<Option<PathBuf>>> =
     LazyLock::new(|| Mutex::new(None));
+/// Fast flag to avoid mutex lock on every write_warning call
+pub(crate) static WARNING_TO_FILE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Get user's home directory (cross-platform)
 fn home_dir() -> Option<PathBuf> {
@@ -54,12 +57,12 @@ fn get_git_username() -> Option<String> {
 
 /// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
-    if WARNING_OUTPUT.lock().map(|g| g.is_some()).unwrap_or(false) {
-        if let Ok(mut buffer) = WARNING_BUFFER.lock() {
-            buffer.push(message.to_string());
-        }
-    } else {
+    if !WARNING_TO_FILE.load(std::sync::atomic::Ordering::Relaxed) {
         eprintln!("{}", message);
+        return;
+    }
+    if let Ok(mut buffer) = WARNING_BUFFER.lock() {
+        buffer.push(message.to_string());
     }
 }
 
@@ -1497,6 +1500,7 @@ fn main() {
     // Set warning output path
     if let Some(ref path) = args.warning_output {
         *WARNING_OUTPUT.lock().unwrap() = Some(path.clone());
+        WARNING_TO_FILE.store(true, std::sync::atomic::Ordering::Relaxed);
         // Clear existing file
         let _ = std::fs::write(path, "");
     }
