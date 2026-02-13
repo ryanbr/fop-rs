@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 
 /// Cosmetic rule with extra # (###.class or domain###.class)
 static EXTRA_HASH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([^#]*)(###+)([.#\[\*])").unwrap());
+    LazyLock::new(|| Regex::new(r"^([^#]*)(###+)([.#\[\*].*)").unwrap());
 
 /// Single # that should be ## (domain#.class)
 static SINGLE_HASH: LazyLock<Regex> =

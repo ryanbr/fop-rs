@@ -66,7 +66,7 @@ fn cmp_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
 
 /// Fast check for localhost entry without regex
 #[inline]
-fn is_localhost_entry(line: &str) -> bool {
+pub(crate) fn is_localhost_entry(line: &str) -> bool {
     let rest = if let Some(r) = line.strip_prefix("0.0.0.0") {
         r
     } else if let Some(r) = line.strip_prefix("127.0.0.1") {
@@ -82,7 +82,7 @@ fn is_localhost_entry(line: &str) -> bool {
 
 /// Extract domain from localhost entry without regex
 #[inline]
-fn localhost_domain(line: &str) -> &str {
+pub(crate) fn localhost_domain(line: &str) -> &str {
     let rest = line.strip_prefix("0.0.0.0")
         .or_else(|| line.strip_prefix("127.0.0.1"))
         .unwrap_or(line);
