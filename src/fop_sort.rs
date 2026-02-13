@@ -63,6 +63,22 @@ fn cmp_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
     }
 }
 
+/// Fast check for localhost entry without regex
+#[inline]
+fn is_localhost_entry(line: &str) -> bool {
+    let rest = if let Some(r) = line.strip_prefix("0.0.0.0") {
+        r
+    } else if let Some(r) = line.strip_prefix("127.0.0.1") {
+        r
+    } else {
+        return false;
+    };
+    rest.as_bytes()
+        .first()
+        .map_or(false, |b| b.is_ascii_whitespace())
+        && !rest.trim_start().is_empty()
+}
+
 /// Check if line is a TLD-only pattern (e.g. .com, ||.net^)
 /// Replaces regex: r"^(\|\||[|])?\.([a-z]{2,})\^?$"
 #[inline]
@@ -1174,7 +1190,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Validate localhost entries when in localhost mode
-        if config.localhost && !LOCALHOST_PATTERN.is_match(line) {
+        if config.localhost && !is_localhost_entry(line) {
             write_warning(&format!("Removed invalid localhost entry: {}", line));
             continue;
 
