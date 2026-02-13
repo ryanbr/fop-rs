@@ -167,9 +167,6 @@ ignore-dot-domains = false
 # Comment line prefixes
 comments = !
 
-# Files to skip short domain check
-disable-domain-limit =
-
 # Output warnings to file
 warning-output =
 

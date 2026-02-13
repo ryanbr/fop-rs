@@ -610,7 +610,6 @@ impl Args {
         println!("        --backup        Create .backup files before modifying");
         println!("        --keep-empty-lines  Keep empty lines in output");
         println!("        --ignore-dot-domains  Don't skip rules without dot in domain");
-        println!("        --disable-domain-limit=  Files to skip short domain check (comma-separated)");
         println!("        --warning-output=   Output warnings to file instead of stderr");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --create-pr[=TITLE]  Create PR branch instead of committing to master");
