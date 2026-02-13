@@ -21,7 +21,8 @@ use regex::Regex;
 use std::cmp::Ordering;
 
 use crate::{
-    write_warning, ATTRIBUTE_VALUE_PATTERN, DOMAIN_EXTRACT_PATTERN, ELEMENT_DOMAIN_PATTERN,
+    write_warning, ADGUARD_ELEMENT_DOMAIN_PATTERN, ADGUARD_ELEMENT_PATTERN,
+    ATTRIBUTE_VALUE_PATTERN, DOMAIN_EXTRACT_PATTERN, ELEMENT_DOMAIN_PATTERN,
     ELEMENT_PATTERN, FILTER_DOMAIN_PATTERN, FOPPY_ELEMENT_DOMAIN_PATTERN, FOPPY_ELEMENT_PATTERN,
     IP_ADDRESS_PATTERN, KNOWN_OPTIONS, OPTION_PATTERN,
     PSEUDO_PATTERN, REGEX_ELEMENT_PATTERN, REMOVAL_PATTERN, TREE_SELECTOR,
@@ -113,6 +114,8 @@ pub struct SortConfig<'a> {
     pub convert_ubo: bool,
     pub no_sort: bool,
     pub alt_sort: bool,
+    /// Parse AdGuard extended CSS selectors (#$?# and #@$?#)
+    pub parse_adguard: bool,
     pub localhost: bool,
     pub comment_chars: &'a [String],
     pub backup: bool,
@@ -353,8 +356,10 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     
     // Remove errant spaces from network filters only
     // Skip: element rules, regex patterns, and options with legitimate spaces
-    let is_element_rule = ["##", "#@#", "#?#", "#$#", "#@$#"]
-        .iter().any(|s| filter_in.contains(s));
+    let is_element_rule = (filter_in.contains('#')
+        && ["##", "#@#", "#?#", "#$#", "#@$#", "#%#", "#@%#", "#$?#", "#@$?#"]
+            .iter().any(|s| filter_in.contains(s)))
+        || filter_in.contains("$$");
     let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=", 
                              "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam="]
         .iter().any(|s| filter_in.contains(s));
@@ -567,7 +572,11 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
         || separator == "#$#"
         || separator == "#@$#"
         || separator == "#%#"
-        || separator == "#@%#";
+        || separator == "#@%#"
+        || separator == "#$?#"
+        || separator == "#@$?#"
+        || separator == "$$"
+        || separator == "$@$";
 
     if is_extended {
         // Normalize scriptlet spacing (only simple args without quotes)
@@ -1047,7 +1056,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                          filter_lines: usize,
                          no_sort: bool,
                          alt_sort: bool,
-                         localhost: bool|
+                         localhost: bool,
+                         parse_adguard: bool|
      -> io::Result<()> {
         if section.is_empty() {
             return Ok(());
@@ -1092,7 +1102,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             }
         } else if element_lines > filter_lines {
             if !no_sort {
-                let pattern = if alt_sort {
+                let pattern = if parse_adguard {
+                    &*ADGUARD_ELEMENT_DOMAIN_PATTERN
+                } else if alt_sort {
                     &*ELEMENT_DOMAIN_PATTERN
                 } else {
                     &*FOPPY_ELEMENT_DOMAIN_PATTERN
@@ -1101,7 +1113,12 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             }
             // Merge :has-text() rules first, then combine domains
             let merged = combine_has_text_rules(unique);
-            let combined = combine_filters(merged, &ELEMENT_DOMAIN_PATTERN, ",");
+            let combine_pattern = if parse_adguard {
+                &*ADGUARD_ELEMENT_DOMAIN_PATTERN
+            } else {
+                &*ELEMENT_DOMAIN_PATTERN
+            };
+            let combined = combine_filters(merged, combine_pattern, ",");
             for filter in combined {
                 writeln!(output, "{}", filter)?;
             }
@@ -1150,6 +1167,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                         config.no_sort,
                         config.alt_sort,
                         config.localhost,
+                        config.parse_adguard,
                     )?;
                     lines_checked = 1;
                     filter_lines = 0;
@@ -1178,6 +1196,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     config.no_sort,
                     config.alt_sort,
                     config.localhost,
+                    config.parse_adguard,
                 )?;
                 lines_checked = 1;
                 filter_lines = 0;
@@ -1215,6 +1234,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         // Process element hiding rules
         let element_caps = if config.alt_sort {
             ELEMENT_PATTERN.captures(line)
+        } else if config.parse_adguard {
+            ADGUARD_ELEMENT_PATTERN.captures(line)
         } else {
             FOPPY_ELEMENT_PATTERN.captures(line)
         };
@@ -1316,6 +1337,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             config.no_sort,
             config.alt_sort,
             config.localhost,
+            config.parse_adguard,
         )?;
     }
 

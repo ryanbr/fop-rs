@@ -129,6 +129,8 @@ struct Args {
     no_sort: bool,
     /// Use alternative sorting (sort by selector for all rule types)
     alt_sort: bool,
+    /// Parse AdGuard extended CSS selectors (#$?# and #@$?#)
+    parse_adguard: bool,
     /// Sort localhost/hosts file entries (0.0.0.0/127.0.0.1)
     localhost: bool,
     /// Disable colored output
@@ -350,6 +352,7 @@ impl Args {
             disable_ignored: parse_bool(&config, "disable-ignored", false),
             no_sort: parse_bool(&config, "no-sort", false),
             alt_sort: parse_bool(&config, "alt-sort", false),
+            parse_adguard: parse_bool(&config, "parse-adguard", false),
             localhost: parse_bool(&config, "localhost", false),
             localhost_files: parse_list(&config, "localhost-files"),
             no_color: parse_bool(&config, "no-color", false),
@@ -418,6 +421,7 @@ impl Args {
                 "--disable-ignored" => args.disable_ignored = true,
                 "--no-sort" => args.no_sort = true,
                 "--alt-sort" => args.alt_sort = true,
+                "--parse-adguard" => args.parse_adguard = true,
                 "--localhost" => args.localhost = true,
                 _ if arg.starts_with("--localhost-files=") => {
                     args.localhost_files = arg.trim_start_matches("--localhost-files=")
@@ -605,6 +609,7 @@ impl Args {
         println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
+        println!("        --parse-adguard Parse AdGuard extended CSS (#$?# and #@$?#) selectors");
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
         println!("        --no-color      Disable colored output");
@@ -684,6 +689,7 @@ impl Args {
         println!("  disable-ignored = {}", self.disable_ignored);
         println!("  no-sort         = {}", self.no_sort);
         println!("  alt-sort        = {}", self.alt_sort);
+        println!("  parse-adguard   = {}", self.parse_adguard);
         println!("  localhost       = {}", self.localhost);
         if self.localhost_files.is_empty() {
             println!("  localhost-files = (none)");
@@ -756,9 +762,17 @@ pub(crate) static FILTER_DOMAIN_PATTERN: LazyLock<Regex> =
 pub(crate) static ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)#[@?$%]?#"#).unwrap());
 
-/// Pattern for FOP.py compatible element matching (no {} in selector)
+/// Pattern for extracting domain from AdGuard extended element rules
+pub(crate) static ADGUARD_ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#\$\?#|#@\$\?#|\$\$|\$@\$)"#).unwrap());
+
+/// Pattern for AdGuard extended element matching (includes #$?# and #@$?#)
+pub(crate) static ADGUARD_ELEMENT_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#|#\$\?#|#@\$\?#|\$\$|\$@\$)(.+)$"#).unwrap());
+
+/// Pattern for FOP element matching
 pub(crate) static FOPPY_ELEMENT_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#)([^{}]+)$"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#)(.+)$"#).unwrap());
 
 /// Pattern for FOP.py compatible sorting (only ## and #@#)
 pub(crate) static FOPPY_ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> =
@@ -1145,6 +1159,7 @@ fn process_location(
             convert_ubo: sort_config.convert_ubo,
             no_sort: sort_config.no_sort,
             alt_sort: sort_config.alt_sort,
+            parse_adguard: sort_config.parse_adguard,
             localhost: sort_config.localhost || {
                 let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 localhost_files.iter().any(|f| fname == f.as_str())
@@ -1552,6 +1567,7 @@ fn main() {
         convert_ubo: !args.no_ubo_convert,
         no_sort: args.no_sort,
         alt_sort: args.alt_sort,
+        parse_adguard: args.parse_adguard,
         localhost: args.localhost,
         comment_chars: &args.comment_chars,
         backup: args.backup,
