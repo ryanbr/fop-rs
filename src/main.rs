@@ -131,6 +131,8 @@ struct Args {
     alt_sort: bool,
     /// Parse AdGuard extended CSS selectors (#$?# and #@$?#)
     parse_adguard: bool,
+    /// Files to parse as AdGuard extended CSS (comma-separated)
+    parse_adguard_files: Vec<String>,
     /// Sort localhost/hosts file entries (0.0.0.0/127.0.0.1)
     localhost: bool,
     /// Disable colored output
@@ -353,6 +355,7 @@ impl Args {
             no_sort: parse_bool(&config, "no-sort", false),
             alt_sort: parse_bool(&config, "alt-sort", false),
             parse_adguard: parse_bool(&config, "parse-adguard", false),
+            parse_adguard_files: parse_list(&config, "parse-adguard-files"),
             localhost: parse_bool(&config, "localhost", false),
             localhost_files: parse_list(&config, "localhost-files"),
             no_color: parse_bool(&config, "no-color", false),
@@ -422,6 +425,10 @@ impl Args {
                 "--no-sort" => args.no_sort = true,
                 "--alt-sort" => args.alt_sort = true,
                 "--parse-adguard" => args.parse_adguard = true,
+                _ if arg.starts_with("--parse-adguard=") => {
+                    args.parse_adguard_files = arg.trim_start_matches("--parse-adguard=")
+                        .split(',').map(|s| s.trim().to_string()).collect();
+                }
                 "--localhost" => args.localhost = true,
                 _ if arg.starts_with("--localhost-files=") => {
                     args.localhost_files = arg.trim_start_matches("--localhost-files=")
@@ -609,7 +616,7 @@ impl Args {
         println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
-        println!("        --parse-adguard Parse AdGuard extended CSS (#$?# and #@$?#) selectors");
+        println!("        --parse-adguard[=FILES]  Parse AdGuard extended CSS (global or comma-separated files)");
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
         println!("        --no-color      Disable colored output");
@@ -690,6 +697,11 @@ impl Args {
         println!("  no-sort         = {}", self.no_sort);
         println!("  alt-sort        = {}", self.alt_sort);
         println!("  parse-adguard   = {}", self.parse_adguard);
+        if self.parse_adguard_files.is_empty() {
+            println!("  parse-adguard-files = (none)");
+        } else {
+            println!("  parse-adguard-files = {}", self.parse_adguard_files.join(","));
+        }
         println!("  localhost       = {}", self.localhost);
         if self.localhost_files.is_empty() {
             println!("  localhost-files = (none)");
@@ -1045,6 +1057,7 @@ fn process_location(
     add_timestamp: &[String],
     localhost: bool,
     localhost_files: &[String],
+    parse_adguard_files: &[String],
 ) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
@@ -1159,7 +1172,11 @@ fn process_location(
             convert_ubo: sort_config.convert_ubo,
             no_sort: sort_config.no_sort,
             alt_sort: sort_config.alt_sort,
-            parse_adguard: sort_config.parse_adguard,
+            parse_adguard: sort_config.parse_adguard || {
+                let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                parse_adguard_files.iter().any(|f| fname == f.as_str())
+                    || parse_adguard_files.iter().any(|f| path.ends_with(f.as_str()))
+            },
             localhost: sort_config.localhost || {
                 let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 localhost_files.iter().any(|f| fname == f.as_str())
@@ -1787,6 +1804,11 @@ fn main() {
                 args.localhost_files.iter().any(|f| fname == f.as_str())
                     || args.localhost_files.iter().any(|f| file_path.ends_with(f.as_str()))
             },
+            parse_adguard: sort_config.parse_adguard || {
+                let fname = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                args.parse_adguard_files.iter().any(|f| fname == f.as_str())
+                    || args.parse_adguard_files.iter().any(|f| file_path.ends_with(f.as_str()))
+            },
             ..sort_config
         };
         match fop_sort::fop_sort(file_path, &check_file_config) {
@@ -1911,6 +1933,7 @@ fn main() {
             &args.add_timestamp,
             args.localhost,
             &args.localhost_files,
+            &args.parse_adguard_files,
         ) {
             eprintln!("Error: {}", e);
         }

@@ -86,6 +86,8 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--alt-sort` | More correct sorting method |
 | `--localhost` | Sort hosts file entries (0.0.0.0/127.0.0.1 domain) |
 | `--localhost-files=` | Specific files to sort as localhost format (comma-separated) |
+| `--parse-adguard` | Globally Parse AdGuard extended CSS (#$?#, #@$?#, $$, $@$) |
+| `--parse-adguard=FILE` | Files to parse as AdGuard extended CSS (comma-separated) |
 | `--no-color` | Disable colored output |
 | `--no-large-warning` | Disable large change warning prompt |
 | `--backup` | Create .backup files before modifying |
