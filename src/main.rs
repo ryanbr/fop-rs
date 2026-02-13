@@ -616,7 +616,8 @@ impl Args {
         println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
-        println!("        --parse-adguard[=FILES]  Parse AdGuard extended CSS (global or comma-separated files)");
+        println!("        --parse-adguard Parse AdGuard extended CSS (#$?#, #@$?#, $$, $@$)");
+        println!("        --parse-adguard=  Files to parse as AdGuard extended CSS (comma-separated)");
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
         println!("        --no-color      Disable colored output");
@@ -782,9 +783,9 @@ pub(crate) static ADGUARD_ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> =
 pub(crate) static ADGUARD_ELEMENT_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#|#\$\?#|#@\$\?#|\$\$|\$@\$)(.+)$"#).unwrap());
 
-/// Pattern for FOP element matching
+/// Pattern for FOP element matching (no {} in selector)
 pub(crate) static FOPPY_ELEMENT_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#)(.+)$"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"^([^/|@"!]*?)(#[@?$%]?#|#@[$%?]#)([^{}]+)$"#).unwrap());
 
 /// Pattern for FOP.py compatible sorting (only ## and #@#)
 pub(crate) static FOPPY_ELEMENT_DOMAIN_PATTERN: LazyLock<Regex> =
