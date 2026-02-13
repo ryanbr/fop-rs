@@ -774,10 +774,6 @@ pub(crate) static REGEX_ELEMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^(/[^#]+/)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
 });
 
-/// Pattern for localhost/hosts file entries
-pub(crate) static LOCALHOST_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(0\.0\.0\.0|127\.0\.0\.1)\s+(.+)$").unwrap());
-
 pub(crate) static OPTION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(.*)\$(~?[\w\-]+(?:=[^,\s]+)?(?:,~?[\w\-]+(?:=[^,\s]+)?)*)$").unwrap()
 });

@@ -23,7 +23,7 @@ use std::cmp::Ordering;
 use crate::{
     write_warning, ATTRIBUTE_VALUE_PATTERN, DOMAIN_EXTRACT_PATTERN, ELEMENT_DOMAIN_PATTERN,
     ELEMENT_PATTERN, FILTER_DOMAIN_PATTERN, FOPPY_ELEMENT_DOMAIN_PATTERN, FOPPY_ELEMENT_PATTERN,
-    IP_ADDRESS_PATTERN, KNOWN_OPTIONS, LOCALHOST_PATTERN, OPTION_PATTERN,
+    IP_ADDRESS_PATTERN, KNOWN_OPTIONS, OPTION_PATTERN,
     PSEUDO_PATTERN, REGEX_ELEMENT_PATTERN, REMOVAL_PATTERN, TREE_SELECTOR,
     UBO_CONVERSIONS, UNICODE_SELECTOR,
 };
@@ -75,8 +75,17 @@ fn is_localhost_entry(line: &str) -> bool {
     };
     rest.as_bytes()
         .first()
-        .map_or(false, |b| b.is_ascii_whitespace())
+        .is_some_and(|b| b.is_ascii_whitespace())
         && !rest.trim_start().is_empty()
+}
+
+/// Extract domain from localhost entry without regex
+#[inline]
+fn localhost_domain(line: &str) -> &str {
+    let rest = line.strip_prefix("0.0.0.0")
+        .or_else(|| line.strip_prefix("127.0.0.1"))
+        .unwrap_or(line);
+    rest.trim_start()
 }
 
 /// Check if line is a TLD-only pattern (e.g. .com, ||.net^)
@@ -1081,13 +1090,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if localhost {
             // Sort hosts file entries by domain
             if !no_sort {
-                unique.sort_by_cached_key(|s| {
-                    LOCALHOST_PATTERN
-                        .captures(s)
-                        .and_then(|c| c.get(2))
-                        .map(|m| m.as_str().to_ascii_lowercase())
-                        .unwrap_or_else(|| s.to_ascii_lowercase())
-                });
+                unique.sort_by_cached_key(|s| localhost_domain(s).to_ascii_lowercase());
             }
             for filter in unique {
                 writeln!(output, "{}", filter)?;
