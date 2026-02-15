@@ -506,6 +506,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
 
 /// Sort domains and clean element hiding rules
 pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
+    let selector = selector.trim();
     let mut domains = domains.to_ascii_lowercase();
 
     // Sort domain names alphabetically
