@@ -376,7 +376,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=", 
                              "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam="]
         .iter().any(|s| filter_in.contains(s));
-    let filter_in = if !is_element_rule && !has_space_options && !(filter_in.starts_with('/') && filter_in.ends_with('/')) {
+    let filter_in = if !(is_element_rule || has_space_options || filter_in.starts_with('/') && filter_in.ends_with('/')) {
         if filter_in.contains(' ') || filter_in.contains('\t') {
             filter_in.split_whitespace().collect::<String>()
         } else {
