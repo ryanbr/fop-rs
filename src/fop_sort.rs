@@ -353,7 +353,20 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Skip filters with regex values in options (contain =/.../ patterns)
     // ||example.com$removeparam=/^\\$ja=/
     // ||example.com$removeparam=/regex/
-    
+
+    // Fix typo: $option.option -> $option,option (before pattern matching)
+    let filter_in = if let Some(dollar_pos) = filter_in.rfind('$') {
+        let (base, opts) = filter_in.split_at(dollar_pos);
+        if !opts.contains('=') && opts.contains('.') {
+            format!("{}{}", base, opts.replace('.', ","))
+        } else {
+            filter_in.to_string()
+        }
+    } else {
+        filter_in.to_string()
+    };
+    let filter_in = filter_in.as_str();
+
     // Remove errant spaces from network filters only
     // Skip: element rules, regex patterns, and options with legitimate spaces
     let is_element_rule = (filter_in.contains('#')
@@ -363,7 +376,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=", 
                              "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam="]
         .iter().any(|s| filter_in.contains(s));
-    let filter_in = if !is_element_rule && !filter_in.starts_with('/') && !has_space_options {
+    let filter_in = if !is_element_rule && !has_space_options && !(filter_in.starts_with('/') && filter_in.ends_with('/')) {
         if filter_in.contains(' ') || filter_in.contains('\t') {
             filter_in.split_whitespace().collect::<String>()
         } else {
