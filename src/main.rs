@@ -91,7 +91,7 @@ pub(crate) fn flush_warnings() {
     {
         let mut writer = BufWriter::new(file);
         for msg in warnings {
-            let _ = writeln!(writer, "{}", msg);
+            let _ = write!(writer, "{}\n", msg);
         }
     }
 }
