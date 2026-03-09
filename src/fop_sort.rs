@@ -1112,7 +1112,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 unique.sort_by_cached_key(|s| localhost_domain(s).to_ascii_lowercase());
             }
             for filter in unique {
-                writeln!(output, "{}", filter)?;
+                write!(output, "{}\n", filter)?;
             }
         } else if element_lines > filter_lines {
             if !no_sort {
@@ -1134,7 +1134,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             };
             let combined = combine_filters(merged, combine_pattern, ",");
             for filter in combined {
-                writeln!(output, "{}", filter)?;
+                write!(output, "{}\n", filter)?;
             }
         } else {
             // Sort blocking rules (unless no_sort)
@@ -1143,7 +1143,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             }
             let combined = combine_filters(unique, &FILTER_DOMAIN_PATTERN, "|");
             for filter in combined {
-                writeln!(output, "{}", filter)?;
+                write!(output, "{}\n", filter)?;
             }
         }
 
@@ -1187,7 +1187,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     filter_lines = 0;
                     element_lines = 0;
                 }
-                writeln!(output)?;
+                output.write_all(b"\n")?;
             }
             continue;
         }
@@ -1216,7 +1216,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 filter_lines = 0;
                 element_lines = 0;
             }
-            writeln!(output, "{}", line)?;
+            write!(output, "{}\n", line)?;
             continue;
         }
 
