@@ -312,6 +312,23 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 Alternatively, use Git Bash, MINGW64, or WSL.
 
+## Security Warnings
+
+Pre-built binaries aren't code-signed, so your OS may show a warning on first run.
+
+### macOS
+If blocked by Gatekeeper ("cannot be opened because the developer cannot be verified"):
+```bash
+xattr -d com.apple.quarantine ./fop-mac
+```
+
+### Windows
+If SmartScreen blocks the file:
+1. Click "More info"
+2. Click "Run anyway"
+
+**Alternative:** Install via npm (`npm install -g fop-cli`) to avoid these warnings entirely.
+
 ## License
 
 GPL-3.0 (same as original Python FOP)
