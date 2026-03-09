@@ -114,6 +114,8 @@ pub struct SortConfig<'a> {
     pub convert_ubo: bool,
     pub no_sort: bool,
     pub alt_sort: bool,
+    /// Convert ABP extended selectors to uBO format
+    pub abp_convert: bool,
     /// Parse AdGuard extended CSS selectors (#$?# and #@$?#)
     pub parse_adguard: bool,
     pub localhost: bool,
@@ -1264,6 +1266,27 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             }
 
             let mut tidied = element_tidy(&domains, separator, selector);
+
+            // Convert ABP extended selectors to uBO format
+            if config.abp_convert && tidied.contains(":-abp-") {
+                tidied = tidied
+                    .replace(":-abp-contains(", ":has-text(")
+                    .replace(":-abp-has(", ":has(");
+                
+                // If only :has() (no :has-text), convert #?# to ##
+                if !tidied.contains(":has-text(") {
+                    tidied = tidied
+                        .replace("#?#", "##")
+                        .replace("#@?#", "#@#");
+                }
+                
+                if !config.quiet {
+                    write_warning(&format!(
+                        "Converted ABP selector: {}",
+                        tidied
+                    ));
+                }
+            }
 
             // Fix typos if enabled
             if config.fix_typos {

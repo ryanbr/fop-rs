@@ -129,6 +129,8 @@ struct Args {
     no_sort: bool,
     /// Use alternative sorting (sort by selector for all rule types)
     alt_sort: bool,
+    /// Convert ABP extended selectors to uBO format
+    abp_convert: bool,
     /// Parse AdGuard extended CSS selectors (#$?# and #@$?#)
     parse_adguard: bool,
     /// Files to parse as AdGuard extended CSS (comma-separated)
@@ -352,6 +354,7 @@ impl Args {
             no_ubo_convert: parse_bool(&config, "no-ubo-convert", false),
             no_msg_check: parse_bool(&config, "no-msg-check", false),
             disable_ignored: parse_bool(&config, "disable-ignored", false),
+            abp_convert: parse_bool(&config, "abp-convert", false),
             no_sort: parse_bool(&config, "no-sort", false),
             alt_sort: parse_bool(&config, "alt-sort", false),
             parse_adguard: parse_bool(&config, "parse-adguard", false),
@@ -424,6 +427,7 @@ impl Args {
                 "--disable-ignored" => args.disable_ignored = true,
                 "--no-sort" => args.no_sort = true,
                 "--alt-sort" => args.alt_sort = true,
+                "--abp-convert" => args.abp_convert = true,
                 "--parse-adguard" => args.parse_adguard = true,
                 _ if arg.starts_with("--parse-adguard=") => {
                     args.parse_adguard_files = arg.trim_start_matches("--parse-adguard=")
@@ -623,6 +627,7 @@ impl Args {
         println!("        --no-color      Disable colored output");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
+        println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --ignore-all-but=   Only process these files, ignore all others (comma-separated)");
         println!("        --config-file=  Custom config file path");
@@ -1188,6 +1193,7 @@ fn process_location(
             keep_empty_lines: sort_config.keep_empty_lines,
             ignore_dot_domains: sort_config.ignore_dot_domains,
             fix_typos,
+            abp_convert: sort_config.abp_convert,
             quiet,
             no_color,
             dry_run: sort_config.dry_run,
@@ -1591,6 +1597,7 @@ fn main() {
         backup: args.backup,
         keep_empty_lines: args.keep_empty_lines,
         ignore_dot_domains: args.ignore_dot_domains,
+        abp_convert: args.abp_convert,
         fix_typos: args.fix_typos,
         quiet: args.quiet,
         no_color: args.no_color,
