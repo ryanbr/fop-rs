@@ -62,8 +62,9 @@ jobs:
           
           # Optimized for ~2015+ CPUs (AVX2)
           cargo clean
-          RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release
-          cp target/release/fop "fop-${VERSION}-linux-x86_64-v3"
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-unknown-linux-gnu
+          cp target/x86_64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_64-v3"
+
 
           # Linux x86 32-bit
           cargo clean
@@ -77,17 +78,18 @@ jobs:
           
           # Windows x86_64-v3 (optimized for ~2015+ CPUs)
           cargo clean
-          RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
 
           # Linux x86_64-v4 (AVX-512: Intel Ice Lake+, AMD Zen 4+)
           cargo clean
-          RUSTFLAGS="-C target-cpu=x86-64-v4" cargo build --release
-          cp target/release/fop "fop-${VERSION}-linux-x86_64-v4"
+          rustup target add x86_64-unknown-linux-gnu
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v4" cargo build --release --target x86_64-unknown-linux-gnu
+          cp target/x86_64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_64-v4"
 
           # Windows x86_64-v4 (AVX-512: Intel Ice Lake+, AMD Zen 4+)
           cargo clean
-          RUSTFLAGS="-C target-cpu=x86-64-v4" cargo build --release --target x86_64-pc-windows-gnu
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C target-cpu=x86-64-v4" cargo build --release --target x86_64-pc-windows-gnu
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v4.exe"
 
           # Windows x86 32-bit
