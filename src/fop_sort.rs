@@ -1271,22 +1271,26 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
             // Convert ABP extended selectors to uBO format
             if config.abp_convert && tidied.contains(":-abp-") {
+                let original = tidied.clone();
                 tidied = tidied
                     .replace(":-abp-contains(", ":has-text(")
                     .replace(":-abp-has(", ":has(");
                 
-                // If only :has() (no :has-text), convert #?# to ##
-                if !tidied.contains(":has-text(") {
-                    tidied = tidied
-                        .replace("#?#", "##")
-                        .replace("#@?#", "#@#");
-                }
-                
-                if !config.quiet {
-                    write_warning(&format!(
-                        "Converted ABP selector: {}",
-                        tidied
-                    ));
+                // Only change separator if we actually converted something
+                if tidied != original {
+                    // If no :has-text(), convert #?# to ## (native CSS :has())
+                    if !tidied.contains(":has-text(") {
+                        tidied = tidied
+                            .replace("#?#", "##")
+                            .replace("#@?#", "#@#");
+                    }
+
+                    if !config.quiet {
+                        write_warning(&format!(
+                            "Converted ABP selector: {}",
+                            tidied
+                        ));
+                    }
                 }
             }
 
