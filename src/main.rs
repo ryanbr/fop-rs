@@ -9,6 +9,8 @@
 //! Copyright (C) 2011 Michael (original Python version)
 //! Rust port maintains GPL-3.0 license compatibility.
 
+#![allow(clippy::write_with_newline)]
+
 mod fop_git;
 mod fop_checksum;
 mod fop_sort;

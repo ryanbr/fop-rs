@@ -6,6 +6,8 @@
 //! Copyright (C) 2011 Michael (original Python version)
 //! Rust port maintains GPL-3.0 license compatibility.
 
+#![allow(clippy::write_with_newline)]
+
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::io::Cursor;
