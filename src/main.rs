@@ -540,12 +540,6 @@ impl Args {
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
                 }
-                _ if arg.starts_with("--add-timestamp=") => {
-                    args.add_timestamp = arg.trim_start_matches("--add-timestamp=")
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .collect();
-                }
                 _ if arg.starts_with("--validate-checksum=") => {
                     args.validate_checksum = arg.trim_start_matches("--validate-checksum=")
                         .split(',')
