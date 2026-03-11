@@ -354,6 +354,41 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> Cow<'_, str> {
 }
 
 /// Sort and clean filter options
+/// Split filter options on commas, keeping values intact for options like
+/// `jsonprune=` where commas are part of the value syntax.
+#[inline]
+fn split_filter_options(options: &str) -> Vec<&str> {
+    let parts: Vec<&str> = options.split(',').collect();
+    if parts.len() <= 1 {
+        return parts;
+    }
+    let mut result: Vec<&str> = Vec::with_capacity(parts.len());
+    let mut i = 0;
+    while i < parts.len() {
+        let part = parts[i];
+        // jsonprune values use commas in JSON path syntax — keep them joined
+        if part.starts_with("jsonprune=") || part.starts_with("jsonprune\\=") {
+            // Find the start and end byte offsets within the original string to return a single slice
+            let start_ptr = part.as_ptr() as usize - options.as_ptr() as usize;
+            i += 1;
+            let mut end_ptr = start_ptr + part.len();
+            while i < parts.len() && !parts[i].contains('=')
+                && !KNOWN_OPTIONS.contains(parts[i].trim_start_matches('~'))
+                && parts[i] != "important" && parts[i] != "media" && parts[i] != "all"
+            {
+                // +1 for the comma separator
+                end_ptr += 1 + parts[i].len();
+                i += 1;
+            }
+            result.push(&options[start_ptr..end_ptr]);
+        } else {
+            result.push(part);
+            i += 1;
+        }
+    }
+    result
+}
+
 pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Skip filters with regex values in options (contain =/.../ patterns)
     // ||example.com$removeparam=/^\\$ja=/
@@ -410,8 +445,8 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
         None => remove_unnecessary_wildcards(filter_in).into_owned(),
         Some(caps) => {
             let filter_text = remove_unnecessary_wildcards(&caps[1]).into_owned();
-            let option_list: Vec<String> = caps[2]
-                .split(',')
+            let option_list: Vec<String> = split_filter_options(&caps[2])
+                .into_iter()
                 .map(|opt| {
                     // Only replace underscores in option name, not in value
                     if let Some(eq_pos) = opt.find('=') {

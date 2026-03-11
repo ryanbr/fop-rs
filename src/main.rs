@@ -1818,26 +1818,82 @@ fn main() {
             parse_adguard: is_adguard_file(file_path, sort_config.parse_adguard, &args.parse_adguard_files),
             ..sort_config
         };
-        match fop_sort::fop_sort(file_path, &check_file_config) {
-            Ok(Some(diff)) => {
-                if args.output_diff_individual {
-                    // Individual mode: write .diff file alongside source
-                    let diff_path = file_path.with_extension("diff");
-                    if let Err(e) = fs::write(&diff_path, &diff) {
-                        eprintln!("Error writing diff file: {}", e);
-                    } else if !args.quiet {
-                        println!("Diff written to: {}", diff_path.display());
-                    }
-                } else {
-                    diff_output.lock().unwrap().push(diff);
-                }
+
+        // Benchmark: count lines/bytes for the single file
+        let (bench_lines, bench_bytes) = if args.benchmark {
+            if let Ok(content) = fs::read_to_string(file_path) {
+                (content.lines().count(), content.len() as u64)
+            } else {
+                (0, 0)
             }
-            Ok(None) => {}
-            Err(e) => eprintln!("Error processing {}: {}", file_path.display(), e),
+        } else {
+            (0, 0)
+        };
+
+        let bench_iterations = if args.benchmark { 3 } else { 1 };
+        let mut bench_times: Vec<std::time::Duration> = Vec::with_capacity(bench_iterations);
+
+        for iteration in 0..bench_iterations {
+            if args.benchmark && iteration > 0 {
+                diff_output.lock().unwrap().clear();
+            }
+
+            let iter_start = std::time::Instant::now();
+
+            match fop_sort::fop_sort(file_path, &check_file_config) {
+                Ok(Some(diff)) => {
+                    if args.output_diff_individual {
+                        let diff_path = file_path.with_extension("diff");
+                        if let Err(e) = fs::write(&diff_path, &diff) {
+                            eprintln!("Error writing diff file: {}", e);
+                        } else if !args.quiet {
+                            println!("Diff written to: {}", diff_path.display());
+                        }
+                    } else {
+                        diff_output.lock().unwrap().push(diff);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => eprintln!("Error processing {}: {}", file_path.display(), e),
+            }
+
+            let elapsed = iter_start.elapsed();
+            if args.benchmark {
+                bench_times.push(elapsed);
+            }
         }
 
-        // Add checksum if requested
-        if !args.add_checksum.is_empty() {
+        // Print benchmark results for --check-file
+        if args.benchmark {
+            let min = bench_times.iter().min().unwrap();
+            let max = bench_times.iter().max().unwrap();
+            let avg = bench_times.iter().sum::<std::time::Duration>() / bench_times.len() as u32;
+
+            println!();
+            println!("FOP Benchmark Results");
+            println!("=====================");
+            println!("Iterations:    {}", bench_iterations);
+            println!("Files:         1");
+            println!("Lines:         {}", bench_lines);
+            println!("Size:          {:.5} MB", bench_bytes as f64 / 1_048_576.0);
+            println!();
+            for (i, t) in bench_times.iter().enumerate() {
+                println!("  Run {}: {:.5}s", i + 1, t.as_secs_f64());
+            }
+            println!();
+            println!("Min:           {:.5}s", min.as_secs_f64());
+            println!("Avg:           {:.5}s", avg.as_secs_f64());
+            println!("Max:           {:.5}s", max.as_secs_f64());
+            println!();
+            let avg_secs = avg.as_secs_f64();
+            if avg_secs > 0.0 {
+                println!("Throughput:    {:.5} lines/sec", bench_lines as f64 / avg_secs);
+                println!("               {:.5} MB/sec", (bench_bytes as f64 / 1_048_576.0) / avg_secs);
+            }
+        }
+
+        // Add checksum if requested (skip during benchmark)
+        if !args.benchmark && !args.add_checksum.is_empty() {
             let filename = file_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
