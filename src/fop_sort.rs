@@ -360,17 +360,17 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // ||example.com$removeparam=/regex/
 
     // Fix typo: $option.option -> $option,option (before pattern matching)
-    let filter_in = if let Some(dollar_pos) = filter_in.rfind('$') {
+    let filter_in: Cow<str> = if let Some(dollar_pos) = filter_in.rfind('$') {
         let (base, opts) = filter_in.split_at(dollar_pos);
         if !opts.contains('=') && opts.contains('.') {
-            format!("{}{}", base, opts.replace('.', ","))
+            Cow::Owned(format!("{}{}", base, opts.replace('.', ",")))
         } else {
-            filter_in.to_string()
+            Cow::Borrowed(filter_in)
         }
     } else {
-        filter_in.to_string()
+        Cow::Borrowed(filter_in)
     };
-    let filter_in = filter_in.as_str();
+    let filter_in = filter_in.as_ref();
 
     // Remove errant spaces from network filters only
     // Skip: element rules, regex patterns, and options with legitimate spaces
@@ -381,16 +381,16 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=", 
                              "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam="]
         .iter().any(|s| filter_in.contains(s));
-    let filter_in = if !(is_element_rule || has_space_options || filter_in.starts_with('/') && filter_in.ends_with('/')) {
+    let filter_in: Cow<str> = if !(is_element_rule || has_space_options || filter_in.starts_with('/') && filter_in.ends_with('/')) {
         if filter_in.contains(' ') || filter_in.contains('\t') {
-            filter_in.split_whitespace().collect::<String>()
+            Cow::Owned(filter_in.split_whitespace().collect::<String>())
         } else {
-            filter_in.to_string()
+            Cow::Borrowed(filter_in)
         }
     } else {
-        filter_in.to_string()
+        Cow::Borrowed(filter_in)
     };
-    let filter_in = filter_in.as_str();
+    let filter_in = filter_in.as_ref();
 
     if let Some(dollar_pos) = filter_in.rfind('$') {
         let options_part = &filter_in[dollar_pos..];
