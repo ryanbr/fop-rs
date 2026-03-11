@@ -7,14 +7,16 @@ FOP (Filter Orderer and Preener) - Rust CLI tool for sorting and cleaning ad-blo
 ```
 fop-rs/
 ├── src/
-│   ├── main.rs      # CLI entry, argument parsing, process_location()
-│   ├── fop_sort.rs  # Core filter sorting/tidying logic
-│   ├── fop_git.rs   # Git integration (commits, PRs, diffs)
-│   ├── fop_typos.rs # Typo detection and fixing
-│   └── tests.rs     # Unit tests for all modules
-├── Cargo.toml       # Rust dependencies, version
-├── package.json     # npm package config, version
-├── install.js       # npm postinstall binary downloader, version
+│   ├── main.rs          # CLI entry, argument parsing, process_location()
+│   ├── fop_sort.rs      # Core filter sorting/tidying logic
+│   ├── fop_git.rs       # Git integration (commits, PRs, diffs)
+│   ├── fop_typos.rs     # Typo detection and fixing
+│   ├── fop_checksum.rs  # ABP checksum calculation and verification
+│   ├── fop_datestamp.rs # Timestamp and version header management
+│   └── tests.rs         # Unit tests for all modules
+├── Cargo.toml           # Rust dependencies, version
+├── package.json         # npm package config, version
+├── install.js           # npm postinstall binary downloader, version
 └── .github/workflows/
     └── npm-publish.yml  # Multi-platform build & release
 ```
@@ -39,9 +41,10 @@ The npm-publish workflow handles this automatically via `npm version patch`.
 
 ### Preferred Style
 ```rust
-// Use ahash instead of std
+// Use ahash instead of std (and Cow for zero-copy returns)
 use ahash::AHashSet as HashSet;
 use ahash::AHashMap as HashMap;
+use std::borrow::Cow;
 
 // Pre-allocate when size known
 let mut vec = Vec::with_capacity(items.len());
@@ -62,9 +65,15 @@ if a {
 }
 ```
 
+// Use Cow<str> to avoid allocation when returning unchanged input
+fn process(input: &str) -> Cow<'_, str> {
+    if no_change { Cow::Borrowed(input) } else { Cow::Owned(modified) }
+}
+```
+
 ### Avoid
 - `HashMap`/`HashSet` from std (use ahash)
-- Unnecessary `.clone()` calls
+- Unnecessary `.clone()` or `.to_string()` calls (use `Cow<str>` on hot paths)
 - `unwrap()` on user input (use proper error handling)
 - Nested `else { if }` blocks
 
@@ -175,6 +184,12 @@ cargo build --release
 ./target/release/fop --show-config
 ```
 
+### Benchmark
+```bash
+./target/release/fop --benchmark /path/to/easylist
+```
+Runs 3 iterations in dry-run mode, reports min/avg/max time, lines/sec, MB/sec, ms/file.
+
 ### CI simulation
 ```bash
 ./target/release/fop --no-commit --check-banned-list=banned.txt --ci .
@@ -199,15 +214,24 @@ cp target/release/fop ~/easylist/fop-linux
 | `read_input()` | fop_git.rs | Readline with history |
 | `element_tidy()` | fop_sort.rs | Tidy cosmetic rules |
 | `filter_tidy()` | fop_sort.rs | Tidy network rules |
+| `remove_unnecessary_wildcards()` | fop_sort.rs | Strip leading/trailing wildcards |
+| `combine_filters()` | fop_sort.rs | Merge rules with same selector |
 | `combine_has_text_rules()` | fop_sort.rs | Merge :has-text() rules |
+| `add_checksum()` | fop_checksum.rs | Calculate and insert ABP checksum |
+| `verify_checksum()` | fop_checksum.rs | Validate existing checksum |
+| `add_timestamp()` | fop_datestamp.rs | Update Last Modified header |
 
 ## Dependencies
 - `rayon` - Parallel processing
 - `ahash` - Fast hashing
 - `regex` - Pattern matching
 - `walkdir` - Directory traversal
-- `colored` - Terminal colors
+- `owo-colors` - Terminal colors
 - `rustyline` - Readline/history support
+- `base64` - ABP checksum encoding
+- `md5` - ABP checksum calculation
+- `similar` - Diff output generation
+- `urlencoding` - PR URL encoding
 
 ## Troubleshooting
 
