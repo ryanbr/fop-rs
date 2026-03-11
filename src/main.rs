@@ -219,6 +219,8 @@ struct Args {
     validate_checksum_and_fix: Vec<String>,
     /// Custom git binary path
     git_binary: Option<String>,
+    /// Benchmark mode - time processing and report metrics
+    benchmark: bool,
 }
 
 /// Load configuration from .fopconfig file
@@ -416,6 +418,7 @@ impl Args {
                 .map(|s| s.split(',').map(|f| f.trim().to_string()).collect())
                 .unwrap_or_default(),
             git_binary: config.get("git-binary").cloned(),
+            benchmark: false,
         };
 
         // Command line args override config
@@ -520,6 +523,7 @@ impl Args {
                 "--quiet" | "-q" => args.quiet = true,
                 "--limited-quiet" => args.limited_quiet = true,
                 "--ci" => args.ci = true,
+                "--benchmark" => args.benchmark = true,
                 _ if arg.starts_with("--history=") => {
                     args.history = arg.trim_start_matches("--history=")
                         .split(',')
@@ -651,6 +655,7 @@ impl Args {
         println!("        --add-checksum=FILES   Add/update checksum for specific files (comma-separated)");
         println!("        --validate-checksum=FILES  Validate checksum for specific files (exit 1 on failure)");
         println!("        --validate-checksum-and-fix=FILES  Validate and fix invalid checksums");
+        println!("        --benchmark     Benchmark sorting performance (3 iterations, dry-run)");
         println!("        --show-config   Show applied configuration and exit");
         println!("        --git-binary=<path>    Path to git binary (default: git in PATH)");
         println!("    -h, --help          Show this help message");
@@ -1543,6 +1548,12 @@ fn main() {
         return;
     }
 
+    // Benchmark mode: force dry-run, no-commit, quiet
+    if args.benchmark {
+        args.no_commit = true;
+        args.quiet = true;
+    }
+
     // Load banned list early so we can show count in greeting
     let banned_domains_early = args.check_banned_list.as_ref().and_then(|list_path| {
         match fop_sort::load_banned_list(list_path) {
@@ -1597,7 +1608,7 @@ fn main() {
         fix_typos: args.fix_typos,
         quiet: args.quiet,
         no_color: args.no_color,
-        dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed,
+        dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed || args.benchmark,
         output_changed: args.output_changed,
         add_timestamp: !args.add_timestamp.is_empty(),
     };
@@ -1898,52 +1909,138 @@ fn main() {
         TRACK_CHANGES.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    // Process all locations
-    for (i, location) in locations.iter().enumerate() {
-        if let Err(e) = process_location(
-            location,
-            args.no_commit,
-            args.no_msg_check,
-            args.disable_ignored,
-            args.no_color,
-            args.no_large_warning,
-            &args.ignore_files,
-            &args.ignore_dirs,
-            &args.ignore_all_but,
-            &args.file_extensions,
-            &sort_config,
-            &args.create_pr,
-            &args.git_pr_branch,
-            args.pr_show_changes,
-            &banned_domains,
-            args.auto_banned_remove,
-            &args.direct_push_users,
-            args.check_banned_list.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
-            args.fix_typos,
-            args.fix_typos_on_add,
-            args.auto_fix,
-            args.only_sort_changed,
-            args.rebase_on_fail,
-            args.ci,
-            args.quiet,
-            args.limited_quiet,
-            args.output_diff_individual,
-            &diff_output,
-            &args.git_message,
-            &args.history,
-            args.git_binary.as_deref(),
-            &args.add_checksum,
-            &args.validate_checksum_and_fix,
-            &args.add_timestamp,
-            args.localhost,
-            &args.localhost_files,
-            &args.parse_adguard_files,
-        ) {
-            eprintln!("Error: {}", e);
+    // Benchmark: count files and lines before processing
+    let (bench_files, bench_lines, bench_bytes) = if args.benchmark {
+        let mut files = 0usize;
+        let mut lines = 0usize;
+        let mut bytes = 0u64;
+        for location in &locations {
+            for entry in WalkDir::new(location)
+                .into_iter()
+                .filter_entry(|e| {
+                    let name = e.file_name().to_string_lossy();
+                    !name.starts_with('.')
+                        && (args.disable_ignored || !IGNORE_DIRS.contains(&name.as_ref()))
+                        && !should_ignore_dir(e.path(), &args.ignore_dirs)
+                })
+                .filter_map(|e| e.ok())
+            {
+                if !entry_is_file(&entry) { continue; }
+                let path = entry.path();
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if !args.file_extensions.iter().any(|ext| ext == extension) { continue; }
+                if !args.disable_ignored && IGNORE_FILES.contains(&filename) { continue; }
+                if should_ignore_file(filename, &args.ignore_files) { continue; }
+                if !args.ignore_all_but.is_empty()
+                    && !args.ignore_all_but.iter().any(|f| filename.contains(f)) { continue; }
+                files += 1;
+                if let Ok(content) = fs::read_to_string(path) {
+                    lines += content.lines().count();
+                    bytes += content.len() as u64;
+                }
+            }
         }
-        // Print blank line between multiple directories (preserve original behavior)
-        if locations.len() > 1 && i < locations.len() - 1 {
-            println!();
+        (files, lines, bytes)
+    } else {
+        (0, 0, 0)
+    };
+
+    let bench_iterations = if args.benchmark { 3 } else { 1 };
+    let mut bench_times: Vec<std::time::Duration> = Vec::with_capacity(bench_iterations);
+
+    for iteration in 0..bench_iterations {
+        if args.benchmark && iteration > 0 {
+            // Clear diff output between iterations
+            diff_output.lock().unwrap().clear();
+        }
+
+        let iter_start = std::time::Instant::now();
+
+        // Process all locations
+        for (i, location) in locations.iter().enumerate() {
+            if let Err(e) = process_location(
+                location,
+                args.no_commit,
+                args.no_msg_check,
+                args.disable_ignored,
+                args.no_color,
+                args.no_large_warning,
+                &args.ignore_files,
+                &args.ignore_dirs,
+                &args.ignore_all_but,
+                &args.file_extensions,
+                &sort_config,
+                &args.create_pr,
+                &args.git_pr_branch,
+                args.pr_show_changes,
+                &banned_domains,
+                args.auto_banned_remove,
+                &args.direct_push_users,
+                args.check_banned_list.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
+                args.fix_typos,
+                args.fix_typos_on_add,
+                args.auto_fix,
+                args.only_sort_changed,
+                args.rebase_on_fail,
+                args.ci,
+                args.quiet,
+                args.limited_quiet,
+                args.output_diff_individual,
+                &diff_output,
+                &args.git_message,
+                &args.history,
+                args.git_binary.as_deref(),
+                &args.add_checksum,
+                &args.validate_checksum_and_fix,
+                &args.add_timestamp,
+                args.localhost,
+                &args.localhost_files,
+                &args.parse_adguard_files,
+            ) {
+                eprintln!("Error: {}", e);
+            }
+            // Print blank line between multiple directories (preserve original behavior)
+            if !args.benchmark && locations.len() > 1 && i < locations.len() - 1 {
+                println!();
+            }
+        }
+
+        let elapsed = iter_start.elapsed();
+        if args.benchmark {
+            bench_times.push(elapsed);
+        }
+    }
+
+    // Print benchmark results
+    if args.benchmark {
+        let min = bench_times.iter().min().unwrap();
+        let max = bench_times.iter().max().unwrap();
+        let avg = bench_times.iter().sum::<std::time::Duration>() / bench_times.len() as u32;
+
+        println!();
+        println!("FOP Benchmark Results");
+        println!("=====================");
+        println!("Iterations:    {}", bench_iterations);
+        println!("Files:         {}", bench_files);
+        println!("Lines:         {}", bench_lines);
+        println!("Size:          {:.5} MB", bench_bytes as f64 / 1_048_576.0);
+        println!();
+        for (i, t) in bench_times.iter().enumerate() {
+            println!("  Run {}: {:.5}s", i + 1, t.as_secs_f64());
+        }
+        println!();
+        println!("Min:           {:.5}s", min.as_secs_f64());
+        println!("Avg:           {:.5}s", avg.as_secs_f64());
+        println!("Max:           {:.5}s", max.as_secs_f64());
+        println!();
+        let avg_secs = avg.as_secs_f64();
+        if avg_secs > 0.0 {
+            println!("Throughput:    {:.5} lines/sec", bench_lines as f64 / avg_secs);
+            println!("               {:.5} MB/sec", (bench_bytes as f64 / 1_048_576.0) / avg_secs);
+            if bench_files > 0 {
+                println!("               {:.5}ms/file", (avg_secs * 1000.0) / bench_files as f64);
+            }
         }
     }
 
