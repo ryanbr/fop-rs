@@ -11,6 +11,9 @@
 
 #![allow(clippy::write_with_newline)]
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod fop_git;
 mod fop_checksum;
 mod fop_sort;

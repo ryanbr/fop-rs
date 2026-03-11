@@ -20,6 +20,7 @@ md5 = "0.8"
 owo-colors = "4"
 similar = "2"
 urlencoding ="2.1"
+mimalloc = { version = "0.1", default-features = false }
 
 [profile.release]
 lto = "fat"
