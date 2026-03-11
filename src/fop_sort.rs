@@ -8,6 +8,7 @@
 
 #![allow(clippy::write_with_newline)]
 
+use std::borrow::Cow;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::io::Cursor;
@@ -299,12 +300,12 @@ pub(crate) fn sort_domains(domains: &mut [String]) {
 // =============================================================================
 
 /// Remove unnecessary wildcards from filter text
-pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> String {
+pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> Cow<'_, str> {
     // Fast path: no wildcards to process
     if !(filter_text.starts_with('*') || filter_text.ends_with('*')
         || filter_text.starts_with("@@") && filter_text.get(2..3) == Some("*"))
     {
-        return filter_text.to_string();
+        return Cow::Borrowed(filter_text);
     }
 
     let mut result = filter_text.to_string();
@@ -349,7 +350,7 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> String {
         result.insert_str(0, "@@");
     }
 
-    result
+    Cow::Owned(result)
 }
 
 /// Sort and clean filter options
@@ -400,15 +401,15 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
 
     // Fast path: no options to process (no $ in filter)
     if !filter_in.contains('$') {
-        return remove_unnecessary_wildcards(filter_in);
+        return remove_unnecessary_wildcards(filter_in).into_owned();
     }
 
     let option_split = OPTION_PATTERN.captures(filter_in);
 
     match option_split {
-        None => remove_unnecessary_wildcards(filter_in),
+        None => remove_unnecessary_wildcards(filter_in).into_owned(),
         Some(caps) => {
-            let filter_text = remove_unnecessary_wildcards(&caps[1]);
+            let filter_text = remove_unnecessary_wildcards(&caps[1]).into_owned();
             let option_list: Vec<String> = caps[2]
                 .split(',')
                 .map(|opt| {
