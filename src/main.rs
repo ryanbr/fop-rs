@@ -988,6 +988,26 @@ fn entry_is_file(entry: &DirEntry) -> bool {
     ft.is_file() || (ft.is_symlink() && entry.path().is_file())
 }
 
+/// Check if a file should use localhost mode
+#[inline]
+fn is_localhost_file(path: &Path, localhost: bool, localhost_files: &[String]) -> bool {
+    localhost || {
+        let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        localhost_files.iter().any(|f| fname == f.as_str())
+            || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
+    }
+}
+
+/// Check if a file should use AdGuard parsing
+#[inline]
+fn is_adguard_file(path: &Path, parse_adguard: bool, parse_adguard_files: &[String]) -> bool {
+    parse_adguard || {
+        let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        parse_adguard_files.iter().any(|f| fname == f.as_str())
+            || parse_adguard_files.iter().any(|f| path.ends_with(f.as_str()))
+    }
+}
+
 /// Get list of changed/untracked files from git
 /// Returns None if git not available or not in a repo
 #[inline]
@@ -1179,16 +1199,8 @@ fn process_location(
             convert_ubo: sort_config.convert_ubo,
             no_sort: sort_config.no_sort,
             alt_sort: sort_config.alt_sort,
-            parse_adguard: sort_config.parse_adguard || {
-                let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                parse_adguard_files.iter().any(|f| fname == f.as_str())
-                    || parse_adguard_files.iter().any(|f| path.ends_with(f.as_str()))
-            },
-            localhost: sort_config.localhost || {
-                let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                localhost_files.iter().any(|f| fname == f.as_str())
-                    || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
-            },
+            parse_adguard: is_adguard_file(path, sort_config.parse_adguard, parse_adguard_files),
+            localhost: is_localhost_file(path, sort_config.localhost, localhost_files),
             comment_chars: sort_config.comment_chars,
             backup: sort_config.backup,
             keep_empty_lines: sort_config.keep_empty_lines,
@@ -1254,10 +1266,7 @@ fn process_location(
                 if add_timestamp.iter().any(|f| filename == f.as_str())
                     || add_timestamp.iter().any(|f| path.ends_with(f.as_str()))
                 {
-                    let is_localhost = localhost || {
-                        localhost_files.iter().any(|f| filename == f.as_str())
-                            || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
-                    };
+                    let is_localhost = is_localhost_file(path, localhost, localhost_files);
                     let _ = fop_datestamp::add_timestamp(path, is_localhost, quiet, no_color);
                 }
             }
@@ -1275,10 +1284,7 @@ fn process_location(
                 if add_checksum.iter().any(|f| filename == f.as_str())
                     || add_checksum.iter().any(|f| path.ends_with(f.as_str()))
                 {
-                    let is_localhost = localhost || {
-                        localhost_files.iter().any(|f| filename == f.as_str())
-                            || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
-                    };
+                    let is_localhost = is_localhost_file(path, localhost, localhost_files);
                     match fop_checksum::add_checksum(path, is_localhost, quiet, no_color) {
                         Ok(Some(_checksum)) => {
                             // File was modified, checksum written successfully
@@ -1318,10 +1324,7 @@ fn process_location(
                                 eprintln!("Checksum INVALID: {} (expected {}, found {}) - fixing...",
                                     path.display(), expected, found);
                             }
-                            let is_localhost = localhost || {
-                                localhost_files.iter().any(|f| filename == f.as_str())
-                                    || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
-                            };
+                            let is_localhost = is_localhost_file(path, localhost, localhost_files);
                             if let Err(e) = fop_checksum::add_checksum(path, is_localhost, quiet, no_color) {
                                 eprintln!("Error fixing checksum for {}: {}", path.display(), e);
                             }
@@ -1330,10 +1333,7 @@ fn process_location(
                             if !quiet {
                                 eprintln!("Checksum MISSING: {} - adding...", path.display());
                             }
-                            let is_localhost = localhost || {
-                                localhost_files.iter().any(|f| filename == f.as_str())
-                                    || localhost_files.iter().any(|f| path.ends_with(f.as_str()))
-                            };
+                            let is_localhost = is_localhost_file(path, localhost, localhost_files);
                             if let Err(e) = fop_checksum::add_checksum(path, is_localhost, quiet, no_color) {
                                 eprintln!("Error adding checksum for {}: {}", path.display(), e);
                             }
@@ -1814,16 +1814,8 @@ fn main() {
         }
 
         let check_file_config = SortConfig {
-            localhost: sort_config.localhost || {
-                let fname = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                args.localhost_files.iter().any(|f| fname == f.as_str())
-                    || args.localhost_files.iter().any(|f| file_path.ends_with(f.as_str()))
-            },
-            parse_adguard: sort_config.parse_adguard || {
-                let fname = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                args.parse_adguard_files.iter().any(|f| fname == f.as_str())
-                    || args.parse_adguard_files.iter().any(|f| file_path.ends_with(f.as_str()))
-            },
+            localhost: is_localhost_file(file_path, sort_config.localhost, &args.localhost_files),
+            parse_adguard: is_adguard_file(file_path, sort_config.parse_adguard, &args.parse_adguard_files),
             ..sort_config
         };
         match fop_sort::fop_sort(file_path, &check_file_config) {
@@ -1852,11 +1844,7 @@ fn main() {
                 if args.add_checksum.iter().any(|f| filename == f.as_str())
                     || args.add_checksum.iter().any(|f| file_path.ends_with(f.as_str()))
                 {
-                let is_localhost = args.localhost || {
-                    let fname = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    args.localhost_files.iter().any(|f| fname == f.as_str())
-                        || args.localhost_files.iter().any(|f| file_path.ends_with(f.as_str()))
-                };
+                let is_localhost = is_localhost_file(file_path, args.localhost, &args.localhost_files);
                 let _ = fop_checksum::add_checksum(file_path, is_localhost, args.quiet, args.no_color);
             }
         }
