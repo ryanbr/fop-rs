@@ -808,7 +808,7 @@ pub(crate) static REGEX_ELEMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 pub(crate) static OPTION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(.*)\$(~?[\w\-]+(?:=[^,\s]+)?(?:,~?[\w\-]+(?:=[^,\s]+)?)*)$").unwrap()
+    Regex::new(r"^(.*[^\\]|)\$(~?[\w\-]+(?:=[^,\s]+)?(?:,~?[\w\-]+(?:=[^,\s]+)?)*)$").unwrap()
 });
 
 pub(crate) static PSEUDO_PATTERN: LazyLock<Regex> =

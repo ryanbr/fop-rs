@@ -176,6 +176,50 @@ fn test_filter_tidy_adguard_js_no_space_strip() {
 }
 
 #[test]
+fn test_filter_tidy_jsonprune_no_commas() {
+    // jsonprune with dot-separated path — dots preserved, spaces preserved
+    let result = filter_tidy(
+        "||assets.msn.com/service/news/feed/pages/$jsonprune=\\$.sections..subSections..cards..[?(key-substr 'type' 'nativead')]",
+        true,
+    );
+    assert!(result.contains("jsonprune=\\$.sections..subSections..cards.."), "jsonprune value broken: {}", result);
+    assert!(result.contains("key-substr 'type' 'nativead'"), "jsonprune spaces stripped: {}", result);
+}
+
+#[test]
+fn test_filter_tidy_jsonprune_with_domain() {
+    // jsonprune followed by domain= option — comma should separate them
+    let result = filter_tidy(
+        ".com/playlist?list=$jsonprune=\\$.playerConfig.ssapConfig,domain=youtubekids.com|youtube-nocookie.com|youtube.com",
+        true,
+    );
+    assert!(result.contains("jsonprune=\\$.playerConfig.ssapConfig"), "jsonprune value broken: {}", result);
+    assert!(result.contains("domain=youtube-nocookie.com|youtube.com|youtubekids.com"), "domain missing or unsorted: {}", result);
+}
+
+#[test]
+fn test_filter_tidy_jsonprune_escaped_commas() {
+    // jsonprune with escaped commas in value, followed by domain=
+    let result = filter_tidy(
+        ".com/watch?$xmlhttprequest,jsonprune=\\$..[adPlacements\\, adSlots\\, playerAds],domain=youtubekids.com|youtube-nocookie.com|youtube.com",
+        true,
+    );
+    assert!(result.contains("jsonprune=\\$..[adPlacements\\, adSlots\\, playerAds]"), "jsonprune escaped commas broken: {}", result);
+    assert!(result.contains("domain="), "domain option lost: {}", result);
+    assert!(result.contains("xmlhttprequest"), "xmlhttprequest option lost: {}", result);
+}
+
+#[test]
+fn test_filter_tidy_jsonprune_complex_path() {
+    // jsonprune with complex JSON path, no other options
+    let result = filter_tidy(
+        "||msn.com/resolver/api/resolve/$jsonprune=\\$.configs[\"ConsumptionPage/gallery_default\"].properties.componentConfigs.slideshowConfigs..interstitialNativeAds",
+        true,
+    );
+    assert!(result.contains("jsonprune=\\$.configs[\"ConsumptionPage/gallery_default\"]"), "jsonprune complex path broken: {}", result);
+}
+
+#[test]
 fn test_sort_domains() {
     let mut domains = vec![
         "z.com".to_string(),

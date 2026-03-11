@@ -354,6 +354,20 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> Cow<'_, str> {
 }
 
 /// Sort and clean filter options
+/// Find the option separator `$` position, skipping escaped `\$` in values.
+#[inline]
+fn find_option_separator(filter: &str) -> Option<usize> {
+    let bytes = filter.as_bytes();
+    let mut i = filter.len();
+    while i > 0 {
+        i -= 1;
+        if bytes[i] == b'$' && (i == 0 || bytes[i - 1] != b'\\') {
+            return Some(i);
+        }
+    }
+    None
+}
+
 /// Split filter options on commas, keeping values intact for options like
 /// `jsonprune=` where commas are part of the value syntax.
 #[inline]
@@ -395,7 +409,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // ||example.com$removeparam=/regex/
 
     // Fix typo: $option.option -> $option,option (before pattern matching)
-    let filter_in: Cow<str> = if let Some(dollar_pos) = filter_in.rfind('$') {
+    let filter_in: Cow<str> = if let Some(dollar_pos) = find_option_separator(filter_in) {
         let (base, opts) = filter_in.split_at(dollar_pos);
         if !opts.contains('=') && opts.contains('.') {
             Cow::Owned(format!("{}{}", base, opts.replace('.', ",")))
@@ -413,8 +427,9 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
         && ["##", "#@#", "#?#", "#$#", "#@$#", "#%#", "#@%#", "#$?#", "#@$?#"]
             .iter().any(|s| filter_in.contains(s)))
         || filter_in.contains("$$");
-    let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=", 
-                             "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam="]
+    let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=",
+                             "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam=",
+                             "$jsonprune=", ",jsonprune="]
         .iter().any(|s| filter_in.contains(s));
     let filter_in: Cow<str> = if !(is_element_rule || has_space_options || filter_in.starts_with('/') && filter_in.ends_with('/')) {
         if filter_in.contains(' ') || filter_in.contains('\t') {
@@ -427,7 +442,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     };
     let filter_in = filter_in.as_ref();
 
-    if let Some(dollar_pos) = filter_in.rfind('$') {
+    if let Some(dollar_pos) = find_option_separator(filter_in) {
         let options_part = &filter_in[dollar_pos..];
         if options_part.contains("=/") {
             return filter_in.to_string();
