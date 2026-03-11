@@ -2,6 +2,15 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [5.2.1]
+
+- Add `--benchmark` flag for timing sort performance (3 iterations, reports lines/sec, MB/sec, ms/file)
+- Use `Cow<str>` in `remove_unnecessary_wildcards` to avoid allocation on common path
+- Use `Cow<str>` in `filter_tidy` preprocessing to avoid allocation when unchanged
+- Fast reject for `is_extended` check in `element_tidy` using match on separator
+- Remove duplicate `--add-timestamp=` match arm in CLI parser
+- Extract `is_localhost_file`/`is_adguard_file` helpers to reduce duplication
+
 ## [5.2.0] - 2026-03-10
 
 - Fix sorting of `-abp-properties` rules
