@@ -566,36 +566,33 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
     }
 
     // Skip selector processing for uBO/ABP/AdGuard extended syntax (preserve exactly as-is)
-    let is_extended = selector.starts_with("+js(")
-        || selector.starts_with("^")
-        || selector.starts_with("//scriptlet(")
-        || selector.contains(":style(")
-        || selector.contains(":has-text(")
-        || selector.contains(":has(")
-        || selector.contains(":remove(")
-        || selector.contains(":remove-attr(")
-        || selector.contains(":remove-class(")
-        || selector.contains(":matches-path(")
-        || selector.contains(":matches-css(")
-        || selector.contains(":matches-media(")
-        || selector.contains(":matches-prop(")
-        || selector.contains(":upward(")
-        || selector.contains(":xpath(")
-        || selector.contains(":watch-attr(")
-        || selector.contains(":min-text-length(")
-        || selector.contains(":-abp-has(")
-        || selector.contains(":-abp-contains(")
-        || selector.contains(":-abp-properties(")
-        || selector.contains(":others(")
-        || selector.contains(" {")
-        || separator == "#$#"
-        || separator == "#@$#"
-        || separator == "#%#"
-        || separator == "#@%#"
-        || separator == "#$?#"
-        || separator == "#@$?#"
-        || separator == "$$"
-        || separator == "$@$";
+    let is_extended = match separator {
+        "#$#" | "#@$#" | "#%#" | "#@%#" | "#$?#" | "#@$?#" | "$$" | "$@$" => true,
+        _ => selector.starts_with("+js(")
+            || selector.starts_with("^")
+            || selector.starts_with("//scriptlet(")
+            || selector.contains(" {")
+            || (selector.contains(':') && (
+                selector.contains(":style(")
+                || selector.contains(":has-text(")
+                || selector.contains(":has(")
+                || selector.contains(":remove(")
+                || selector.contains(":remove-attr(")
+                || selector.contains(":remove-class(")
+                || selector.contains(":matches-path(")
+                || selector.contains(":matches-css(")
+                || selector.contains(":matches-media(")
+                || selector.contains(":matches-prop(")
+                || selector.contains(":upward(")
+                || selector.contains(":xpath(")
+                || selector.contains(":watch-attr(")
+                || selector.contains(":min-text-length(")
+                || selector.contains(":-abp-has(")
+                || selector.contains(":-abp-contains(")
+                || selector.contains(":-abp-properties(")
+                || selector.contains(":others(")
+            ))
+    };
 
     if is_extended {
         // Normalize scriptlet spacing (only simple args without quotes)
