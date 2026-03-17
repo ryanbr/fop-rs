@@ -510,6 +510,45 @@ fn get_current_branch(base_cmd: &[String]) -> Option<String> {
     })
 }
 
+/// Get the short commit hash of HEAD
+#[inline]
+fn get_head_short_hash(base_cmd: &[String]) -> Option<String> {
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Convert a git remote URL to a browser-friendly HTTPS URL
+#[inline]
+fn remote_url_to_https(url: &str) -> String {
+    let url = url.trim();
+    if url.starts_with("git@") {
+        url.replacen("git@", "https://", 1)
+            .replacen(':', "/", 1)
+            .trim_end_matches(".git")
+            .to_string()
+    } else {
+        url.trim_end_matches(".git").to_string()
+    }
+}
+
+/// Get the commit URL for HEAD
+fn get_commit_url(base_cmd: &[String]) -> Option<String> {
+    let hash = get_head_short_hash(base_cmd)?;
+    let remote_url = get_remote_url(base_cmd, "origin")?;
+    let base_url = remote_url_to_https(&remote_url);
+    Some(format!("{}/commit/{}", base_url, hash))
+}
+
 /// Prompt user to select a remote
 fn prompt_for_remote(remotes: &[String], no_color: bool) -> Option<String> {
     println!("Available remotes: {}", 
@@ -918,13 +957,18 @@ pub fn commit_changes(
                 eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
             }
         } else if !quiet {
+            let commit_url = get_commit_url(base_cmd).unwrap_or_default();
             if no_color {
-                println!("Completed commit process successfully.");
+                println!("Completed commit process successfully. {}", commit_url);
             } else {
-                println!(
+                print!(
                     "{}",
                     "Completed commit process successfully.".green().bold()
                 );
+                if !commit_url.is_empty() {
+                    print!(" {}", commit_url.cyan());
+                }
+                println!();
             }
         }
         return Ok(());
@@ -1026,13 +1070,18 @@ pub fn commit_changes(
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
             } else if !quiet {
+                let commit_url = get_commit_url(base_cmd).unwrap_or_default();
                 if no_color {
-                    println!("Completed commit process successfully.");
+                    println!("Completed commit process successfully. {}", commit_url);
                 } else {
-                    println!(
+                    print!(
                         "{}",
                         "Completed commit process successfully.".green().bold()
                     );
+                    if !commit_url.is_empty() {
+                        print!(" {}", commit_url.cyan());
+                    }
+                    println!();
                 }
             }
             return Ok(());
