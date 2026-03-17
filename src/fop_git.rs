@@ -967,7 +967,7 @@ pub fn commit_changes(
             } else {
                 print!(
                     "{}",
-                    "Commit successful:".green().bold()
+                    "Commit successful:".purple().bold()
                 );
                 if !commit_url.is_empty() {
                     print!("  {}", commit_url.white().bold());
@@ -1086,7 +1086,7 @@ pub fn commit_changes(
                     print!("\r\x1b[2K");
                     print!(
                         "{}",
-                        "Commit successful:".green().bold()
+                        "Commit successful:".purple().bold()
                     );
                     if !commit_url.is_empty() {
                         print!("  {}", commit_url.white().bold());
