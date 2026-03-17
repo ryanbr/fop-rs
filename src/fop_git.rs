@@ -531,11 +531,15 @@ fn get_head_short_hash(base_cmd: &[String]) -> Option<String> {
 #[inline]
 fn remote_url_to_https(url: &str) -> String {
     let url = url.trim();
-    if url.starts_with("git@") {
-        url.replacen("git@", "https://", 1)
-            .replacen(':', "/", 1)
-            .trim_end_matches(".git")
-            .to_string()
+    if let Some(rest) = url.strip_prefix("git@") {
+        // git@github.com:user/repo.git -> https://github.com/user/repo
+        if let Some(colon_pos) = rest.find(':') {
+            let host = &rest[..colon_pos];
+            let path = &rest[colon_pos + 1..];
+            format!("https://{}/{}", host, path.trim_end_matches(".git"))
+        } else {
+            url.trim_end_matches(".git").to_string()
+        }
     } else {
         url.trim_end_matches(".git").to_string()
     }
@@ -959,14 +963,14 @@ pub fn commit_changes(
         } else if !quiet {
             let commit_url = get_commit_url(base_cmd).unwrap_or_default();
             if no_color {
-                println!("Completed commit process successfully. {}", commit_url);
+                println!("Completed commit process successfully:  {}", commit_url);
             } else {
                 print!(
                     "{}",
-                    "Completed commit process successfully.".green().bold()
+                    "Completed commit process successfully:".green().bold()
                 );
                 if !commit_url.is_empty() {
-                    print!(" {}", commit_url.cyan());
+                    print!("  {}", commit_url.cyan());
                 }
                 println!();
             }
@@ -1072,14 +1076,14 @@ pub fn commit_changes(
             } else if !quiet {
                 let commit_url = get_commit_url(base_cmd).unwrap_or_default();
                 if no_color {
-                    println!("Completed commit process successfully. {}", commit_url);
+                    println!("Completed commit process successfully:  {}", commit_url);
                 } else {
                     print!(
                         "{}",
-                        "Completed commit process successfully.".green().bold()
+                        "Completed commit process successfully:".green().bold()
                     );
                     if !commit_url.is_empty() {
-                        print!(" {}", commit_url.cyan());
+                        print!("  {}", commit_url.cyan());
                     }
                     println!();
                 }
