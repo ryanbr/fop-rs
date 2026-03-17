@@ -963,11 +963,11 @@ pub fn commit_changes(
         } else if !quiet {
             let commit_url = get_commit_url(base_cmd).unwrap_or_default();
             if no_color {
-                println!("Completed commit process successfully:  {}", commit_url);
+                println!("Commit successful:  {}", commit_url);
             } else {
                 print!(
                     "{}",
-                    "Completed commit process successfully:".green().bold()
+                    "Commit successful:".green().bold()
                 );
                 if !commit_url.is_empty() {
                     print!("  {}", commit_url.cyan());
@@ -1076,11 +1076,11 @@ pub fn commit_changes(
             } else if !quiet {
                 let commit_url = get_commit_url(base_cmd).unwrap_or_default();
                 if no_color {
-                    println!("Completed commit process successfully:  {}", commit_url);
+                    println!("Commit successful:  {}", commit_url);
                 } else {
                     print!(
                         "{}",
-                        "Completed commit process successfully:".green().bold()
+                        "Commit successful:".green().bold()
                     );
                     if !commit_url.is_empty() {
                         print!("  {}", commit_url.cyan());
