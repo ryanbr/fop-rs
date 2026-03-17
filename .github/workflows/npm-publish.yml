@@ -9,14 +9,14 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
           
       - name: Install Rust
@@ -126,7 +126,7 @@ jobs:
           cp target/riscv64gc-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-riscv64"
 
       - name: Upload Linux/Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6
         with:
           name: linux-windows-binaries
           path: |
@@ -140,7 +140,7 @@ jobs:
     runs-on: windows-latest
     needs: build-linux-windows
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Pull latest changes
         run: git pull origin main --tags
@@ -159,7 +159,7 @@ jobs:
           Copy-Item "target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64-v2.exe"
 
       - name: Upload Windows ARM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6
         with:
           name: windows-arm-binaries
           path: fop-*-windows-arm64-v2.exe
@@ -168,7 +168,7 @@ jobs:
     runs-on: macos-latest
     needs: build-linux-windows
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Pull latest changes
         run: git pull origin main --tags
@@ -202,7 +202,7 @@ jobs:
           cp target/aarch64-apple-darwin/release/fop "fop-${VERSION}-macos-arm64"
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6
         with:
           name: macos-binaries
           path: fop-*-macos-*
@@ -213,23 +213,23 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
     
       - name: Pull latest changes
         run: |
           git pull origin main --tags
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.3
 
       - name: Create GitHub Release
 
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build-linux-windows.outputs.version }}
           files: |
