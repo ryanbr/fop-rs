@@ -1102,6 +1102,11 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         eprintln!("Cannot open {}", filename.display());
         return Ok(None);
     };
+    // Detect Windows line endings
+    if original_content.windows(2).any(|w| w == b"\r\n") {
+        crate::CRLF_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     let reader = BufReader::new(Cursor::new(&original_content));
     let mut output = match File::create(&temp_file) {
         Ok(f) => BufWriter::with_capacity(64 * 1024, f),

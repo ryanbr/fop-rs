@@ -42,6 +42,9 @@ pub(crate) static WARNING_OUTPUT: LazyLock<Mutex<Option<PathBuf>>> =
 /// Fast flag to avoid mutex lock on every write_warning call
 pub(crate) static WARNING_TO_FILE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+/// Counter for files with Windows line endings (CRLF)
+pub(crate) static CRLF_FILES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 /// Get user's home directory (cross-platform)
 fn home_dir() -> Option<PathBuf> {
@@ -1245,6 +1248,20 @@ fn process_location(
     // Single lock acquisition (reduces mutex pressure)
     if !output_diff_individual && !diffs.is_empty() {
         diff_output.lock().unwrap().extend(diffs);
+    }
+
+    // Warn about CRLF files
+    let crlf_count = CRLF_FILES.swap(0, std::sync::atomic::Ordering::Relaxed);
+    if crlf_count > 0 && !quiet {
+        if no_color {
+            println!("Warning: {} file(s) contain Windows line endings (CRLF), converting to Unix (LF).", crlf_count);
+            println!("  Tip: Set 'git config core.autocrlf input' or add '* text eol=lf' to .gitattributes");
+        } else {
+            use owo_colors::OwoColorize;
+            println!("{} {} file(s) contain Windows line endings (CRLF), converting to Unix (LF).",
+                "Warning:".yellow(), crlf_count);
+            println!("  {}", "Tip: Set 'git config core.autocrlf input' or add '* text eol=lf' to .gitattributes".white());
+        }
     }
 
     // Delete backup and temp files (sequential, usually few files)

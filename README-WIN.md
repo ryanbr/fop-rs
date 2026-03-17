@@ -74,6 +74,9 @@ npm install -g fop-cli
 --ignoredirs=         Additional directories to ignore (comma-separated, partial names)
 --config-file=        Custom config file path
 --git-message=        Git commit message (skip interactive prompt)
+--benchmark           Benchmark sorting performance (3 iterations, dry-run)
+--abp-convert         Convert ABP extended selectors to uBO format
+--check-file=FILE     Process a single file
 -h, --help            Show help message
 -V, --version         Show version number
 ```
@@ -134,6 +137,37 @@ Config file locations (checked in order):
 2. `%USERPROFILE%\.fopconfig` (home directory)
 
 Command line arguments override config file settings.
+
+## Line Endings (Important)
+
+FOP saves all files in Unix format (LF). Windows may convert files to CRLF on checkout, causing Git to show every file as changed after running FOP.
+
+**Fix (recommended):** Add a `.gitattributes` file to the repo root:
+
+```
+* text eol=lf
+```
+
+This forces LF for all text files on all platforms and applies to all contributors automatically.
+
+**Alternative:** Configure Git to not convert line endings:
+
+```powershell
+git config core.autocrlf input
+```
+
+This applies to your local machine only. If you see a warning like:
+
+```
+Warning: 43 file(s) contain Windows line endings (CRLF), converting to Unix (LF).
+```
+
+It means your checkout has CRLF files. Apply one of the fixes above and re-clone or run:
+
+```powershell
+git rm --cached -r .
+git reset --hard
+```
 
 ## Troubleshooting
 

@@ -2,9 +2,24 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [5.2.2]
+
+- Show commit URL after successful push
+- Fix commit URL SSH-to-HTTPS conversion
+- Overwrite "Connecting to server" line with commit URL on success
+- Warn when Windows line endings (CRLF) detected, suggest `.gitattributes` fix
+- Update GitHub Actions to Node.js 24-compatible versions
+- Update README-WIN.md with line endings guide
+- Update README.md options table
+
 ## [5.2.1]
 
 - Add `--benchmark` flag for timing sort performance (3 iterations, reports lines/sec, MB/sec, ms/file)
+- Support `--benchmark` with `--check-file` for single file benchmarking
+- Fix `jsonprune=` filter parsing: escaped `\$` separator, dot replacement, and space preservation
+- Add `mimalloc` allocator for improved parallel allocation performance
+- Add PGO (profile-guided optimization) to Linux v3/v4 and macOS ARM CI builds
+- Add `parsing.md` documenting filter rule support across ABP, uBO, and AdGuard
 - Use `Cow<str>` in `remove_unnecessary_wildcards` to avoid allocation on common path
 - Use `Cow<str>` in `filter_tidy` preprocessing to avoid allocation when unchanged
 - Fast reject for `is_extended` check in `element_tidy` using match on separator

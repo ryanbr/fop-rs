@@ -126,6 +126,8 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--config-file=` | Custom config file path |
 | `--show-config` | Show applied configuration and exit |
 | `--git-binary=<path>` | Path to git binary (default: git in PATH) |
+| `--benchmark` | Benchmark sorting performance (3 iterations, dry-run) |
+| `--abp-convert` | Convert ABP extended selectors to uBO format |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
 
