@@ -1033,24 +1033,26 @@ pub fn commit_changes(
 
         if no_msg_check || check_comment(&comment, original_difference) {
             if no_color {
-                println!("Comment \"{}\" accepted.", comment);
+                print!("Comment \"{}\" accepted.", comment);
             } else {
-                println!(
+                print!(
                     "{} \"{}\" {}",
                     "Comment".green(),
                     comment.cyan(),
                     "accepted.".green()
                 );
             }
+            io::stdout().flush().ok();
 
             // Execute commit
             let status = Command::new(&base_cmd[0])
                 .args(&base_cmd[1..])
                 .args(repo.commit)
-                .arg(comment)
+                .arg(&comment)
                 .status();
 
             if let Err(e) = status {
+                println!();
                 eprintln!("Unexpected error with commit: {}", e);
                 return Err(e);
             }
@@ -1058,10 +1060,10 @@ pub fn commit_changes(
             // Pull and push
             if !quiet {
                 if no_color {
-                    print!("\nConnecting to server. Please enter your password if required.");
+                    print!("\r\x1b[2KConnecting to server. Please enter your password if required.");
                 } else {
                     print!(
-                        "\n{}",
+                        "\r\x1b[2K{}",
                         "Connecting to server. Please enter your password if required.".magenta()
                     );
                 }
@@ -1078,12 +1080,17 @@ pub fn commit_changes(
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
             } else if !quiet {
-                // Overwrite "Connecting to server..." line
+                // Overwrite "Connecting to server..." with commit message + URL
                 let commit_url = get_commit_url(base_cmd).unwrap_or_default();
                 if no_color {
-                    print!("\r\x1b[2KCommit successful:  {}", commit_url);
+                    println!("\r\x1b[2KCommit message:   {}", comment);
+                    print!("Commit successful:  {}", commit_url);
                 } else {
                     print!("\r\x1b[2K");
+                    println!("{}  {}",
+                        "Commit message:".purple().bold(),
+                        comment.white().bold()
+                    );
                     print!(
                         "{}",
                         "Commit successful:".purple().bold()
