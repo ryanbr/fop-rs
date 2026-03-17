@@ -12,7 +12,7 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 - Update README-WIN.md with line endings guide
 - Update README.md options table
 
-## [5.2.1]
+## [5.2.1] - 2026-03-17
 
 - Add `--benchmark` flag for timing sort performance (3 iterations, reports lines/sec, MB/sec, ms/file)
 - Support `--benchmark` with `--check-file` for single file benchmarking
