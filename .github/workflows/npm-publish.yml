@@ -53,16 +53,26 @@ jobs:
           git commit -m "v$NEW_VERSION"
           git tag "v$NEW_VERSION"
           
+      - name: Install llvm-tools for PGO
+        run: rustup component add llvm-tools-preview
+
+      - name: Generate PGO profile data
+        run: |
+          RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
+          cargo test --release || true
+          $(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-profdata merge -o /tmp/pgo-data/merged.profdata /tmp/pgo-data
+          cargo clean
+
       - name: Build binaries
         run: |
           VERSION=${{ steps.version.outputs.version }}
-          # Baseline - works on all x86_64
+          # Baseline - works on all x86_64 (no PGO)
           cargo build --release
           cp target/release/fop "fop-${VERSION}-linux-x86_64"
-          
-          # Optimized for ~2015+ CPUs (AVX2)
+
+          # Optimized for ~2015+ CPUs (AVX2) + PGO
           cargo clean
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-unknown-linux-gnu
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3 -Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release --target x86_64-unknown-linux-gnu
           cp target/x86_64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_64-v3"
 
 
@@ -75,16 +85,16 @@ jobs:
           cargo clean
           cargo build --release --target x86_64-pc-windows-gnu
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64.exe"
-          
+
           # Windows x86_64-v3 (optimized for ~2015+ CPUs)
           cargo clean
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
 
-          # Linux x86_64-v4 (AVX-512: Intel Ice Lake+, AMD Zen 4+)
+          # Linux x86_64-v4 (AVX-512: Intel Ice Lake+, AMD Zen 4+) + PGO
           cargo clean
           rustup target add x86_64-unknown-linux-gnu
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v4" cargo build --release --target x86_64-unknown-linux-gnu
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v4 -Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release --target x86_64-unknown-linux-gnu
           cp target/x86_64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_64-v4"
 
           # Windows x86_64-v4 (AVX-512: Intel Ice Lake+, AMD Zen 4+)
@@ -168,17 +178,27 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      - name: Install llvm-tools for PGO
+        run: rustup component add llvm-tools-preview
+
+      - name: Generate PGO profile data
+        run: |
+          RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
+          cargo test --release || true
+          $(rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/llvm-profdata merge -o /tmp/pgo-data/merged.profdata /tmp/pgo-data
+          cargo clean
+
       - name: Build macOS binaries
         run: |
           VERSION=${{ needs.build-linux-windows.outputs.version }}
-          
-          # macOS x86_64 (Intel)
+
+          # macOS x86_64 (Intel) - no PGO (cross-compiled from ARM runner)
           cargo build --release --target x86_64-apple-darwin
           cp target/x86_64-apple-darwin/release/fop "fop-${VERSION}-macos-x86_64"
-          
-          # macOS ARM64 (Apple Silicon - optimized for M1+)
+
+          # macOS ARM64 (Apple Silicon - optimized for M1+) + PGO
           cargo clean
-          RUSTFLAGS="-C target-cpu=apple-m1" cargo build --release --target aarch64-apple-darwin
+          RUSTFLAGS="-C target-cpu=apple-m1 -Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release --target aarch64-apple-darwin
           cp target/aarch64-apple-darwin/release/fop "fop-${VERSION}-macos-arm64"
 
       - name: Upload macOS artifacts
