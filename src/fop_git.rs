@@ -970,7 +970,7 @@ pub fn commit_changes(
                     "Commit successful:".green().bold()
                 );
                 if !commit_url.is_empty() {
-                    print!("  {}", commit_url.cyan());
+                    print!("  {}", commit_url.white().bold());
                 }
                 println!();
             }
@@ -1083,7 +1083,7 @@ pub fn commit_changes(
                         "Commit successful:".green().bold()
                     );
                     if !commit_url.is_empty() {
-                        print!("  {}", commit_url.cyan());
+                        print!("  {}", commit_url.white().bold());
                     }
                     println!();
                 }
