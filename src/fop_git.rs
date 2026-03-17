@@ -515,7 +515,7 @@ fn get_current_branch(base_cmd: &[String]) -> Option<String> {
 fn get_head_short_hash(base_cmd: &[String]) -> Option<String> {
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
-        .args(["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short=8", "HEAD"])
         .output()
         .ok()?;
     if !output.status.success() {
