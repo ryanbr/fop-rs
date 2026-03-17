@@ -1058,26 +1058,32 @@ pub fn commit_changes(
             // Pull and push
             if !quiet {
                 if no_color {
-                    println!("\nConnecting to server. Please enter your password if required.");
+                    print!("\nConnecting to server. Please enter your password if required.");
                 } else {
-                    println!(
+                    print!(
                         "\n{}",
                         "Connecting to server. Please enter your password if required.".magenta()
                     );
                 }
+                io::stdout().flush().ok();
             }
 
             if pull_and_push(base_cmd, repo, git_quiet) {
+                if !quiet {
+                    println!(); // finish the "Connecting" line
+                }
                 if rebase_on_fail {
                     rebase_and_retry_push(base_cmd, repo, git_quiet);
                 } else {
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
             } else if !quiet {
+                // Overwrite "Connecting to server..." line
                 let commit_url = get_commit_url(base_cmd).unwrap_or_default();
                 if no_color {
-                    println!("Commit successful:  {}", commit_url);
+                    print!("\r\x1b[2KCommit successful:  {}", commit_url);
                 } else {
+                    print!("\r\x1b[2K");
                     print!(
                         "{}",
                         "Commit successful:".green().bold()
@@ -1085,8 +1091,8 @@ pub fn commit_changes(
                     if !commit_url.is_empty() {
                         print!("  {}", commit_url.white().bold());
                     }
-                    println!();
                 }
+                println!();
             }
             return Ok(());
         }
