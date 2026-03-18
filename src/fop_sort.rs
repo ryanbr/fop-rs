@@ -525,6 +525,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("removeheader=")
                         || stripped.starts_with("jsonprune=")
                         || stripped.starts_with("stealth=")
+                        || stripped.starts_with("hls=")
                         || stripped == "important"
                         || stripped == "media"
                         || stripped == "all";
