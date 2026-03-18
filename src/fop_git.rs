@@ -1033,16 +1033,15 @@ pub fn commit_changes(
 
         if no_msg_check || check_comment(&comment, original_difference) {
             if no_color {
-                print!("Comment \"{}\" accepted.", comment);
+                println!("Comment \"{}\" accepted.", comment);
             } else {
-                print!(
+                println!(
                     "{} \"{}\" {}",
                     "Comment".green(),
                     comment.cyan(),
                     "accepted.".green()
                 );
             }
-            io::stdout().flush().ok();
 
             // Execute commit
             let status = Command::new(&base_cmd[0])
@@ -1052,7 +1051,6 @@ pub fn commit_changes(
                 .status();
 
             if let Err(e) = status {
-                println!();
                 eprintln!("Unexpected error with commit: {}", e);
                 return Err(e);
             }
@@ -1060,10 +1058,10 @@ pub fn commit_changes(
             // Pull and push
             if !quiet {
                 if no_color {
-                    print!("\r\x1b[2KConnecting to server. Please enter your password if required.");
+                    print!("Connecting to server. Please enter your password if required.");
                 } else {
                     print!(
-                        "\r\x1b[2K{}",
+                        "{}",
                         "Connecting to server. Please enter your password if required.".magenta()
                     );
                 }
@@ -1083,10 +1081,10 @@ pub fn commit_changes(
                 // Overwrite "Connecting to server..." with commit message + URL
                 let commit_url = get_commit_url(base_cmd).unwrap_or_default();
                 if no_color {
-                    println!("\r\x1b[2KCommit message:   {}", comment);
+                    println!("\r\x1b[2K\nCommit message:   {}", comment);
                     print!("Commit successful:  {}", commit_url);
                 } else {
-                    print!("\r\x1b[2K");
+                    print!("\r\x1b[2K\n");
                     println!("{}  {}",
                         "Commit message:".purple().bold(),
                         comment.white().bold()
