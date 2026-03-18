@@ -1327,28 +1327,34 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
             let mut tidied = element_tidy(&domains, separator, selector);
 
-            // Convert ABP extended selectors to uBO format
-            if config.abp_convert && tidied.contains(":-abp-") {
+            // Convert ABP extended selectors
+            if config.abp_convert {
                 let original = tidied.clone();
-                tidied = tidied
-                    .replace(":-abp-contains(", ":has-text(")
-                    .replace(":-abp-has(", ":has(");
-                
-                // Only change separator if we actually converted something
-                if tidied != original {
-                    // If no :has-text(), convert #?# to ## (native CSS :has())
-                    if !tidied.contains(":has-text(") {
-                        tidied = tidied
-                            .replace("#?#", "##")
-                            .replace("#@?#", "#@#");
-                    }
 
-                    if !config.quiet {
-                        write_warning(&format!(
-                            "Converted ABP selector: {}",
-                            tidied
-                        ));
+                // Convert :-abp-contains() -> :has-text(), :-abp-has() -> :has()
+                if tidied.contains(":-abp-") {
+                    tidied = tidied
+                        .replace(":-abp-contains(", ":has-text(")
+                        .replace(":-abp-has(", ":has(");
+                }
+
+                // :has-text() requires #?# separator for ABP compatibility
+                // :has() alone is native CSS and works with ##
+                // Skip HTML filtering rules (##^) — they're uBO-specific, not ABP
+                if tidied.contains(":has-text(") && !tidied.contains("##^") {
+                    if tidied.contains("##") && !tidied.contains("#?#") && !tidied.contains("#@?#") {
+                        tidied = tidied.replacen("##", "#?#", 1);
                     }
+                    if tidied.contains("#@#") && !tidied.contains("#@?#") {
+                        tidied = tidied.replacen("#@#", "#@?#", 1);
+                    }
+                }
+
+                if tidied != original && !config.quiet {
+                    write_warning(&format!(
+                        "Converted ABP selector: {}",
+                        tidied
+                    ));
                 }
             }
 
