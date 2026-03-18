@@ -135,7 +135,7 @@ jobs:
           cp target/riscv64gc-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-riscv64"
 
       - name: Upload Linux/Windows artifacts
-        uses: actions/upload-artifact@v4.6
+        uses: actions/upload-artifact@v4
         with:
           name: linux-windows-binaries
           path: |
@@ -168,7 +168,7 @@ jobs:
           Copy-Item "target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64-v2.exe"
 
       - name: Upload Windows ARM artifact
-        uses: actions/upload-artifact@v4.6
+        uses: actions/upload-artifact@v4
         with:
           name: windows-arm-binaries
           path: fop-*-windows-arm64-v2.exe
@@ -211,7 +211,7 @@ jobs:
           cp target/aarch64-apple-darwin/release/fop "fop-${VERSION}-macos-arm64"
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4.6
+        uses: actions/upload-artifact@v4
         with:
           name: macos-binaries
           path: fop-*-macos-*
@@ -234,7 +234,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4.3
+        uses: actions/download-artifact@v4
 
       - name: Create GitHub Release
 
