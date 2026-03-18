@@ -529,6 +529,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("stealth=")
                         || stripped.starts_with("hls=")
                         || stripped.starts_with("xmlprune=")
+                        || stripped.starts_with("tag=")
                         || stripped == "important"
                         || stripped == "media"
                         || stripped == "all";
