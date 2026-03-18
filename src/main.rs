@@ -227,12 +227,66 @@ struct Args {
     git_binary: Option<String>,
     /// Benchmark mode - time processing and report metrics
     benchmark: bool,
+    /// Per-file configuration overrides from [filename] sections in .fopconfig
+    file_overrides: ahash::AHashMap<String, FileOverrides>,
+}
+
+/// Per-file configuration overrides from [filename] sections
+#[derive(Debug, Clone, Default)]
+struct FileOverrides {
+    no_sort: Option<bool>,
+    alt_sort: Option<bool>,
+    parse_adguard: Option<bool>,
+    localhost: Option<bool>,
+    add_checksum: Option<bool>,
+    add_timestamp: Option<bool>,
+    no_ubo_convert: Option<bool>,
+    abp_convert: Option<bool>,
+    keep_empty_lines: Option<bool>,
+    ignore_dot_domains: Option<bool>,
+    fix_typos: Option<bool>,
+}
+
+impl FileOverrides {
+    /// Apply per-file overrides to a SortConfig
+    fn apply_to(&self, config: &mut SortConfig) {
+        if let Some(v) = self.no_sort { config.no_sort = v; }
+        if let Some(v) = self.alt_sort { config.alt_sort = v; }
+        if let Some(v) = self.parse_adguard { config.parse_adguard = v; }
+        if let Some(v) = self.localhost { config.localhost = v; }
+        if let Some(v) = self.keep_empty_lines { config.keep_empty_lines = v; }
+        if let Some(v) = self.ignore_dot_domains { config.ignore_dot_domains = v; }
+        if let Some(v) = self.fix_typos { config.fix_typos = v; }
+        if let Some(v) = self.abp_convert { config.abp_convert = v; }
+        if let Some(v) = self.no_ubo_convert { config.convert_ubo = !v; }
+        if let Some(true) = self.add_timestamp { config.add_timestamp = true; }
+    }
+}
+
+/// Apply a key=value pair to a FileOverrides entry
+fn apply_file_override(entry: &mut FileOverrides, key: &str, value: &str) {
+    let b = value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes");
+    match key {
+        "no-sort" => entry.no_sort = Some(b),
+        "alt-sort" => entry.alt_sort = Some(b),
+        "parse-adguard" => entry.parse_adguard = Some(b),
+        "localhost" => entry.localhost = Some(b),
+        "add-checksum" => entry.add_checksum = Some(b),
+        "add-timestamp" => entry.add_timestamp = Some(b),
+        "no-ubo-convert" => entry.no_ubo_convert = Some(b),
+        "abp-convert" => entry.abp_convert = Some(b),
+        "keep-empty-lines" => entry.keep_empty_lines = Some(b),
+        "ignore-dot-domains" => entry.ignore_dot_domains = Some(b),
+        "fix-typos" => entry.fix_typos = Some(b),
+        _ => {}
+    }
 }
 
 /// Load configuration from .fopconfig file
-fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Option<PathBuf>) {
+fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, ahash::AHashMap<String, FileOverrides>, Option<PathBuf>) {
     // pre-allocated config settings
     let mut config = HashMap::with_capacity(28);
+    let mut file_overrides: ahash::AHashMap<String, FileOverrides> = ahash::AHashMap::new();
 
     // If custom path provided, use that only
     let config_path: Option<PathBuf> = if let Some(path) = custom_path {
@@ -255,23 +309,34 @@ fn load_config(custom_path: Option<&PathBuf>) -> (HashMap<String, String>, Optio
 
     if let Some(path) = config_path.as_ref() {
         if let Ok(content) = fs::read_to_string(path) {
+            let mut current_section: Option<String> = None;
             for line in content.lines() {
                 let line = line.trim();
                 // Skip comments and empty lines
                 if line.is_empty() || line.starts_with('#') {
                     continue;
                 }
+                // Detect [filename] section header
+                if line.starts_with('[') && line.ends_with(']') {
+                    current_section = Some(line[1..line.len() - 1].trim().to_string());
+                    continue;
+                }
                 // Parse key = value
                 if let Some(eq_pos) = line.find('=') {
-                    let key = line[..eq_pos].trim().to_string();
-                    let value = line[eq_pos + 1..].trim().to_string();
-                    config.insert(key, value);
+                    let key = line[..eq_pos].trim();
+                    let value = line[eq_pos + 1..].trim();
+                    if let Some(ref section) = current_section {
+                        let entry = file_overrides.entry(section.clone()).or_default();
+                        apply_file_override(entry, key, value);
+                    } else {
+                        config.insert(key.to_string(), value.to_string());
+                    }
                 }
             }
         }
     }
 
-    (config, config_path)
+    (config, file_overrides, config_path)
 }
 
 /// Parse boolean value from config
@@ -349,8 +414,8 @@ impl Args {
         }
 
         // Load config file and track path
-        let (config, found_config_path) = if ignore_config {
-            (HashMap::new(), None)
+        let (config, file_overrides, found_config_path) = if ignore_config {
+            (HashMap::new(), ahash::AHashMap::new(), None)
         } else {
             load_config(config_file.as_ref())
         };
@@ -425,6 +490,7 @@ impl Args {
                 .unwrap_or_default(),
             git_binary: config.get("git-binary").cloned(),
             benchmark: false,
+            file_overrides,
         };
 
         // Command line args override config
@@ -767,6 +833,25 @@ impl Args {
         } else {
             println!("  create-pr       = false");
         }
+        if !self.file_overrides.is_empty() {
+            println!();
+            println!("Per-file overrides:");
+            for (file, overrides) in &self.file_overrides {
+                println!("  [{}]", file);
+                if let Some(v) = overrides.no_sort { println!("    no-sort = {}", v); }
+                if let Some(v) = overrides.alt_sort { println!("    alt-sort = {}", v); }
+                if let Some(v) = overrides.parse_adguard { println!("    parse-adguard = {}", v); }
+                if let Some(v) = overrides.localhost { println!("    localhost = {}", v); }
+                if let Some(v) = overrides.add_checksum { println!("    add-checksum = {}", v); }
+                if let Some(v) = overrides.add_timestamp { println!("    add-timestamp = {}", v); }
+                if let Some(v) = overrides.no_ubo_convert { println!("    no-ubo-convert = {}", v); }
+                if let Some(v) = overrides.abp_convert { println!("    abp-convert = {}", v); }
+                if let Some(v) = overrides.keep_empty_lines { println!("    keep-empty-lines = {}", v); }
+                if let Some(v) = overrides.ignore_dot_domains { println!("    ignore-dot-domains = {}", v); }
+                if let Some(v) = overrides.fix_typos { println!("    fix-typos = {}", v); }
+            }
+        }
+
         println!();
         print!("Press Enter to continue...");
         io::stdout().flush().unwrap();
@@ -1091,6 +1176,7 @@ fn process_location(
     localhost: bool,
     localhost_files: &[String],
     parse_adguard_files: &[String],
+    file_overrides: &ahash::AHashMap<String, FileOverrides>,
 ) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
@@ -1201,7 +1287,7 @@ fn process_location(
         }
 
         let path = entry.path();
-        let config = SortConfig {
+        let mut config = SortConfig {
             convert_ubo: sort_config.convert_ubo,
             no_sort: sort_config.no_sort,
             alt_sort: sort_config.alt_sort,
@@ -1219,6 +1305,12 @@ fn process_location(
             output_changed: sort_config.output_changed,
             add_timestamp: sort_config.add_timestamp,
         };
+        // Apply per-file overrides from [filename] sections in .fopconfig
+        if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
+            if let Some(overrides) = file_overrides.get(fname) {
+                overrides.apply_to(&mut config);
+            }
+        }
 
         match fop_sort(path, &config) {
             Ok(Some(diff)) => {
@@ -1283,7 +1375,9 @@ fn process_location(
                 let filename = path.file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("");
-                if add_timestamp.iter().any(|f| filename == f.as_str())
+                let file_override_timestamp = file_overrides.get(filename).and_then(|o| o.add_timestamp) == Some(true);
+                if file_override_timestamp
+                    || add_timestamp.iter().any(|f| filename == f.as_str())
                     || add_timestamp.iter().any(|f| path.ends_with(f.as_str()))
                 {
                     let is_localhost = is_localhost_file(path, localhost, localhost_files);
@@ -1301,7 +1395,9 @@ fn process_location(
                 let filename = path.file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("");
-                if add_checksum.iter().any(|f| filename == f.as_str())
+                let file_override_checksum = file_overrides.get(filename).and_then(|o| o.add_checksum) == Some(true);
+                if file_override_checksum
+                    || add_checksum.iter().any(|f| filename == f.as_str())
                     || add_checksum.iter().any(|f| path.ends_with(f.as_str()))
                 {
                     let is_localhost = is_localhost_file(path, localhost, localhost_files);
@@ -1833,11 +1929,16 @@ fn main() {
             println!("Processing file: {}", file_path.display());
         }
 
-        let check_file_config = SortConfig {
+        let mut check_file_config = SortConfig {
             localhost: is_localhost_file(file_path, sort_config.localhost, &args.localhost_files),
             parse_adguard: is_adguard_file(file_path, sort_config.parse_adguard, &args.parse_adguard_files),
             ..sort_config
         };
+        if let Some(fname) = file_path.file_name().and_then(|n| n.to_str()) {
+            if let Some(overrides) = args.file_overrides.get(fname) {
+                overrides.apply_to(&mut check_file_config);
+            }
+        }
 
         // Benchmark: count lines/bytes for the single file
         let (bench_lines, bench_bytes) = if args.benchmark {
@@ -2061,6 +2162,7 @@ fn main() {
                 args.localhost,
                 &args.localhost_files,
                 &args.parse_adguard_files,
+                &args.file_overrides,
             ) {
                 eprintln!("Error: {}", e);
             }
