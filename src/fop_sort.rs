@@ -369,7 +369,7 @@ fn find_option_separator(filter: &str) -> Option<usize> {
 }
 
 /// Split filter options on commas, keeping values intact for options like
-/// `jsonprune=` where commas are part of the value syntax.
+/// `jsonprune=`/`xmlprune=` where commas are part of the value syntax.
 #[inline]
 fn split_filter_options(options: &str) -> Vec<&str> {
     let parts: Vec<&str> = options.split(',').collect();
@@ -380,8 +380,9 @@ fn split_filter_options(options: &str) -> Vec<&str> {
     let mut i = 0;
     while i < parts.len() {
         let part = parts[i];
-        // jsonprune values use commas in JSON path syntax — keep them joined
-        if part.starts_with("jsonprune=") || part.starts_with("jsonprune\\=") {
+        // jsonprune/xmlprune values use commas in path syntax — keep them joined
+        if part.starts_with("jsonprune=") || part.starts_with("jsonprune\\=")
+            || part.starts_with("xmlprune=") || part.starts_with("xmlprune\\=") {
             // Find the start and end byte offsets within the original string to return a single slice
             let start_ptr = part.as_ptr() as usize - options.as_ptr() as usize;
             i += 1;
@@ -429,7 +430,8 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
         || filter_in.contains("$$");
     let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=",
                              "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam=",
-                             "$jsonprune=", ",jsonprune="]
+                             "$jsonprune=", ",jsonprune=",
+                             "$xmlprune=", ",xmlprune="]
         .iter().any(|s| filter_in.contains(s));
     let filter_in: Cow<str> = if !(is_element_rule || has_space_options || filter_in.starts_with('/') && filter_in.ends_with('/')) {
         if filter_in.contains(' ') || filter_in.contains('\t') {
@@ -526,6 +528,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         || stripped.starts_with("jsonprune=")
                         || stripped.starts_with("stealth=")
                         || stripped.starts_with("hls=")
+                        || stripped.starts_with("xmlprune=")
                         || stripped == "important"
                         || stripped == "media"
                         || stripped == "all";
