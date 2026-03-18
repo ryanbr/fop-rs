@@ -2,15 +2,16 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
-## [5.2.2]
+## [5.3.0] - 2026-03-18
 
-- Show commit URL after successful push
-- Fix commit URL SSH-to-HTTPS conversion
-- Overwrite "Connecting to server" line with commit URL on success
+- Add per-file config sections in `.fopconfig` with `[filename]` overrides
+- Add `hls=`, `xmlprune=`, `tag=` to recognised filter options
+- Add version bump type selector (patch/minor/major) to publish workflow
+- Show commit URL and message after successful push
+- Overwrite "Connecting to server" and "Comment accepted" lines on success
 - Warn when Windows line endings (CRLF) detected, suggest `.gitattributes` fix
 - Update GitHub Actions to Node.js 24-compatible versions
 - Update README-WIN.md with line endings guide
-- Update README.md options table
 
 ## [5.2.1] - 2026-03-17
 
