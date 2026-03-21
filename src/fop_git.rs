@@ -948,6 +948,12 @@ pub fn commit_changes(
             println!("Committing with message: {}", message);
         }
 
+        // Pull latest before committing to avoid orphaned commits from post-commit rebase
+        let _ = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(repo.pull)
+            .output();
+
         Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
             .args(repo.commit)
@@ -1042,6 +1048,12 @@ pub fn commit_changes(
                     "accepted.".green()
                 );
             }
+
+            // Pull latest before committing to avoid orphaned commits from post-commit rebase
+            let _ = Command::new(&base_cmd[0])
+                .args(&base_cmd[1..])
+                .args(repo.pull)
+                .output();
 
             // Execute commit
             let status = Command::new(&base_cmd[0])
