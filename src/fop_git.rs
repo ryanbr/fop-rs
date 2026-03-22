@@ -952,6 +952,7 @@ pub fn commit_changes(
         let _ = Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
             .args(repo.pull)
+            .arg("--autostash")
             .output();
 
         Command::new(&base_cmd[0])
@@ -1053,6 +1054,7 @@ pub fn commit_changes(
             let _ = Command::new(&base_cmd[0])
                 .args(&base_cmd[1..])
                 .args(repo.pull)
+                .arg("--autostash")
                 .output();
 
             // Execute commit
