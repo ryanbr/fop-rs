@@ -894,7 +894,14 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
 
     if retry.status.success() {
         if !quiet {
+            use owo_colors::OwoColorize;
             println!("Push succeeded after rebase.");
+            if let Some(url) = get_commit_url(base_cmd) {
+                println!("{}  {}",
+                    "Commit successful:".purple().bold(),
+                    url.white().bold()
+                );
+            }
         }
         return;
     }
