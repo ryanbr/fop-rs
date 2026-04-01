@@ -47,7 +47,7 @@ static TRUSTED_SAFE_VALUES: LazyLock<ahash::AHashSet<&'static str>> = LazyLock::
         "yes", "y", "no", "n", "all", "none", "functional",
         "granted", "done", "decline", "declined",
         "closed", "next", "mandatory", "disagree", "agree",
-        "1", "0",
+        "1", "0", "emptyarr", "emptyobj",
     ].into_iter().collect()
 });
 
