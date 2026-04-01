@@ -51,6 +51,13 @@ static TRUSTED_SAFE_VALUES: LazyLock<ahash::AHashSet<&'static str>> = LazyLock::
     ].into_iter().collect()
 });
 
+/// Check if a value is safe for non-trusted scriptlets
+#[inline]
+fn is_safe_scriptlet_value(value: &str) -> bool {
+    TRUSTED_SAFE_VALUES.contains(value.to_ascii_lowercase().as_str())
+        || value.parse::<u32>().is_ok_and(|n| n <= 32767)
+}
+
 /// Trusted scriptlet prefixes that can be converted to non-trusted
 const TRUSTED_SCRIPTLETS: &[(&str, &str)] = &[
     ("trusted-set-cookie", "set-cookie"),
@@ -75,7 +82,7 @@ fn convert_trusted_scriptlet(line: &str) -> Option<String> {
             let parts: Vec<&str> = args.splitn(3, ',').map(|s| s.trim()).collect();
             if parts.len() >= 3 && parts[0] == trusted {
                 let value = parts[2].trim();
-                if TRUSTED_SAFE_VALUES.contains(value.to_ascii_lowercase().as_str()) {
+                if is_safe_scriptlet_value(value) {
                     let converted = format!("{}+js({}, {}, {}){}", &line[..js_pos], non_trusted, parts[1], value, &line[args_end + 1..]);
                     return Some(converted);
                 }
@@ -94,7 +101,7 @@ fn convert_trusted_scriptlet(line: &str) -> Option<String> {
                 let scriptlet_name = parts[0].trim_matches('\'').trim_matches('"');
                 if scriptlet_name == trusted {
                     let value = parts[2].trim().trim_matches('\'').trim_matches('"');
-                    if TRUSTED_SAFE_VALUES.contains(value.to_ascii_lowercase().as_str()) {
+                    if is_safe_scriptlet_value(value) {
                         let quoted_trusted = format!("'{}'", trusted);
                         let quoted_non_trusted = format!("'{}'", non_trusted);
                         let converted = line.replacen(&quoted_trusted, &quoted_non_trusted, 1);
