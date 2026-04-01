@@ -128,6 +128,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--git-binary=<path>` | Path to git binary (default: git in PATH) |
 | `--benchmark` | Benchmark sorting performance (3 iterations, dry-run) |
 | `--abp-convert` | Convert ABP extended selectors to uBO format |
+| `--convert-trusted` | Convert trusted scriptlets to non-trusted when value is safe |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
 
@@ -193,6 +194,9 @@ pr-show-changes = false
 # Base branch for PR (default: auto-detect)
 git-pr-branch =
 
+# Convert trusted scriptlets to non-trusted when value is safe
+convert-trusted = false
+
 # Fix cosmetic typos during sort
 fix-typos = false
 
@@ -229,6 +233,28 @@ history = A: ,P: ,M: Update,M: Cleanup,M: Sort,M: Adjust
 ```
 
 Command line arguments override config file settings.
+
+### Per-File Overrides
+
+Add `[filename]` sections to override settings for specific files:
+
+```ini
+# Global settings apply to all files
+fix-typos = true
+
+# Override settings for specific files
+[adguard_base.txt]
+parse-adguard = true
+
+[hosts.txt]
+localhost = true
+
+[easylist.txt]
+add-checksum = true
+add-timestamp = true
+```
+
+Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`.
 
 ## Platform Support
 
