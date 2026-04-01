@@ -34,6 +34,80 @@ use crate::{
 
 use crate::fop_typos;
 
+/// Safe values for trusted -> non-trusted scriptlet conversion (case-insensitive)
+static TRUSTED_SAFE_VALUES: LazyLock<ahash::AHashSet<&'static str>> = LazyLock::new(|| {
+    [
+        "accept", "reject", "accepted", "rejected", "notaccepted",
+        "allow", "disallow", "deny", "allowed", "denied",
+        "approved", "disapproved", "checked", "unchecked",
+        "dismiss", "dismissed", "enable", "disable", "enabled", "disabled",
+        "essential", "nonessential", "forbidden", "forever",
+        "hide", "hidden", "necessary", "required",
+        "ok", "on", "off", "true", "t", "false", "f",
+        "yes", "y", "no", "n", "all", "none", "functional",
+        "granted", "done", "decline", "declined",
+        "closed", "next", "mandatory", "disagree", "agree",
+        "1", "0",
+    ].into_iter().collect()
+});
+
+/// Trusted scriptlet prefixes that can be converted to non-trusted
+const TRUSTED_SCRIPTLETS: &[(&str, &str)] = &[
+    ("trusted-set-cookie", "set-cookie"),
+    ("trusted-set-local-storage-item", "set-local-storage-item"),
+    ("trusted-set-session-storage-item", "set-session-storage-item"),
+];
+
+/// Convert trusted scriptlet to non-trusted if value is safe.
+/// Handles both uBO `+js(trusted-set-cookie, name, value)` and
+/// AdGuard `//scriptlet('trusted-set-cookie', 'name', 'value')` formats.
+fn convert_trusted_scriptlet(line: &str) -> Option<String> {
+    for &(trusted, non_trusted) in TRUSTED_SCRIPTLETS {
+        if !line.contains(trusted) {
+            continue;
+        }
+
+        // uBO format: +js(trusted-set-cookie, name, value)
+        if let Some(js_pos) = line.find("+js(") {
+            let args_start = js_pos + 4;
+            let args_end = line.rfind(')')?;
+            let args = &line[args_start..args_end];
+            let parts: Vec<&str> = args.splitn(3, ',').map(|s| s.trim()).collect();
+            if parts.len() >= 3 && parts[0] == trusted {
+                let value = parts[2].trim();
+                if TRUSTED_SAFE_VALUES.contains(value.to_ascii_lowercase().as_str()) {
+                    let converted = format!("{}+js({}, {}, {}){}", &line[..js_pos], non_trusted, parts[1], value, &line[args_end + 1..]);
+                    return Some(converted);
+                }
+            }
+            return None;
+        }
+
+        // AdGuard format: //scriptlet('trusted-set-cookie', 'name', 'value')
+        if let Some(sc_pos) = line.find("//scriptlet(") {
+            let args_start = sc_pos + 12;
+            let args_end = line.rfind(')')?;
+            let args = &line[args_start..args_end];
+            let parts: Vec<&str> = args.splitn(3, ',').map(|s| s.trim()).collect();
+            if parts.len() >= 3 {
+                // Strip quotes for comparison
+                let scriptlet_name = parts[0].trim_matches('\'').trim_matches('"');
+                if scriptlet_name == trusted {
+                    let value = parts[2].trim().trim_matches('\'').trim_matches('"');
+                    if TRUSTED_SAFE_VALUES.contains(value.to_ascii_lowercase().as_str()) {
+                        let quoted_trusted = format!("'{}'", trusted);
+                        let quoted_non_trusted = format!("'{}'", non_trusted);
+                        let converted = line.replacen(&quoted_trusted, &quoted_non_trusted, 1);
+                        return Some(converted);
+                    }
+                }
+            }
+            return None;
+        }
+    }
+    None
+}
+
 // Pattern for :has-text() merging
 use std::sync::LazyLock;
 static HAS_TEXT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
@@ -119,6 +193,8 @@ pub struct SortConfig<'a> {
     pub alt_sort: bool,
     /// Convert ABP extended selectors to uBO format
     pub abp_convert: bool,
+    /// Convert trusted-set-cookie/storage to non-trusted when value is safe
+    pub convert_trusted: bool,
     /// Parse AdGuard extended CSS selectors (#$?# and #@$?#)
     pub parse_adguard: bool,
     pub localhost: bool,
@@ -1355,6 +1431,19 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                         "Converted ABP selector: {}",
                         tidied
                     ));
+                }
+            }
+
+            // Convert trusted scriptlets to non-trusted when value is safe
+            if config.convert_trusted {
+                if let Some(converted) = convert_trusted_scriptlet(&tidied) {
+                    if !config.quiet {
+                        write_warning(&format!(
+                            "Converted trusted scriptlet: {}",
+                            converted
+                        ));
+                    }
+                    tidied = converted;
                 }
             }
 

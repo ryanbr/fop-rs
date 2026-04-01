@@ -139,6 +139,8 @@ struct Args {
     alt_sort: bool,
     /// Convert ABP extended selectors to uBO format
     abp_convert: bool,
+    /// Convert trusted scriptlets to non-trusted when value is safe
+    convert_trusted: bool,
     /// Parse AdGuard extended CSS selectors (#$?# and #@$?#)
     parse_adguard: bool,
     /// Files to parse as AdGuard extended CSS (comma-separated)
@@ -242,6 +244,7 @@ struct FileOverrides {
     add_timestamp: Option<bool>,
     no_ubo_convert: Option<bool>,
     abp_convert: Option<bool>,
+    convert_trusted: Option<bool>,
     keep_empty_lines: Option<bool>,
     ignore_dot_domains: Option<bool>,
     fix_typos: Option<bool>,
@@ -258,6 +261,7 @@ impl FileOverrides {
         if let Some(v) = self.ignore_dot_domains { config.ignore_dot_domains = v; }
         if let Some(v) = self.fix_typos { config.fix_typos = v; }
         if let Some(v) = self.abp_convert { config.abp_convert = v; }
+        if let Some(v) = self.convert_trusted { config.convert_trusted = v; }
         if let Some(v) = self.no_ubo_convert { config.convert_ubo = !v; }
         if let Some(true) = self.add_timestamp { config.add_timestamp = true; }
     }
@@ -275,6 +279,7 @@ fn apply_file_override(entry: &mut FileOverrides, key: &str, value: &str) {
         "add-timestamp" => entry.add_timestamp = Some(b),
         "no-ubo-convert" => entry.no_ubo_convert = Some(b),
         "abp-convert" => entry.abp_convert = Some(b),
+        "convert-trusted" => entry.convert_trusted = Some(b),
         "keep-empty-lines" => entry.keep_empty_lines = Some(b),
         "ignore-dot-domains" => entry.ignore_dot_domains = Some(b),
         "fix-typos" => entry.fix_typos = Some(b),
@@ -430,6 +435,7 @@ impl Args {
             no_msg_check: parse_bool(&config, "no-msg-check", false),
             disable_ignored: parse_bool(&config, "disable-ignored", false),
             abp_convert: parse_bool(&config, "abp-convert", false),
+            convert_trusted: parse_bool(&config, "convert-trusted", false),
             no_sort: parse_bool(&config, "no-sort", false),
             alt_sort: parse_bool(&config, "alt-sort", false),
             parse_adguard: parse_bool(&config, "parse-adguard", false),
@@ -505,6 +511,7 @@ impl Args {
                 "--no-sort" => args.no_sort = true,
                 "--alt-sort" => args.alt_sort = true,
                 "--abp-convert" => args.abp_convert = true,
+                "--convert-trusted" => args.convert_trusted = true,
                 "--parse-adguard" => args.parse_adguard = true,
                 _ if arg.starts_with("--parse-adguard=") => {
                     args.parse_adguard_files = arg.trim_start_matches("--parse-adguard=")
@@ -700,6 +707,7 @@ impl Args {
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
+        println!("        --convert-trusted      Convert trusted scriptlets to non-trusted when value is safe");
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --ignore-all-but=   Only process these files, ignore all others (comma-separated)");
         println!("        --config-file=  Custom config file path");
@@ -846,6 +854,7 @@ impl Args {
                 if let Some(v) = overrides.add_timestamp { println!("    add-timestamp = {}", v); }
                 if let Some(v) = overrides.no_ubo_convert { println!("    no-ubo-convert = {}", v); }
                 if let Some(v) = overrides.abp_convert { println!("    abp-convert = {}", v); }
+                if let Some(v) = overrides.convert_trusted { println!("    convert-trusted = {}", v); }
                 if let Some(v) = overrides.keep_empty_lines { println!("    keep-empty-lines = {}", v); }
                 if let Some(v) = overrides.ignore_dot_domains { println!("    ignore-dot-domains = {}", v); }
                 if let Some(v) = overrides.fix_typos { println!("    fix-typos = {}", v); }
@@ -1299,6 +1308,7 @@ fn process_location(
             ignore_dot_domains: sort_config.ignore_dot_domains,
             fix_typos,
             abp_convert: sort_config.abp_convert,
+            convert_trusted: sort_config.convert_trusted,
             quiet,
             no_color,
             dry_run: sort_config.dry_run,
@@ -1721,6 +1731,7 @@ fn main() {
         keep_empty_lines: args.keep_empty_lines,
         ignore_dot_domains: args.ignore_dot_domains,
         abp_convert: args.abp_convert,
+        convert_trusted: args.convert_trusted,
         fix_typos: args.fix_typos,
         quiet: args.quiet,
         no_color: args.no_color,
