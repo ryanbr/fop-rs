@@ -230,6 +230,26 @@ fn test_sort_domains() {
     assert_eq!(domains, vec!["a.com", "~b.com", "z.com"]);
 }
 
+#[test]
+fn test_sort_domains_with_ancestor_marker() {
+    // The >> ancestor-context marker should keep the domain grouped with its base
+    let mut domains = vec![
+        "z.com".to_string(),
+        "example.com>>".to_string(),
+        "a.com".to_string(),
+        "example.com".to_string(),
+    ];
+    sort_domains(&mut domains);
+    assert_eq!(domains, vec!["a.com", "example.com", "example.com>>", "z.com"]);
+}
+
+#[test]
+fn test_filter_tidy_ancestor_marker() {
+    // Rule with >> suffix should be preserved
+    let result = filter_tidy("tomsguide.com>>##+js(trusted-click-element, button)", true);
+    assert!(result.contains("tomsguide.com>>"), "Ancestor marker lost: {}", result);
+}
+
 // =============================================================================
 // Attribute Selector Tests (preserve ~=)
 // =============================================================================

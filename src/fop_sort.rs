@@ -373,8 +373,13 @@ pub(crate) fn sort_domains(domains: &mut [String]) {
     domains.sort_unstable_by(|a, b| {
         let (a_base, a_inv) = a.strip_prefix('~').map(|s| (s, true)).unwrap_or((a.as_str(), false));
         let (b_base, b_inv) = b.strip_prefix('~').map(|s| (s, true)).unwrap_or((b.as_str(), false));
-        // base domain first; non-inverted before inverted when base is equal
-        (a_base, a_inv).cmp(&(b_base, b_inv))
+        // Strip >> marker for comparison so example.com and example.com>> sort together
+        let a_name = a_base.strip_suffix(">>").unwrap_or(a_base);
+        let b_name = b_base.strip_suffix(">>").unwrap_or(b_base);
+        let a_has_marker = a_base.ends_with(">>");
+        let b_has_marker = b_base.ends_with(">>");
+        // base domain first; non-inverted before inverted; non-ancestor before ancestor
+        (a_name, a_inv, a_has_marker).cmp(&(b_name, b_inv, b_has_marker))
     });
 }
 
@@ -674,13 +679,15 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
 
         for d in &domain_list {
             let stripped = d.trim_start_matches('~');
-            let len = stripped.len();
-            let has_dot = stripped.contains('.');
+            // Strip ">>" ancestor-context marker suffix for validation
+            let domain_only = stripped.strip_suffix(">>").unwrap_or(stripped);
+            let len = domain_only.len();
+            let has_dot = domain_only.contains('.');
             // Allow:
             // - * (wildcard for all domains)
             // - TLDs without dots (pl, de, com, org) - must be 2+ chars
             // - Regular domains with dots (example.com) - must be 4+ chars
-            let is_valid = stripped == "*" || (!has_dot && len >= 2) || (has_dot && len >= 4);
+            let is_valid = domain_only == "*" || (!has_dot && len >= 2) || (has_dot && len >= 4);
             if !is_valid {
                 invalid_domains.push((*d).to_string());
             } else {
