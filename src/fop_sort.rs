@@ -1385,15 +1385,6 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             continue;
         }
 
-        // Reject lines whose first character can never begin a valid filter rule.
-        // Valid starts: alphanumeric, * . - & ? : (domain/URL fragments),
-        // | @ / $ # [ (anchors, separators, options, directives).
-        let first = line.as_bytes()[0];
-        if !first.is_ascii_alphanumeric() && !b"|@/$#[*.-&?:".contains(&first) {
-            write_warning(&format!("Removed malformed rule (invalid start): {}", line));
-            continue;
-        }
-
         // [$path=/\/(dom|pro)/]rambler.ru##div[style^="order:"][style*="-1"]
         // AdGuard cosmetic rule modifiers - pass through unchanged
         if line.starts_with("[$") {
