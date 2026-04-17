@@ -1379,8 +1379,18 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         }
 
-        // Skip filters less than 3 characters
-        if line.len() < 3 {
+        // Skip filters less than 4 characters — no valid rule is that short
+        if line.len() < 4 {
+            write_warning(&format!("Removed malformed rule (too short): {}", line));
+            continue;
+        }
+
+        // Reject lines whose first character can never begin a valid filter rule.
+        // Valid starts: alphanumeric, * . - & ? : (domain/URL fragments),
+        // | @ / $ # [ (anchors, separators, options, directives).
+        let first = line.as_bytes()[0];
+        if !first.is_ascii_alphanumeric() && !b"|@/$#[*.-&?:".contains(&first) {
+            write_warning(&format!("Removed malformed rule (invalid start): {}", line));
             continue;
         }
 
