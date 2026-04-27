@@ -870,7 +870,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
     }
     let Ok(output) = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
-        .args(["pull", "--rebase"])
+        .args(["pull", "--rebase", "--autostash"])
         .output() else {
         eprintln!("Rebase failed to execute");
         return;

@@ -479,7 +479,7 @@ impl Args {
             check_file: None,
             output_changed: false,
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
-            rebase_on_fail: parse_bool(&config, "rebase-on-fail", false),
+            rebase_on_fail: parse_bool(&config, "rebase-on-fail", true),
             ci: parse_bool(&config, "ci", false),
             history: config.get("history")
                 .map(|s| s.split(',')
@@ -527,6 +527,7 @@ impl Args {
                 "--show-config" => args.show_config = true,
                 "--only-sort-changed" => args.only_sort_changed = true,
                 "--rebase-on-fail" => args.rebase_on_fail = true,
+                "--no-rebase-on-fail" => args.rebase_on_fail = false,
                 "--pr-show-changes" => args.pr_show_changes = true,
                 _ if arg.starts_with("--check-banned-list=") => {
                     args.check_banned_list = Some(PathBuf::from(arg.trim_start_matches("--check-banned-list=")));
