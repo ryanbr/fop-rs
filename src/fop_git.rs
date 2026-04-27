@@ -872,15 +872,33 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
         .args(&base_cmd[1..])
         .args(["pull", "--rebase", "--autostash"])
         .output() else {
-        eprintln!("Rebase failed to execute");
+        eprintln!("Rebase failed to execute. Run manually:");
+        eprintln!("    git pull --rebase --autostash && git push");
         return;
     };
 
     if !output.status.success() {
-        if !output.stderr.is_empty() {
-            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        let stderr_text = String::from_utf8_lossy(&output.stderr);
+        if !stderr_text.is_empty() {
+            eprint!("{}", stderr_text);
         }
-        eprintln!("Push still failed. Resolve manually.");
+        let has_conflict = stderr_text.contains("CONFLICT")
+            || stderr_text.contains("could not apply")
+            || stderr_text.contains("Merge conflict");
+        eprintln!("\nRebase failed. Suggested fix:");
+        if has_conflict {
+            eprintln!("  Merge conflict detected. To resolve:");
+            eprintln!("    1. git status                  # see conflicted files");
+            eprintln!("    2. <edit files to resolve>");
+            eprintln!("    3. git add <files>");
+            eprintln!("    4. git rebase --continue");
+            eprintln!("    5. git push");
+            eprintln!("  Or abandon the rebase:  git rebase --abort");
+        } else {
+            eprintln!("    git rebase --abort           # restore pre-rebase state");
+            eprintln!("    git pull --rebase --autostash");
+            eprintln!("    git push");
+        }
         return;
     }
 
@@ -888,7 +906,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
             .args(&base_cmd[1..])
             .args(repo.push)
         .output() else {
-        eprintln!("Push failed to execute");
+        eprintln!("Push failed to execute. Retry manually: git push");
         return;
     };
 
@@ -925,7 +943,9 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
     if !retry.stderr.is_empty() {
         eprint!("{}", String::from_utf8_lossy(&retry.stderr));
     }
-    eprintln!("Push still failed. Resolve manually.");
+    eprintln!("\nPush still failed (likely another concurrent commit). Suggested fix:");
+    eprintln!("    git pull --rebase --autostash");
+    eprintln!("    git push");
 }
 
 #[allow(clippy::too_many_arguments)]
