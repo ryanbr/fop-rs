@@ -864,7 +864,7 @@ fn pull_and_push(
 
 /// Attempt rebase and retry push after initial push failure
 #[inline]
-fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool) {
+fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, comment: Option<&str>, no_color: bool) {
     if !quiet {
         eprintln!("Push failed. Attempting rebase...");
     }
@@ -896,11 +896,27 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
         if !quiet {
             use owo_colors::OwoColorize;
             println!("Push succeeded after rebase.");
-            if let Some(url) = get_commit_url(base_cmd) {
-                println!("{}  {}",
-                    "Commit successful:".purple().bold(),
-                    url.white().bold()
-                );
+            let commit_url = get_commit_url(base_cmd).unwrap_or_default();
+            if no_color {
+                if let Some(c) = comment {
+                    println!("Commit message:   {}", c);
+                }
+                if !commit_url.is_empty() {
+                    println!("Commit successful:  {}", commit_url);
+                }
+            } else {
+                if let Some(c) = comment {
+                    println!("{}  {}",
+                        "Commit message:".purple().bold(),
+                        c.white().bold()
+                    );
+                }
+                if !commit_url.is_empty() {
+                    println!("{}  {}",
+                        "Commit successful:".purple().bold(),
+                        commit_url.white().bold()
+                    );
+                }
             }
         }
         return;
@@ -970,7 +986,7 @@ pub fn commit_changes(
 
         if pull_and_push(base_cmd, repo, git_quiet) {
             if rebase_on_fail {
-                rebase_and_retry_push(base_cmd, repo, git_quiet);
+                rebase_and_retry_push(base_cmd, repo, git_quiet, Some(message), no_color);
             } else {
                 eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
             }
@@ -1094,7 +1110,7 @@ pub fn commit_changes(
                     println!(); // finish the "Connecting" line
                 }
                 if rebase_on_fail {
-                    rebase_and_retry_push(base_cmd, repo, git_quiet);
+                    rebase_and_retry_push(base_cmd, repo, git_quiet, Some(&comment), no_color);
                 } else {
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
