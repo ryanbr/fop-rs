@@ -862,6 +862,20 @@ fn pull_and_push(
     push_failed
 }
 
+/// Get the short name of the currently checked-out branch.
+fn current_branch_name(base_cmd: &[String]) -> Option<String> {
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["branch", "--show-current"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() { None } else { Some(name) }
+}
+
 /// Attempt rebase and retry push after initial push failure
 #[inline]
 fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, comment: Option<&str>, no_color: bool) {
@@ -885,8 +899,21 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
         let has_conflict = stderr_text.contains("CONFLICT")
             || stderr_text.contains("could not apply")
             || stderr_text.contains("Merge conflict");
+        let no_upstream = stderr_text.contains("no upstream branch")
+            || stderr_text.contains("no tracking information");
         eprintln!("\nRebase failed. Suggested fix:");
-        if has_conflict {
+        if no_upstream {
+            let branch = current_branch_name(base_cmd).unwrap_or_else(|| "<branch>".to_string());
+            let head = get_head_short_hash(base_cmd).unwrap_or_else(|| "<sha>".to_string());
+            eprintln!("  Current branch '{}' has no upstream — your commit did NOT land on master.", branch);
+            eprintln!("  If you meant to commit to master (typical case):");
+            eprintln!("    git checkout master");
+            eprintln!("    git cherry-pick {}", head);
+            eprintln!("    git push");
+            eprintln!("    git branch -D {}        # delete the stray branch", branch);
+            eprintln!("  If '{}' really is a feature branch you want to publish:", branch);
+            eprintln!("    git push --set-upstream origin {}", branch);
+        } else if has_conflict {
             eprintln!("  Merge conflict detected. To resolve:");
             eprintln!("    1. git status                  # see conflicted files");
             eprintln!("    2. <edit files to resolve>");
@@ -940,12 +967,28 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
         return;
     }
 
-    if !retry.stderr.is_empty() {
-        eprint!("{}", String::from_utf8_lossy(&retry.stderr));
+    let stderr_text = String::from_utf8_lossy(&retry.stderr);
+    if !stderr_text.is_empty() {
+        eprint!("{}", stderr_text);
     }
-    eprintln!("\nPush still failed (likely another concurrent commit). Suggested fix:");
-    eprintln!("    git pull --rebase --autostash");
-    eprintln!("    git push");
+    let no_upstream = stderr_text.contains("no upstream branch")
+        || stderr_text.contains("has no upstream branch");
+    if no_upstream {
+        let branch = current_branch_name(base_cmd).unwrap_or_else(|| "<branch>".to_string());
+        let head = get_head_short_hash(base_cmd).unwrap_or_else(|| "<sha>".to_string());
+        eprintln!("\nPush failed: branch '{}' has no upstream — your commit did NOT land on master.", branch);
+        eprintln!("If you meant to commit to master:");
+        eprintln!("    git checkout master");
+        eprintln!("    git cherry-pick {}", head);
+        eprintln!("    git push");
+        eprintln!("    git branch -D {}", branch);
+        eprintln!("If '{}' really is a feature branch you want to publish:", branch);
+        eprintln!("    git push --set-upstream origin {}", branch);
+    } else {
+        eprintln!("\nPush still failed (likely another concurrent commit). Suggested fix:");
+        eprintln!("    git pull --rebase --autostash");
+        eprintln!("    git push");
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
