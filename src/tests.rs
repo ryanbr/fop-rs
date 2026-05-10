@@ -133,6 +133,16 @@ fn test_mask_urls_in_message() {
         mask_urls_in_message("A: https://a.b.example.co.uk/foo", 4, false),
         "A: https://a.b.example[.]co[.]uk/foo"
     );
+    // Level 4 with Nigerian compound TLD
+    assert_eq!(
+        mask_urls_in_message("A: https://www.seriezloaded.com.ng/foo", 4, false),
+        "A: https://www.seriezloaded[.]com[.]ng/foo"
+    );
+    // Level 4 with Hong Kong compound TLD
+    assert_eq!(
+        mask_urls_in_message("A: https://news.example.com.hk/foo", 4, false),
+        "A: https://news.example[.]com[.]hk/foo"
+    );
     // Level 5: Unicode ONE DOT LEADER (U+2024) replaces host dots
     assert_eq!(
         mask_urls_in_message("A: https://www.example.com/foo", 5, false),

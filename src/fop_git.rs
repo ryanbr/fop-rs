@@ -350,6 +350,36 @@ static COMPOUND_TLDS: LazyLock<ahash::AHashSet<&'static str>> = LazyLock::new(||
         "com.ar", "net.ar", "org.ar",
         // ID
         "co.id", "or.id", "go.id",
+        // NG
+        "com.ng", "net.ng", "org.ng", "gov.ng", "edu.ng",
+        // VN
+        "com.vn", "net.vn", "org.vn", "edu.vn", "gov.vn", "ac.vn",
+        // HK
+        "com.hk", "net.hk", "org.hk", "gov.hk", "edu.hk", "idv.hk",
+        // IL
+        "co.il", "net.il", "org.il", "gov.il", "ac.il", "k12.il",
+        // TH
+        "co.th", "net.th", "or.th", "ac.th", "go.th", "mi.th",
+        // RU
+        "com.ru", "net.ru", "org.ru",
+        // PK
+        "com.pk", "net.pk", "org.pk", "gov.pk", "edu.pk",
+        // TR
+        "com.tr", "net.tr", "org.tr", "edu.tr", "gov.tr", "gen.tr", "web.tr",
+        // GR
+        "com.gr", "net.gr", "org.gr", "edu.gr", "gov.gr",
+        // EG
+        "com.eg", "net.eg", "org.eg", "edu.eg", "gov.eg",
+        // PH
+        "com.ph", "net.ph", "org.ph", "edu.ph", "gov.ph",
+        // MY
+        "com.my", "net.my", "org.my", "edu.my", "gov.my",
+        // SA
+        "com.sa", "net.sa", "org.sa", "edu.sa", "gov.sa",
+        // AE
+        "co.ae", "net.ae", "org.ae", "gov.ae", "ac.ae",
+        // ES
+        "com.es", "nom.es", "org.es", "edu.es", "gob.es",
     ].into_iter().collect()
 });
 

@@ -112,6 +112,9 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--auto-banned-remove` | Auto-remove banned domains and commit |
 | `--ci` | CI mode - exit with error code on failures (banned domains) |
 | `--rebase-on-fail` | Auto rebase and retry push if it fails |
+| `--commit-mask=N` | Mask URLs in commit messages (1=`[.]`, 2=`(.)`, 3=space, 4=preserve subdomain dot, 5=Unicode lookalike `․`) |
+| `--commit-mask-users=u1,u2` | Restrict `--commit-mask` to these `git config user.name` values (lowercased) |
+| `--commit-mask-bare` | Also mask bare hostnames without `http(s)://`. Risks false positives on filenames |
 | `--ignore-config` | Ignore .fopconfig file, use only CLI args |
 | `--output` | Output changed files with --changed suffix (no overwrite) |
 | `--check-file=FILE` | Process a single file | 
@@ -220,6 +223,16 @@ ci = false
 
 # Auto rebase and retry if push fails
 rebase-on-fail = false
+
+# Mask URLs in commit messages: 1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike
+# github.com and gitlab.com (and subdomains) are always exempt so PR/issue links stay clickable.
+commit-mask =
+
+# If non-empty, --commit-mask only applies when git user.name matches one of these (case-insensitive).
+commit-mask-users =
+
+# Also mask bare hostnames (no http/https). Risks FP on filenames like config.toml.
+commit-mask-bare = false
 
 # Suppress most output (for CI)
 quiet = false

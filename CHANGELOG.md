@@ -2,6 +2,20 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [Unreleased]
+
+- Add `--commit-mask=N` to defang URLs in commit messages
+  - Levels: `1=[.]`, `2=(.)`, `3=space`, `4=preserve subdomain dot (mask only eTLD+1)`, `5=Unicode U+2024 lookalike`
+  - Unknown levels fall through to level 1
+  - `github.com` and `gitlab.com` (and subdomains) always exempt so PR/issue links stay clickable
+  - Compound TLDs handled for ~25 country codes (`co.uk`, `co.nz`, `com.au`, `co.jp`, `com.ng`, `com.hk`, `co.il`, `com.vn`, etc.)
+- Add `--commit-mask-users=u1,u2` to restrict masking to specific `git user.name` values
+- Add `--commit-mask-bare` to also mask hostnames without `http(s)://` (opt-in; FP risk on filenames)
+- Display `Commit message (masked):` label only when masking actually changed the text
+- Default `rebase-on-fail` to true; auto-recover from `[remote rejected] cannot lock ref` races between commits
+- Add `--no-rebase-on-fail` to opt out of auto-rebase
+- Print actionable suggested-fix commands when push fails (rebase conflicts, no upstream branch)
+
 ## [5.3.0] - 2026-03-18
 
 - Add per-file config sections in `.fopconfig` with `[filename]` overrides
