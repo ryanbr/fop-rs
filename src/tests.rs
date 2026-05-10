@@ -80,6 +80,24 @@ fn test_mask_urls_in_message() {
         1,
     );
     assert_eq!(out, "M: see https://a[.]com and https://b[.]io. thanks.");
+    // Only host dots are masked; path/query dots are left alone
+    assert_eq!(
+        mask_urls_in_message(
+            "A: https://media-amazon.com/images/S/sash/$domain=imdb.com",
+            1,
+        ),
+        "A: https://media-amazon[.]com/images/S/sash/$domain=imdb.com"
+    );
+    // Path with file extension stays clickable
+    assert_eq!(
+        mask_urls_in_message("A: https://example.org/foo/bar.html", 1),
+        "A: https://example[.]org/foo/bar.html"
+    );
+    // Query string dots untouched
+    assert_eq!(
+        mask_urls_in_message("A: https://forums.lanik.us/viewtopic.php?t=1.2", 1),
+        "A: https://forums[.]lanik[.]us/viewtopic.php?t=1.2"
+    );
     // Only http(s) URLs are masked, not bare domains
     assert_eq!(
         mask_urls_in_message("A: see example.com for details", 1),

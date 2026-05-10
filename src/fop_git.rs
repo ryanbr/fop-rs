@@ -265,7 +265,7 @@ pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
     };
     let mut had_match = false;
     let mut any_masked = false;
-    let mut result = String::new();
+    let mut result = String::with_capacity(msg.len() + 16);
     let mut last_end = 0;
     for m in URL_PATTERN.find_iter(msg) {
         had_match = true;
@@ -276,7 +276,21 @@ pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
         if is_excluded_host(trimmed) {
             result.push_str(raw);
         } else {
-            result.push_str(&trimmed.replace('.', replacement));
+            // Mask only the host portion; leave path/query/fragment intact.
+            let scheme_len = trimmed
+                .find("://")
+                .map(|i| i + 3)
+                .unwrap_or(0);
+            let after_scheme = &trimmed[scheme_len..];
+            let host_end_rel = after_scheme
+                .find(['/', '?', '#'])
+                .unwrap_or(after_scheme.len());
+            let host = &after_scheme[..host_end_rel];
+            let rest = &trimmed[scheme_len + host_end_rel..];
+            result.push_str(&trimmed[..scheme_len]);
+            result.push_str(&host.replace('.', replacement));
+            result.push_str(rest);
+            // Trailing punctuation we trimmed earlier
             result.push_str(&raw[trimmed.len()..]);
             any_masked = true;
         }
