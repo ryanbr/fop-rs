@@ -253,13 +253,11 @@ static COMMIT_PATTERN: LazyLock<Regex> =
 static URL_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https?://[^\s]+").unwrap());
 
-/// Mask dots inside any http(s) URL found in `msg` according to `level`:
-///   1 = `[.]`, 2 = `(.)`, 3 = single space.
-/// Unknown levels return the input unchanged.
+/// Mask host dots inside any http(s) URL found in `msg` per `level`:
+///   1 = `[.]`, 2 = `(.)`, 3 = space, 4 = preserve subdomain dot (mask only
+///   eTLD+1), 5 = U+2024 ONE DOT LEADER. Any other value (including 0) falls
+///   through to level 1. github.com and `*.github.com` URLs are exempt.
 pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
-    // Level 4 preserves the leftmost host dot (keeps the subdomain visible) and
-    // masks the rest with [.]. All other levels apply a single replacement to
-    // every host dot. Unknown levels fall through to level 1 ([.]).
     let mut had_match = false;
     let mut any_masked = false;
     let mut result = String::with_capacity(msg.len() + 16);
@@ -379,16 +377,18 @@ fn mask_host(host: &str, level: u8) -> String {
 }
 
 /// Returns true if the URL's host should be exempt from masking.
-/// Currently: github.com and any subdomain.
+/// Currently: github.com and any subdomain. Case-insensitive, no allocation.
 fn is_excluded_host(url: &str) -> bool {
     let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
-    let host = after_scheme
+    let host_with_port = after_scheme
         .split(['/', '?', '#'])
         .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let host = host.split(':').next().unwrap_or(""); // strip port
-    host == "github.com" || host.ends_with(".github.com")
+        .unwrap_or("");
+    let host = host_with_port.split(':').next().unwrap_or("");
+    host.eq_ignore_ascii_case("github.com")
+        || (host.len() > "github.com".len()
+            && host[host.len() - "github.com".len()..].eq_ignore_ascii_case("github.com")
+            && host.as_bytes()[host.len() - "github.com".len() - 1] == b'.')
 }
 
 #[inline]
