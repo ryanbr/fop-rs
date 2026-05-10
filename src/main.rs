@@ -205,6 +205,8 @@ struct Args {
     only_sort_changed: bool,
     /// Auto rebase and retry if push fails
     rebase_on_fail: bool,
+    /// Mask URLs in commit messages: 1=`[.]`, 2=`(.)`, 3=` ` (space)
+    commit_mask: Option<u8>,
     /// CI mode - exit with error code on failures
     ci: bool,
     /// Show applied configuration
@@ -480,6 +482,9 @@ impl Args {
             output_changed: false,
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
             rebase_on_fail: parse_bool(&config, "rebase-on-fail", true),
+            commit_mask: config.get("commit-mask")
+                .and_then(|s| s.trim().parse::<u8>().ok())
+                .filter(|n| (1..=3).contains(n)),
             ci: parse_bool(&config, "ci", false),
             history: config.get("history")
                 .map(|s| s.split(',')
@@ -528,6 +533,16 @@ impl Args {
                 "--only-sort-changed" => args.only_sort_changed = true,
                 "--rebase-on-fail" => args.rebase_on_fail = true,
                 "--no-rebase-on-fail" => args.rebase_on_fail = false,
+                _ if arg.starts_with("--commit-mask=") => {
+                    let val = arg.trim_start_matches("--commit-mask=");
+                    match val.parse::<u8>() {
+                        Ok(n) if (1..=3).contains(&n) => args.commit_mask = Some(n),
+                        _ => {
+                            eprintln!("Error: --commit-mask must be 1, 2, or 3 (got '{}')", val);
+                            std::process::exit(2);
+                        }
+                    }
+                }
                 "--pr-show-changes" => args.pr_show_changes = true,
                 _ if arg.starts_with("--check-banned-list=") => {
                     args.check_banned_list = Some(PathBuf::from(arg.trim_start_matches("--check-banned-list=")));
@@ -705,6 +720,7 @@ impl Args {
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
         println!("        --no-color      Disable colored output");
+        println!("        --commit-mask=N Mask URLs in commit messages (1=[.], 2=(.), 3=space)");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
@@ -776,6 +792,12 @@ impl Args {
         println!("  no-commit       = {}", self.no_commit);
         println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  rebase-on-fail  = {}", self.rebase_on_fail);
+        println!("  commit-mask     = {}", match self.commit_mask {
+            Some(1) => "1 ([.])",
+            Some(2) => "2 ((.))",
+            Some(3) => "3 (space)",
+            _ => "off",
+        });
         println!("  ci              = {}", self.ci);
         println!("  pr-show-changes = {}", self.pr_show_changes);
         println!("  check-banned-list = {:?}", self.check_banned_list);
@@ -1172,6 +1194,7 @@ fn process_location(
     auto_fix: bool,
     only_sort_changed: bool,
     rebase_on_fail: bool,
+    commit_mask: Option<u8>,
     ci: bool,
     quiet: bool,
     limited_quiet: bool,
@@ -1551,7 +1574,7 @@ fn process_location(
                     if !quiet {
                         println!("Direct push authorized for user.");
                     }
-                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history)?;
+                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history, commit_mask)?;
                 } else {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
@@ -1602,6 +1625,7 @@ fn process_location(
                     rebase_on_fail,
                     git_message,
                     history,
+                    commit_mask,
                 )?;
             }
         }
@@ -2064,6 +2088,7 @@ fn main() {
                     args.rebase_on_fail,
                     &args.git_message,
                     &args.history,
+                    args.commit_mask,
                 ) {
                     eprintln!("Git error: {}", e);
                 }
@@ -2160,6 +2185,7 @@ fn main() {
                 args.auto_fix,
                 args.only_sort_changed,
                 args.rebase_on_fail,
+                args.commit_mask,
                 args.ci,
                 args.quiet,
                 args.limited_quiet,

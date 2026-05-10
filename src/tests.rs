@@ -7,7 +7,7 @@
 //! Copyright (C) 2011 Michael (original Python version)
 //! Rust port maintains GPL-3.0 license compatibility.
 
-use crate::fop_git::{check_comment, valid_url};
+use crate::fop_git::{check_comment, mask_urls_in_message, valid_url};
 use crate::fop_sort::is_tld_only;
 
 use crate::fop_sort::{
@@ -45,6 +45,64 @@ fn test_check_comment() {
     ));
     assert!(!check_comment("Invalid comment", false));
     assert!(!check_comment("A: (filters) not-a-url", true));
+}
+
+#[test]
+fn test_mask_urls_in_message() {
+    // Level 1: [.]
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.com/foo", 1),
+        "A: https://www[.]example[.]com/foo"
+    );
+    // Level 2: (.)
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.com/foo", 2),
+        "A: https://www(.)example(.)com/foo"
+    );
+    // Level 3: space
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.com/foo", 3),
+        "A: https://www example com/foo"
+    );
+    // Unknown level → unchanged
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.com/foo", 9),
+        "A: https://www.example.com/foo"
+    );
+    // No URL → unchanged
+    assert_eq!(
+        mask_urls_in_message("M: Update filters", 1),
+        "M: Update filters"
+    );
+    // Multiple URLs masked, prose dots untouched
+    let out = mask_urls_in_message(
+        "M: see https://a.com and https://b.io. thanks.",
+        1,
+    );
+    assert_eq!(out, "M: see https://a[.]com and https://b[.]io. thanks.");
+    // Only http(s) URLs are masked, not bare domains
+    assert_eq!(
+        mask_urls_in_message("A: see example.com for details", 1),
+        "A: see example.com for details"
+    );
+    // GitHub URLs are exempt (clickability preserved)
+    assert_eq!(
+        mask_urls_in_message("A: https://github.com/easylist/easylist/issues/123", 1),
+        "A: https://github.com/easylist/easylist/issues/123"
+    );
+    // GitHub subdomains are also exempt
+    assert_eq!(
+        mask_urls_in_message("A: https://gist.github.com/foo/abc", 1),
+        "A: https://gist.github.com/foo/abc"
+    );
+    // Non-github URL still gets masked, github stays untouched
+    assert_eq!(
+        mask_urls_in_message(
+            "M: see https://github.com/easylist/easylist/issues/1 and https://forums.lanik.us/t=2",
+            1,
+        ),
+        "M: see https://github.com/easylist/easylist/issues/1 and https://forums[.]lanik[.]us/t=2"
+    );
 }
 
 // =============================================================================

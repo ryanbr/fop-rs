@@ -250,6 +250,58 @@ pub const REPO_TYPES: &[RepoDefinition] = &[GIT];
 static COMMIT_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(A|M|P):\s((\(.+\))\s)?(.+)$").unwrap());
 
+static URL_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"https?://[^\s]+").unwrap());
+
+/// Mask dots inside any http(s) URL found in `msg` according to `level`:
+///   1 = `[.]`, 2 = `(.)`, 3 = single space.
+/// Unknown levels return the input unchanged.
+pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
+    let replacement = match level {
+        1 => "[.]",
+        2 => "(.)",
+        3 => " ",
+        _ => return std::borrow::Cow::Borrowed(msg),
+    };
+    let mut had_match = false;
+    let mut any_masked = false;
+    let mut result = String::new();
+    let mut last_end = 0;
+    for m in URL_PATTERN.find_iter(msg) {
+        had_match = true;
+        result.push_str(&msg[last_end..m.start()]);
+        // Trim trailing sentence punctuation that the greedy match swallowed.
+        let raw = m.as_str();
+        let trimmed = raw.trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']']);
+        if is_excluded_host(trimmed) {
+            result.push_str(raw);
+        } else {
+            result.push_str(&trimmed.replace('.', replacement));
+            result.push_str(&raw[trimmed.len()..]);
+            any_masked = true;
+        }
+        last_end = m.end();
+    }
+    if !had_match || !any_masked {
+        return std::borrow::Cow::Borrowed(msg);
+    }
+    result.push_str(&msg[last_end..]);
+    std::borrow::Cow::Owned(result)
+}
+
+/// Returns true if the URL's host should be exempt from masking.
+/// Currently: github.com and any subdomain.
+fn is_excluded_host(url: &str) -> bool {
+    let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let host = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let host = host.split(':').next().unwrap_or(""); // strip port
+    host == "github.com" || host.ends_with(".github.com")
+}
+
 #[inline]
 pub fn valid_url(url_str: &str) -> bool {
     if url_str.starts_with("about:") {
@@ -1004,6 +1056,7 @@ pub fn commit_changes(
     rebase_on_fail: bool,
     git_message: &Option<String>,
     history: &[String],
+    commit_mask: Option<u8>,
 ) -> io::Result<()> {
     let git_quiet = quiet || limited_quiet;
     let diff = match get_diff(base_cmd, repo) {
@@ -1041,15 +1094,19 @@ pub fn commit_changes(
             .arg("--autostash")
             .output();
 
+        let masked = commit_mask
+            .map(|lvl| mask_urls_in_message(message, lvl))
+            .unwrap_or(std::borrow::Cow::Borrowed(message.as_str()));
+
         Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
             .args(repo.commit)
-            .arg(message)
+            .arg(masked.as_ref())
             .status()?;
 
         if pull_and_push(base_cmd, repo, git_quiet) {
             if rebase_on_fail {
-                rebase_and_retry_push(base_cmd, repo, git_quiet, Some(message), no_color);
+                rebase_and_retry_push(base_cmd, repo, git_quiet, Some(masked.as_ref()), no_color);
             } else {
                 eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
             }
@@ -1143,11 +1200,16 @@ pub fn commit_changes(
                 .arg("--autostash")
                 .output();
 
+            // Apply URL masking after validation, before commit/display
+            let masked_comment = commit_mask
+                .map(|lvl| mask_urls_in_message(&comment, lvl).into_owned())
+                .unwrap_or_else(|| comment.clone());
+
             // Execute commit
             let status = Command::new(&base_cmd[0])
                 .args(&base_cmd[1..])
                 .args(repo.commit)
-                .arg(&comment)
+                .arg(&masked_comment)
                 .status();
 
             if let Err(e) = status {
@@ -1173,7 +1235,7 @@ pub fn commit_changes(
                     println!(); // finish the "Connecting" line
                 }
                 if rebase_on_fail {
-                    rebase_and_retry_push(base_cmd, repo, git_quiet, Some(&comment), no_color);
+                    rebase_and_retry_push(base_cmd, repo, git_quiet, Some(&masked_comment), no_color);
                 } else {
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
@@ -1181,13 +1243,13 @@ pub fn commit_changes(
                 // Overwrite "Connecting to server..." with commit message + URL
                 let commit_url = get_commit_url(base_cmd).unwrap_or_default();
                 if no_color {
-                    println!("\r\x1b[2K\nCommit message:   {}", comment);
+                    println!("\r\x1b[2K\nCommit message:   {}", masked_comment);
                     print!("Commit successful:  {}", commit_url);
                 } else {
                     print!("\r\x1b[2K\n");
                     println!("{}  {}",
                         "Commit message:".purple().bold(),
-                        comment.white().bold()
+                        masked_comment.white().bold()
                     );
                     print!(
                         "{}",
