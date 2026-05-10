@@ -376,8 +376,13 @@ fn mask_host(host: &str, level: u8) -> String {
     }
 }
 
+/// Apex domains exempt from URL masking — the host or any subdomain of one of
+/// these is left clickable so PR/issue links remain auto-linked on the
+/// hosting platform.
+const MASK_EXEMPT_HOSTS: &[&str] = &["github.com", "gitlab.com"];
+
 /// Returns true if the URL's host should be exempt from masking.
-/// Currently: github.com and any subdomain. Case-insensitive, no allocation.
+/// Case-insensitive, no allocation.
 fn is_excluded_host(url: &str) -> bool {
     let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let host_with_port = after_scheme
@@ -385,10 +390,12 @@ fn is_excluded_host(url: &str) -> bool {
         .next()
         .unwrap_or("");
     let host = host_with_port.split(':').next().unwrap_or("");
-    host.eq_ignore_ascii_case("github.com")
-        || (host.len() > "github.com".len()
-            && host[host.len() - "github.com".len()..].eq_ignore_ascii_case("github.com")
-            && host.as_bytes()[host.len() - "github.com".len() - 1] == b'.')
+    MASK_EXEMPT_HOSTS.iter().any(|apex| {
+        host.eq_ignore_ascii_case(apex)
+            || (host.len() > apex.len()
+                && host[host.len() - apex.len()..].eq_ignore_ascii_case(apex)
+                && host.as_bytes()[host.len() - apex.len() - 1] == b'.')
+    })
 }
 
 #[inline]

@@ -156,6 +156,20 @@ fn test_mask_urls_in_message() {
         mask_urls_in_message("A: https://gist.github.com/foo/abc", 1),
         "A: https://gist.github.com/foo/abc"
     );
+    // GitLab apex and subdomains exempt
+    assert_eq!(
+        mask_urls_in_message("A: https://gitlab.com/foo/bar/-/issues/1", 1),
+        "A: https://gitlab.com/foo/bar/-/issues/1"
+    );
+    assert_eq!(
+        mask_urls_in_message("A: https://docs.gitlab.com/ee/", 1),
+        "A: https://docs.gitlab.com/ee/"
+    );
+    // Lookalike that ends in gitlab.com but isn't a subdomain still gets masked
+    assert_eq!(
+        mask_urls_in_message("A: https://notgitlab.com/foo", 1),
+        "A: https://notgitlab[.]com/foo"
+    );
     // Non-github URL still gets masked, github stays untouched
     assert_eq!(
         mask_urls_in_message(
