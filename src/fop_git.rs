@@ -1145,8 +1145,29 @@ pub fn commit_changes(
     git_message: &Option<String>,
     history: &[String],
     commit_mask: Option<u8>,
+    commit_mask_users: &[String],
 ) -> io::Result<()> {
     let git_quiet = quiet || limited_quiet;
+    // Apply commit_mask only if either (a) no user allowlist is configured, or
+    // (b) the current git user.name is in the allowlist (case-insensitive).
+    let effective_mask: Option<u8> = match commit_mask {
+        Some(level) if !commit_mask_users.is_empty() => {
+            let username = Command::new(&base_cmd[0])
+                .args(&base_cmd[1..])
+                .args(["config", "user.name"])
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_lowercase())
+                .unwrap_or_default();
+            if !username.is_empty() && commit_mask_users.iter().any(|u| u == &username) {
+                Some(level)
+            } else {
+                None
+            }
+        }
+        other => other,
+    };
     let diff = match get_diff(base_cmd, repo) {
         Some(d) if !d.is_empty() => d,
         _ => {
@@ -1182,7 +1203,7 @@ pub fn commit_changes(
             .arg("--autostash")
             .output();
 
-        let masked = commit_mask
+        let masked = effective_mask
             .map(|lvl| mask_urls_in_message(message, lvl))
             .unwrap_or(std::borrow::Cow::Borrowed(message.as_str()));
 
@@ -1289,7 +1310,7 @@ pub fn commit_changes(
                 .output();
 
             // Apply URL masking after validation, before commit/display
-            let masked_comment = commit_mask
+            let masked_comment = effective_mask
                 .map(|lvl| mask_urls_in_message(&comment, lvl).into_owned())
                 .unwrap_or_else(|| comment.clone());
 
