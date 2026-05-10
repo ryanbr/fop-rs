@@ -337,15 +337,15 @@ static COMPOUND_TLDS: LazyLock<ahash::AHashSet<&'static str>> = LazyLock::new(||
 /// How many trailing labels form the eTLD for `host`. Returns 2 for known
 /// compound TLDs, otherwise 1.
 fn etld_label_count(host: &str) -> usize {
-    let labels: Vec<&str> = host.split('.').collect();
-    if labels.len() >= 2 {
-        let n = labels.len();
-        let last_two = format!("{}.{}", labels[n - 2], labels[n - 1]);
-        if COMPOUND_TLDS.contains(last_two.as_str()) {
-            return 2;
-        }
-    }
-    1
+    // Slice the last two labels directly from `host` — no allocation.
+    let last_two: &str = match host.rfind('.') {
+        None => return 1,
+        Some(last_dot) => match host[..last_dot].rfind('.') {
+            Some(prev_dot) => &host[prev_dot + 1..],
+            None => host,
+        },
+    };
+    if COMPOUND_TLDS.contains(last_two) { 2 } else { 1 }
 }
 
 /// Mask the dots inside a single host string per the requested level.
