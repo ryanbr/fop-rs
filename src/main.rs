@@ -483,8 +483,7 @@ impl Args {
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
             rebase_on_fail: parse_bool(&config, "rebase-on-fail", true),
             commit_mask: config.get("commit-mask")
-                .and_then(|s| s.trim().parse::<u8>().ok())
-                .filter(|n| (1..=3).contains(n)),
+                .and_then(|s| s.trim().parse::<u8>().ok()),
             ci: parse_bool(&config, "ci", false),
             history: config.get("history")
                 .map(|s| s.split(',')
@@ -536,9 +535,9 @@ impl Args {
                 _ if arg.starts_with("--commit-mask=") => {
                     let val = arg.trim_start_matches("--commit-mask=");
                     match val.parse::<u8>() {
-                        Ok(n) if (1..=3).contains(&n) => args.commit_mask = Some(n),
-                        _ => {
-                            eprintln!("Error: --commit-mask must be 1, 2, or 3 (got '{}')", val);
+                        Ok(n) => args.commit_mask = Some(n),
+                        Err(_) => {
+                            eprintln!("Error: --commit-mask must be a number (got '{}')", val);
                             std::process::exit(2);
                         }
                     }
@@ -720,7 +719,7 @@ impl Args {
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
         println!("        --no-color      Disable colored output");
-        println!("        --commit-mask=N Mask URLs in commit messages (1=[.], 2=(.), 3=space)");
+        println!("        --commit-mask=N Mask URLs in commit messages (1=[.], 2=(.), 3=space, 4=preserve subdomain dot)");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
@@ -793,10 +792,11 @@ impl Args {
         println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  rebase-on-fail  = {}", self.rebase_on_fail);
         println!("  commit-mask     = {}", match self.commit_mask {
-            Some(1) => "1 ([.])",
             Some(2) => "2 ((.))",
             Some(3) => "3 (space)",
-            _ => "off",
+            Some(4) => "4 (preserve subdomain dot)",
+            Some(_) => "1 ([.])",
+            None    => "off",
         });
         println!("  ci              = {}", self.ci);
         println!("  pr-show-changes = {}", self.pr_show_changes);
