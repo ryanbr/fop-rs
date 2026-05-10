@@ -371,6 +371,7 @@ fn mask_host(host: &str, level: u8) -> String {
         let replacement = match level {
             2 => "(.)",
             3 => " ",
+            5 => "\u{2024}", // ONE DOT LEADER — visually identical to '.', not IDNA-mapped
             _ => "[.]",
         };
         host.replace('.', replacement)

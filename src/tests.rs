@@ -131,6 +131,16 @@ fn test_mask_urls_in_message() {
         mask_urls_in_message("A: https://a.b.example.co.uk/foo", 4),
         "A: https://a.b.example[.]co[.]uk/foo"
     );
+    // Level 5: Unicode ONE DOT LEADER (U+2024) replaces host dots
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.com/foo", 5),
+        "A: https://www\u{2024}example\u{2024}com/foo"
+    );
+    // Level 5 leaves path/query dots alone, like other levels
+    assert_eq!(
+        mask_urls_in_message("A: https://forums.lanik.us/t.php?x=1.2", 5),
+        "A: https://forums\u{2024}lanik\u{2024}us/t.php?x=1.2"
+    );
     // Only http(s) URLs are masked, not bare domains
     assert_eq!(
         mask_urls_in_message("A: see example.com for details", 1),

@@ -731,7 +731,7 @@ impl Args {
         println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
         println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
         println!("        --no-color      Disable colored output");
-        println!("        --commit-mask=N Mask URLs in commit messages (1=[.], 2=(.), 3=space, 4=preserve subdomain dot)");
+        println!("        --commit-mask=N Mask URLs in commit messages (1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike)");
         println!("        --commit-mask-users=u1,u2  Restrict --commit-mask to these git user.name values (lowercased)");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
@@ -808,6 +808,7 @@ impl Args {
             Some(2) => "2 ((.))",
             Some(3) => "3 (space)",
             Some(4) => "4 (preserve subdomain dot)",
+            Some(5) => "5 (Unicode \u{2024} lookalike)",
             Some(_) => "1 ([.])",
             None    => "off",
         });
