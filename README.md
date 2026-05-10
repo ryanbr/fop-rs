@@ -269,6 +269,61 @@ add-timestamp = true
 
 Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`.
 
+### Commit Message URL Masking
+
+`--commit-mask=N` defangs URLs in commit messages so they're stored in git history in a non-clickable form. Useful for filter-list maintainers who don't want third-party scrapers, search engines, or auto-linkers to follow URLs cited in commit messages. Masking happens **after** commit-message validation (so `A:`/`P:` prefixes still validate against the real URL) but **before** `git commit -m`, so the masked form is what lands in git.
+
+#### Levels
+
+Using `https://www.example.com/foo/bar.html` and `https://www.example.co.nz/foo` as inputs:
+
+| Level | Style | `www.example.com/...` | `www.example.co.nz/foo` |
+|---|---|---|---|
+| 1 | `[.]` | `https://www[.]example[.]com/foo/bar.html` | `https://www[.]example[.]co[.]nz/foo` |
+| 2 | `(.)` | `https://www(.)example(.)com/foo/bar.html` | `https://www(.)example(.)co(.)nz/foo` |
+| 3 | space | `https://www example com/foo/bar.html` | `https://www example co nz/foo` |
+| 4 | preserve subdomain dot | `https://www.example[.]com/foo/bar.html` | `https://www.example[.]co[.]nz/foo` |
+| 5 | Unicode `․` (U+2024) | `https://www․example․com/foo/bar.html` | `https://www․example․co․nz/foo` |
+
+Notes:
+- **Path/query/fragment dots are never masked** (only host dots), so file extensions like `bar.html` and query values like `?t=1.2` stay readable.
+- **Level 4** masks only the registrable domain plus eTLD ("eTLD+1"). Compound TLDs (`co.uk`, `co.nz`, `com.au`, `co.jp`, `com.ng`, `com.hk`, `co.il`, `com.vn`, etc. — ~25 country codes) are recognised so `example.co.uk` is treated as a 2-label TLD. Apex-only inputs (`example.com`, no subdomain) still defang the only dot.
+- **Level 5** is the strongest defang: U+2024 is visually nearly identical to `.` but is not in IDNA UTS #46 normalization tables, so URLs containing it won't resolve in browsers, `curl`, or most parsers — even after copy/paste. Reviewers won't realise the link is dead until they try to click it.
+- **Unknown levels** (0, 6, 99…) silently fall through to level 1.
+- **Exempt hosts:** `github.com`, `gitlab.com`, and any of their subdomains (`gist.github.com`, `docs.gitlab.com`, etc.) are never masked, so PR/issue links remain clickable on the hosting platform. Lookalike hosts like `notgitlab.com` or `evil.gitlab.com.attacker.com` still get masked.
+
+#### Choosing a level
+
+| When to use | Level |
+|---|---|
+| Maximum visibility ("clearly defanged") | 1, 2, or 3 |
+| Want the host structure to remain readable, only break TLD | 4 |
+| Want the URL to look real but stay broken (anti-scraper) | 5 |
+
+#### Restricting masking by user
+
+`--commit-mask-users=name1,name2,...` (or `commit-mask-users = ...` in config) gates masking on the current `git config user.name`. If the list is empty, masking applies to whoever runs fop. If the list is non-empty, only matching users (case-insensitive) get masking; everyone else commits with the original URL.
+
+```ini
+commit-mask = 4
+commit-mask-users = fanboynz, ryanbr
+```
+
+#### Bare hostnames (`--commit-mask-bare`)
+
+Off by default. When enabled, also matches hostnames without an `http(s)://` prefix (e.g. `forums.lanik.us` or `www.example.com.ng`). The matcher requires at least one dot and a 2+ letter final label, so version numbers like `1.2.3` are not matched. Filenames like `config.toml` **will** match — that's the documented false-positive cost of opting in. Scheme URLs still take priority where both forms appear, and the host-exempt list (`github.com`, `gitlab.com`) applies to bare matches too.
+
+#### Display label
+
+After a successful commit, fop prints `Commit message:` followed by what landed in git. If masking actually changed the message, the label becomes `Commit message (masked):` instead, so it's obvious the displayed text is the masked form.
+
+```
+Commit message (masked):  A: https://www.example[.]com/foo
+Commit successful:        https://github.com/easylist/easylist/commit/abc1234
+```
+
+If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the plain `Commit message:` label is shown.
+
 ## Platform Support
 
 ### Pre-built Binaries
