@@ -64,10 +64,14 @@ fn test_mask_urls_in_message() {
         mask_urls_in_message("A: https://www.example.com/foo", 3),
         "A: https://www example com/foo"
     );
-    // Unknown level → unchanged
+    // Unknown level → fallback to level 1 ([.])
     assert_eq!(
         mask_urls_in_message("A: https://www.example.com/foo", 9),
-        "A: https://www.example.com/foo"
+        "A: https://www[.]example[.]com/foo"
+    );
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.com/foo", 0),
+        "A: https://www[.]example[.]com/foo"
     );
     // No URL → unchanged
     assert_eq!(
@@ -97,6 +101,35 @@ fn test_mask_urls_in_message() {
     assert_eq!(
         mask_urls_in_message("A: https://forums.lanik.us/viewtopic.php?t=1.2", 1),
         "A: https://forums[.]lanik[.]us/viewtopic.php?t=1.2"
+    );
+    // Level 4: preserve all subdomain dots, mask only within eTLD+1
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.com/foo", 4),
+        "A: https://www.example[.]com/foo"
+    );
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.co.nz/foo", 4),
+        "A: https://www.example[.]co[.]nz/foo"
+    );
+    // Level 4 with apex (no subdomain) — defang the only dot
+    assert_eq!(
+        mask_urls_in_message("A: https://example.com/foo", 4),
+        "A: https://example[.]com/foo"
+    );
+    // Level 4 apex with compound TLD — mask all dots inside eTLD+1
+    assert_eq!(
+        mask_urls_in_message("A: https://example.co.nz/foo", 4),
+        "A: https://example[.]co[.]nz/foo"
+    );
+    // Level 4 with deep subdomain chain — all subdomain dots preserved
+    assert_eq!(
+        mask_urls_in_message("A: https://a.b.c.example.com/foo", 4),
+        "A: https://a.b.c.example[.]com/foo"
+    );
+    // Level 4 with deep subdomain + compound TLD
+    assert_eq!(
+        mask_urls_in_message("A: https://a.b.example.co.uk/foo", 4),
+        "A: https://a.b.example[.]co[.]uk/foo"
     );
     // Only http(s) URLs are masked, not bare domains
     assert_eq!(

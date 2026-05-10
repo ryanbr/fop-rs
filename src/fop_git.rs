@@ -257,12 +257,9 @@ static URL_PATTERN: LazyLock<Regex> =
 ///   1 = `[.]`, 2 = `(.)`, 3 = single space.
 /// Unknown levels return the input unchanged.
 pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
-    let replacement = match level {
-        1 => "[.]",
-        2 => "(.)",
-        3 => " ",
-        _ => return std::borrow::Cow::Borrowed(msg),
-    };
+    // Level 4 preserves the leftmost host dot (keeps the subdomain visible) and
+    // masks the rest with [.]. All other levels apply a single replacement to
+    // every host dot. Unknown levels fall through to level 1 ([.]).
     let mut had_match = false;
     let mut any_masked = false;
     let mut result = String::with_capacity(msg.len() + 16);
@@ -288,7 +285,7 @@ pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
             let host = &after_scheme[..host_end_rel];
             let rest = &trimmed[scheme_len + host_end_rel..];
             result.push_str(&trimmed[..scheme_len]);
-            result.push_str(&host.replace('.', replacement));
+            result.push_str(&mask_host(host, level));
             result.push_str(rest);
             // Trailing punctuation we trimmed earlier
             result.push_str(&raw[trimmed.len()..]);
@@ -301,6 +298,83 @@ pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
     }
     result.push_str(&msg[last_end..]);
     std::borrow::Cow::Owned(result)
+}
+
+/// Compound effective TLDs for which the last TWO labels form the public suffix
+/// (e.g. `co.nz` in `example.co.nz`). Not exhaustive — covers the common cases
+/// likely to appear in commit messages on this project. Add more if needed.
+static COMPOUND_TLDS: LazyLock<ahash::AHashSet<&'static str>> = LazyLock::new(|| {
+    [
+        // UK
+        "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "net.uk", "sch.uk", "ltd.uk", "plc.uk",
+        // NZ
+        "co.nz", "org.nz", "net.nz", "govt.nz", "ac.nz", "school.nz",
+        // AU
+        "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au",
+        // JP
+        "co.jp", "ne.jp", "or.jp", "ad.jp", "ac.jp", "go.jp",
+        // KR
+        "co.kr", "ne.kr", "or.kr", "go.kr", "ac.kr",
+        // BR
+        "com.br", "net.br", "org.br", "gov.br", "edu.br",
+        // CN
+        "com.cn", "net.cn", "org.cn", "gov.cn", "edu.cn", "ac.cn",
+        // ZA
+        "co.za", "org.za", "net.za",
+        // IN
+        "co.in", "net.in", "org.in", "gov.in",
+        // MX
+        "com.mx", "net.mx", "org.mx", "gob.mx",
+        // SG
+        "com.sg", "net.sg", "org.sg", "gov.sg",
+        // AR
+        "com.ar", "net.ar", "org.ar",
+        // ID
+        "co.id", "or.id", "go.id",
+    ].into_iter().collect()
+});
+
+/// How many trailing labels form the eTLD for `host`. Returns 2 for known
+/// compound TLDs, otherwise 1.
+fn etld_label_count(host: &str) -> usize {
+    let labels: Vec<&str> = host.split('.').collect();
+    if labels.len() >= 2 {
+        let n = labels.len();
+        let last_two = format!("{}.{}", labels[n - 2], labels[n - 1]);
+        if COMPOUND_TLDS.contains(last_two.as_str()) {
+            return 2;
+        }
+    }
+    1
+}
+
+/// Mask the dots inside a single host string per the requested level.
+fn mask_host(host: &str, level: u8) -> String {
+    if level == 4 {
+        let labels: Vec<&str> = host.split('.').collect();
+        if labels.len() <= 1 {
+            return host.to_string();
+        }
+        // eTLD+1 = the registrable label plus the eTLD.
+        let block = etld_label_count(host) + 1;
+        if labels.len() <= block {
+            // No subdomain — every dot is inside eTLD+1, so mask them all.
+            return labels.join("[.]");
+        }
+        let split = labels.len() - block;
+        let mut out = String::with_capacity(host.len() + block * 2);
+        out.push_str(&labels[..split].join("."));
+        out.push('.');
+        out.push_str(&labels[split..].join("[.]"));
+        out
+    } else {
+        let replacement = match level {
+            2 => "(.)",
+            3 => " ",
+            _ => "[.]",
+        };
+        host.replace('.', replacement)
+    }
 }
 
 /// Returns true if the URL's host should be exempt from masking.
