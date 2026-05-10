@@ -1019,7 +1019,7 @@ fn current_branch_name(base_cmd: &[String]) -> Option<String> {
 
 /// Attempt rebase and retry push after initial push failure
 #[inline]
-fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, comment: Option<&str>, no_color: bool) {
+fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, comment: Option<&str>, no_color: bool, is_masked: bool) {
     if !quiet {
         eprintln!("Push failed. Attempting rebase...");
     }
@@ -1083,9 +1083,10 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
             use owo_colors::OwoColorize;
             println!("Push succeeded after rebase.");
             let commit_url = get_commit_url(base_cmd).unwrap_or_default();
+            let label = if is_masked { "Commit message (masked):" } else { "Commit message:" };
             if no_color {
                 if let Some(c) = comment {
-                    println!("Commit message:   {}", c);
+                    println!("{}   {}", label, c);
                 }
                 if !commit_url.is_empty() {
                     println!("Commit successful:  {}", commit_url);
@@ -1093,7 +1094,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
             } else {
                 if let Some(c) = comment {
                     println!("{}  {}",
-                        "Commit message:".purple().bold(),
+                        label.purple().bold(),
                         c.white().bold()
                     );
                 }
@@ -1207,6 +1208,7 @@ pub fn commit_changes(
         let masked = effective_mask
             .map(|lvl| mask_urls_in_message(message, lvl))
             .unwrap_or(std::borrow::Cow::Borrowed(message.as_str()));
+        let is_masked = masked.as_ref() != message.as_str();
 
         Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
@@ -1216,7 +1218,7 @@ pub fn commit_changes(
 
         if pull_and_push(base_cmd, repo, git_quiet) {
             if rebase_on_fail {
-                rebase_and_retry_push(base_cmd, repo, git_quiet, Some(masked.as_ref()), no_color);
+                rebase_and_retry_push(base_cmd, repo, git_quiet, Some(masked.as_ref()), no_color, is_masked);
             } else {
                 eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
             }
@@ -1314,6 +1316,8 @@ pub fn commit_changes(
             let masked_comment = effective_mask
                 .map(|lvl| mask_urls_in_message(&comment, lvl).into_owned())
                 .unwrap_or_else(|| comment.clone());
+            let is_masked = masked_comment != comment;
+            let msg_label = if is_masked { "Commit message (masked):" } else { "Commit message:" };
 
             // Execute commit
             let status = Command::new(&base_cmd[0])
@@ -1345,7 +1349,7 @@ pub fn commit_changes(
                     println!(); // finish the "Connecting" line
                 }
                 if rebase_on_fail {
-                    rebase_and_retry_push(base_cmd, repo, git_quiet, Some(&masked_comment), no_color);
+                    rebase_and_retry_push(base_cmd, repo, git_quiet, Some(&masked_comment), no_color, is_masked);
                 } else {
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
@@ -1353,12 +1357,12 @@ pub fn commit_changes(
                 // Overwrite "Connecting to server..." with commit message + URL
                 let commit_url = get_commit_url(base_cmd).unwrap_or_default();
                 if no_color {
-                    println!("\r\x1b[2K\nCommit message:   {}", masked_comment);
+                    println!("\r\x1b[2K\n{}   {}", msg_label, masked_comment);
                     print!("Commit successful:  {}", commit_url);
                 } else {
                     print!("\r\x1b[2K\n");
                     println!("{}  {}",
-                        "Commit message:".purple().bold(),
+                        msg_label.purple().bold(),
                         masked_comment.white().bold()
                     );
                     print!(
