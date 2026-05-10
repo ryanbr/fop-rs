@@ -253,24 +253,40 @@ static COMMIT_PATTERN: LazyLock<Regex> =
 static URL_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https?://[^\s]+").unwrap());
 
+/// Same as `URL_PATTERN` plus an alternative for bare hostnames (no scheme).
+/// The bare alternative requires at least one dot and a 2+ letter final
+/// label so version numbers like `1.2.3` won't match.
+static URL_OR_BARE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)https?://[^\s]+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b").unwrap()
+});
+
 /// Mask host dots inside any http(s) URL found in `msg` per `level`:
 ///   1 = `[.]`, 2 = `(.)`, 3 = space, 4 = preserve subdomain dot (mask only
 ///   eTLD+1), 5 = U+2024 ONE DOT LEADER. Any other value (including 0) falls
-///   through to level 1. github.com and `*.github.com` URLs are exempt.
-pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
+///   through to level 1. Hosts in `MASK_EXEMPT_HOSTS` (github.com, gitlab.com)
+///   and their subdomains are exempt.
+///
+/// When `mask_bare` is true, also match bare hostnames (no scheme) that look
+/// like a real domain — at least one dot and a 2+ letter final label. Trades
+/// completeness for false positives (filenames like `config.toml` will match).
+pub fn mask_urls_in_message(msg: &str, level: u8, mask_bare: bool) -> std::borrow::Cow<'_, str> {
+    let pattern: &Regex = if mask_bare { &URL_OR_BARE_PATTERN } else { &URL_PATTERN };
     let mut had_match = false;
     let mut any_masked = false;
     let mut result = String::with_capacity(msg.len() + 16);
     let mut last_end = 0;
-    for m in URL_PATTERN.find_iter(msg) {
+    for m in pattern.find_iter(msg) {
         had_match = true;
         result.push_str(&msg[last_end..m.start()]);
         // Trim trailing sentence punctuation that the greedy match swallowed.
         let raw = m.as_str();
         let trimmed = raw.trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']']);
+        let has_scheme = trimmed.len() >= 7
+            && (trimmed[..7].eq_ignore_ascii_case("http://")
+                || (trimmed.len() >= 8 && trimmed[..8].eq_ignore_ascii_case("https://")));
         if is_excluded_host(trimmed) {
             result.push_str(raw);
-        } else {
+        } else if has_scheme {
             // Mask only the host portion; leave path/query/fragment intact.
             let scheme_len = trimmed
                 .find("://")
@@ -286,6 +302,11 @@ pub fn mask_urls_in_message(msg: &str, level: u8) -> std::borrow::Cow<'_, str> {
             result.push_str(&mask_host(host, level));
             result.push_str(rest);
             // Trailing punctuation we trimmed earlier
+            result.push_str(&raw[trimmed.len()..]);
+            any_masked = true;
+        } else {
+            // Bare hostname — the entire trimmed match is the host.
+            result.push_str(&mask_host(trimmed, level));
             result.push_str(&raw[trimmed.len()..]);
             any_masked = true;
         }
@@ -1155,6 +1176,7 @@ pub fn commit_changes(
     history: &[String],
     commit_mask: Option<u8>,
     commit_mask_users: &[String],
+    commit_mask_bare: bool,
 ) -> io::Result<()> {
     let git_quiet = quiet || limited_quiet;
     // Apply commit_mask only if either (a) no user allowlist is configured, or
@@ -1213,7 +1235,7 @@ pub fn commit_changes(
             .output();
 
         let masked = effective_mask
-            .map(|lvl| mask_urls_in_message(message, lvl))
+            .map(|lvl| mask_urls_in_message(message, lvl, commit_mask_bare))
             .unwrap_or(std::borrow::Cow::Borrowed(message.as_str()));
         let is_masked = masked.as_ref() != message.as_str();
 
@@ -1321,7 +1343,7 @@ pub fn commit_changes(
 
             // Apply URL masking after validation, before commit/display
             let masked_comment = effective_mask
-                .map(|lvl| mask_urls_in_message(&comment, lvl).into_owned())
+                .map(|lvl| mask_urls_in_message(&comment, lvl, commit_mask_bare).into_owned())
                 .unwrap_or_else(|| comment.clone());
             let is_masked = masked_comment != comment;
             let msg_label = if is_masked { "Commit message (masked):" } else { "Commit message:" };

@@ -51,37 +51,38 @@ fn test_check_comment() {
 fn test_mask_urls_in_message() {
     // Level 1: [.]
     assert_eq!(
-        mask_urls_in_message("A: https://www.example.com/foo", 1),
+        mask_urls_in_message("A: https://www.example.com/foo", 1, false),
         "A: https://www[.]example[.]com/foo"
     );
     // Level 2: (.)
     assert_eq!(
-        mask_urls_in_message("A: https://www.example.com/foo", 2),
+        mask_urls_in_message("A: https://www.example.com/foo", 2, false),
         "A: https://www(.)example(.)com/foo"
     );
     // Level 3: space
     assert_eq!(
-        mask_urls_in_message("A: https://www.example.com/foo", 3),
+        mask_urls_in_message("A: https://www.example.com/foo", 3, false),
         "A: https://www example com/foo"
     );
     // Unknown level → fallback to level 1 ([.])
     assert_eq!(
-        mask_urls_in_message("A: https://www.example.com/foo", 9),
+        mask_urls_in_message("A: https://www.example.com/foo", 9, false),
         "A: https://www[.]example[.]com/foo"
     );
     assert_eq!(
-        mask_urls_in_message("A: https://www.example.com/foo", 0),
+        mask_urls_in_message("A: https://www.example.com/foo", 0, false),
         "A: https://www[.]example[.]com/foo"
     );
     // No URL → unchanged
     assert_eq!(
-        mask_urls_in_message("M: Update filters", 1),
+        mask_urls_in_message("M: Update filters", 1, false),
         "M: Update filters"
     );
     // Multiple URLs masked, prose dots untouched
     let out = mask_urls_in_message(
         "M: see https://a.com and https://b.io. thanks.",
         1,
+        false,
     );
     assert_eq!(out, "M: see https://a[.]com and https://b[.]io. thanks.");
     // Only host dots are masked; path/query dots are left alone
@@ -89,85 +90,86 @@ fn test_mask_urls_in_message() {
         mask_urls_in_message(
             "A: https://media-amazon.com/images/S/sash/$domain=imdb.com",
             1,
+            false,
         ),
         "A: https://media-amazon[.]com/images/S/sash/$domain=imdb.com"
     );
     // Path with file extension stays clickable
     assert_eq!(
-        mask_urls_in_message("A: https://example.org/foo/bar.html", 1),
+        mask_urls_in_message("A: https://example.org/foo/bar.html", 1, false),
         "A: https://example[.]org/foo/bar.html"
     );
     // Query string dots untouched
     assert_eq!(
-        mask_urls_in_message("A: https://forums.lanik.us/viewtopic.php?t=1.2", 1),
+        mask_urls_in_message("A: https://forums.lanik.us/viewtopic.php?t=1.2", 1, false),
         "A: https://forums[.]lanik[.]us/viewtopic.php?t=1.2"
     );
     // Level 4: preserve all subdomain dots, mask only within eTLD+1
     assert_eq!(
-        mask_urls_in_message("A: https://www.example.com/foo", 4),
+        mask_urls_in_message("A: https://www.example.com/foo", 4, false),
         "A: https://www.example[.]com/foo"
     );
     assert_eq!(
-        mask_urls_in_message("A: https://www.example.co.nz/foo", 4),
+        mask_urls_in_message("A: https://www.example.co.nz/foo", 4, false),
         "A: https://www.example[.]co[.]nz/foo"
     );
     // Level 4 with apex (no subdomain) — defang the only dot
     assert_eq!(
-        mask_urls_in_message("A: https://example.com/foo", 4),
+        mask_urls_in_message("A: https://example.com/foo", 4, false),
         "A: https://example[.]com/foo"
     );
     // Level 4 apex with compound TLD — mask all dots inside eTLD+1
     assert_eq!(
-        mask_urls_in_message("A: https://example.co.nz/foo", 4),
+        mask_urls_in_message("A: https://example.co.nz/foo", 4, false),
         "A: https://example[.]co[.]nz/foo"
     );
     // Level 4 with deep subdomain chain — all subdomain dots preserved
     assert_eq!(
-        mask_urls_in_message("A: https://a.b.c.example.com/foo", 4),
+        mask_urls_in_message("A: https://a.b.c.example.com/foo", 4, false),
         "A: https://a.b.c.example[.]com/foo"
     );
     // Level 4 with deep subdomain + compound TLD
     assert_eq!(
-        mask_urls_in_message("A: https://a.b.example.co.uk/foo", 4),
+        mask_urls_in_message("A: https://a.b.example.co.uk/foo", 4, false),
         "A: https://a.b.example[.]co[.]uk/foo"
     );
     // Level 5: Unicode ONE DOT LEADER (U+2024) replaces host dots
     assert_eq!(
-        mask_urls_in_message("A: https://www.example.com/foo", 5),
+        mask_urls_in_message("A: https://www.example.com/foo", 5, false),
         "A: https://www\u{2024}example\u{2024}com/foo"
     );
     // Level 5 leaves path/query dots alone, like other levels
     assert_eq!(
-        mask_urls_in_message("A: https://forums.lanik.us/t.php?x=1.2", 5),
+        mask_urls_in_message("A: https://forums.lanik.us/t.php?x=1.2", 5, false),
         "A: https://forums\u{2024}lanik\u{2024}us/t.php?x=1.2"
     );
-    // Only http(s) URLs are masked, not bare domains
+    // Without mask_bare: bare domains are NOT masked
     assert_eq!(
-        mask_urls_in_message("A: see example.com for details", 1),
+        mask_urls_in_message("A: see example.com for details", 1, false),
         "A: see example.com for details"
     );
     // GitHub URLs are exempt (clickability preserved)
     assert_eq!(
-        mask_urls_in_message("A: https://github.com/easylist/easylist/issues/123", 1),
+        mask_urls_in_message("A: https://github.com/easylist/easylist/issues/123", 1, false),
         "A: https://github.com/easylist/easylist/issues/123"
     );
     // GitHub subdomains are also exempt
     assert_eq!(
-        mask_urls_in_message("A: https://gist.github.com/foo/abc", 1),
+        mask_urls_in_message("A: https://gist.github.com/foo/abc", 1, false),
         "A: https://gist.github.com/foo/abc"
     );
     // GitLab apex and subdomains exempt
     assert_eq!(
-        mask_urls_in_message("A: https://gitlab.com/foo/bar/-/issues/1", 1),
+        mask_urls_in_message("A: https://gitlab.com/foo/bar/-/issues/1", 1, false),
         "A: https://gitlab.com/foo/bar/-/issues/1"
     );
     assert_eq!(
-        mask_urls_in_message("A: https://docs.gitlab.com/ee/", 1),
+        mask_urls_in_message("A: https://docs.gitlab.com/ee/", 1, false),
         "A: https://docs.gitlab.com/ee/"
     );
     // Lookalike that ends in gitlab.com but isn't a subdomain still gets masked
     assert_eq!(
-        mask_urls_in_message("A: https://notgitlab.com/foo", 1),
+        mask_urls_in_message("A: https://notgitlab.com/foo", 1, false),
         "A: https://notgitlab[.]com/foo"
     );
     // Non-github URL still gets masked, github stays untouched
@@ -175,8 +177,41 @@ fn test_mask_urls_in_message() {
         mask_urls_in_message(
             "M: see https://github.com/easylist/easylist/issues/1 and https://forums.lanik.us/t=2",
             1,
+            false,
         ),
         "M: see https://github.com/easylist/easylist/issues/1 and https://forums[.]lanik[.]us/t=2"
+    );
+
+    // ---- Bare-domain masking (mask_bare = true) ----
+    // Bare hostname gets masked at level 1
+    assert_eq!(
+        mask_urls_in_message("A: see example.com for details", 1, true),
+        "A: see example[.]com for details"
+    );
+    // Bare hostname respects level 4 (preserve subdomain dot)
+    assert_eq!(
+        mask_urls_in_message("A: see www.example.com for details", 4, true),
+        "A: see www.example[.]com for details"
+    );
+    // Bare github.com still exempt
+    assert_eq!(
+        mask_urls_in_message("M: see github.com/foo/bar", 1, true),
+        "M: see github.com/foo/bar"
+    );
+    // Version numbers like 1.2.3 do NOT match (final label is digits)
+    assert_eq!(
+        mask_urls_in_message("M: bumped to 1.2.3 today", 1, true),
+        "M: bumped to 1.2.3 today"
+    );
+    // Filenames CAN match (acceptable false positive — opt-in)
+    assert_eq!(
+        mask_urls_in_message("M: see config.toml", 1, true),
+        "M: see config[.]toml"
+    );
+    // Scheme URL still wins when both forms present
+    assert_eq!(
+        mask_urls_in_message("A: https://forums.lanik.us/foo", 1, true),
+        "A: https://forums[.]lanik[.]us/foo"
     );
 }
 

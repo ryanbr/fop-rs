@@ -209,6 +209,8 @@ struct Args {
     commit_mask: Option<u8>,
     /// If non-empty, only apply commit_mask when current git user.name is in this list (lowercased).
     commit_mask_users: Vec<String>,
+    /// Also mask bare hostnames (no http/https scheme). Off by default — risks false positives.
+    commit_mask_bare: bool,
     /// CI mode - exit with error code on failures
     ci: bool,
     /// Show applied configuration
@@ -489,6 +491,7 @@ impl Args {
             commit_mask_users: config.get("commit-mask-users")
                 .map(|s| s.split(',').map(|u| u.trim().to_lowercase()).collect())
                 .unwrap_or_default(),
+            commit_mask_bare: parse_bool(&config, "commit-mask-bare", false),
             ci: parse_bool(&config, "ci", false),
             history: config.get("history")
                 .map(|s| s.split(',')
@@ -554,6 +557,8 @@ impl Args {
                         .filter(|u| !u.is_empty())
                         .collect();
                 }
+                "--commit-mask-bare" => args.commit_mask_bare = true,
+                "--no-commit-mask-bare" => args.commit_mask_bare = false,
                 "--pr-show-changes" => args.pr_show_changes = true,
                 _ if arg.starts_with("--check-banned-list=") => {
                     args.check_banned_list = Some(PathBuf::from(arg.trim_start_matches("--check-banned-list=")));
@@ -733,6 +738,7 @@ impl Args {
         println!("        --no-color      Disable colored output");
         println!("        --commit-mask=N Mask URLs in commit messages (1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike)");
         println!("        --commit-mask-users=u1,u2  Restrict --commit-mask to these git user.name values (lowercased)");
+        println!("        --commit-mask-bare    Also mask bare hostnames (no http/https). Risks FP on filenames.");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
@@ -815,6 +821,7 @@ impl Args {
         if !self.commit_mask_users.is_empty() {
             println!("  commit-mask-users = {}", self.commit_mask_users.join(","));
         }
+        println!("  commit-mask-bare = {}", self.commit_mask_bare);
         println!("  ci              = {}", self.ci);
         println!("  pr-show-changes = {}", self.pr_show_changes);
         println!("  check-banned-list = {:?}", self.check_banned_list);
@@ -1213,6 +1220,7 @@ fn process_location(
     rebase_on_fail: bool,
     commit_mask: Option<u8>,
     commit_mask_users: &[String],
+    commit_mask_bare: bool,
     ci: bool,
     quiet: bool,
     limited_quiet: bool,
@@ -1592,7 +1600,7 @@ fn process_location(
                     if !quiet {
                         println!("Direct push authorized for user.");
                     }
-                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history, commit_mask, commit_mask_users)?;
+                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history, commit_mask, commit_mask_users, commit_mask_bare)?;
                 } else {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
@@ -1645,6 +1653,7 @@ fn process_location(
                     history,
                     commit_mask,
                     commit_mask_users,
+                    commit_mask_bare,
                 )?;
             }
         }
@@ -2109,6 +2118,7 @@ fn main() {
                     &args.history,
                     args.commit_mask,
                     &args.commit_mask_users,
+                    args.commit_mask_bare,
                 ) {
                     eprintln!("Git error: {}", e);
                 }
@@ -2207,6 +2217,7 @@ fn main() {
                 args.rebase_on_fail,
                 args.commit_mask,
                 &args.commit_mask_users,
+                args.commit_mask_bare,
                 args.ci,
                 args.quiet,
                 args.limited_quiet,
