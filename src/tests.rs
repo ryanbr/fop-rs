@@ -182,6 +182,15 @@ fn test_mask_urls_in_message() {
         mask_urls_in_message("A: https://notgitlab.com/foo", 1, false),
         "A: https://notgitlab[.]com/foo"
     );
+    // Codeberg apex and subdomains exempt
+    assert_eq!(
+        mask_urls_in_message("A: https://codeberg.org/foo/bar/issues/1", 1, false),
+        "A: https://codeberg.org/foo/bar/issues/1"
+    );
+    assert_eq!(
+        mask_urls_in_message("A: https://docs.codeberg.org/", 1, false),
+        "A: https://docs.codeberg.org/"
+    );
     // Non-github URL still gets masked, github stays untouched
     assert_eq!(
         mask_urls_in_message(

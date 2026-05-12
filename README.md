@@ -225,7 +225,7 @@ ci = false
 rebase-on-fail = false
 
 # Mask URLs in commit messages: 1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike
-# github.com and gitlab.com (and subdomains) are always exempt so PR/issue links stay clickable.
+# github.com, gitlab.com, and codeberg.org (and subdomains) are always exempt so PR/issue links stay clickable.
 commit-mask =
 
 # If non-empty, --commit-mask only applies when git user.name matches one of these (case-insensitive).
@@ -290,7 +290,7 @@ Notes:
 - **Level 4** masks only the registrable domain plus eTLD ("eTLD+1"). Compound TLDs (`co.uk`, `co.nz`, `com.au`, `co.jp`, `com.ng`, `com.hk`, `co.il`, `com.vn`, etc. — ~25 country codes) are recognised so `example.co.uk` is treated as a 2-label TLD. Apex-only inputs (`example.com`, no subdomain) still defang the only dot.
 - **Level 5** is the strongest defang: U+2024 is visually nearly identical to `.` but is not in IDNA UTS #46 normalization tables, so URLs containing it won't resolve in browsers, `curl`, or most parsers — even after copy/paste. Reviewers won't realise the link is dead until they try to click it.
 - **Unknown levels** (0, 6, 99…) silently fall through to level 1.
-- **Exempt hosts:** `github.com`, `gitlab.com`, and any of their subdomains (`gist.github.com`, `docs.gitlab.com`, etc.) are never masked, so PR/issue links remain clickable on the hosting platform. Lookalike hosts like `notgitlab.com` or `evil.gitlab.com.attacker.com` still get masked.
+- **Exempt hosts:** `github.com`, `gitlab.com`, `codeberg.org`, and any of their subdomains (`gist.github.com`, `docs.gitlab.com`, etc.) are never masked, so PR/issue links remain clickable on the hosting platform. Lookalike hosts like `notgitlab.com` or `evil.gitlab.com.attacker.com` still get masked.
 
 #### Choosing a level
 

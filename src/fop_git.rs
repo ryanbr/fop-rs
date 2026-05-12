@@ -430,7 +430,7 @@ fn mask_host(host: &str, level: u8) -> String {
 /// Apex domains exempt from URL masking — the host or any subdomain of one of
 /// these is left clickable so PR/issue links remain auto-linked on the
 /// hosting platform.
-const MASK_EXEMPT_HOSTS: &[&str] = &["github.com", "gitlab.com"];
+const MASK_EXEMPT_HOSTS: &[&str] = &["github.com", "gitlab.com", "codeberg.org"];
 
 /// Returns true if the URL's host should be exempt from masking.
 /// Case-insensitive, no allocation.
