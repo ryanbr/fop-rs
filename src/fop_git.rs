@@ -263,13 +263,26 @@ static URL_OR_BARE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 /// Mask host dots inside any http(s) URL found in `msg` per `level`:
 ///   1 = `[.]`, 2 = `(.)`, 3 = space, 4 = preserve subdomain dot (mask only
 ///   eTLD+1), 5 = U+2024 ONE DOT LEADER. Any other value (including 0) falls
-///   through to level 1. Hosts in `MASK_EXEMPT_HOSTS` (github.com, gitlab.com)
-///   and their subdomains are exempt.
+///   through to level 1. Hosts in `MASK_EXEMPT_HOSTS` (github.com, gitlab.com,
+///   codeberg.org) and their subdomains are exempt.
 ///
 /// When `mask_bare` is true, also match bare hostnames (no scheme) that look
 /// like a real domain — at least one dot and a 2+ letter final label. Trades
 /// completeness for false positives (filenames like `config.toml` will match).
+#[allow(dead_code)]
 pub fn mask_urls_in_message(msg: &str, level: u8, mask_bare: bool) -> std::borrow::Cow<'_, str> {
+    mask_urls_in_message_ext(msg, level, mask_bare, &[])
+}
+
+/// Same as `mask_urls_in_message`, plus a user-supplied list of extra exempt
+/// hosts (lowercased apex names). Each entry exempts the apex itself and any
+/// subdomain — same dot-boundary rule as `MASK_EXEMPT_HOSTS`.
+pub fn mask_urls_in_message_ext<'a>(
+    msg: &'a str,
+    level: u8,
+    mask_bare: bool,
+    extra_exempt: &[String],
+) -> std::borrow::Cow<'a, str> {
     let pattern: &Regex = if mask_bare { &URL_OR_BARE_PATTERN } else { &URL_PATTERN };
     let mut had_match = false;
     let mut any_masked = false;
@@ -284,7 +297,7 @@ pub fn mask_urls_in_message(msg: &str, level: u8, mask_bare: bool) -> std::borro
         let has_scheme = trimmed.len() >= 7
             && (trimmed[..7].eq_ignore_ascii_case("http://")
                 || (trimmed.len() >= 8 && trimmed[..8].eq_ignore_ascii_case("https://")));
-        if is_excluded_host(trimmed) {
+        if is_excluded_host(trimmed, extra_exempt) {
             result.push_str(raw);
         } else if has_scheme {
             // Mask only the host portion; leave path/query/fragment intact.
@@ -432,21 +445,24 @@ fn mask_host(host: &str, level: u8) -> String {
 /// hosting platform.
 const MASK_EXEMPT_HOSTS: &[&str] = &["github.com", "gitlab.com", "codeberg.org"];
 
-/// Returns true if the URL's host should be exempt from masking.
+/// Returns true if the URL's host should be exempt from masking. Checks both
+/// the built-in `MASK_EXEMPT_HOSTS` and the caller-supplied `extra` list.
 /// Case-insensitive, no allocation.
-fn is_excluded_host(url: &str) -> bool {
+fn is_excluded_host(url: &str, extra: &[String]) -> bool {
     let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let host_with_port = after_scheme
         .split(['/', '?', '#'])
         .next()
         .unwrap_or("");
     let host = host_with_port.split(':').next().unwrap_or("");
-    MASK_EXEMPT_HOSTS.iter().any(|apex| {
+    let host_matches_apex = |apex: &str| {
         host.eq_ignore_ascii_case(apex)
             || (host.len() > apex.len()
                 && host[host.len() - apex.len()..].eq_ignore_ascii_case(apex)
                 && host.as_bytes()[host.len() - apex.len() - 1] == b'.')
-    })
+    };
+    MASK_EXEMPT_HOSTS.iter().any(|apex| host_matches_apex(apex))
+        || extra.iter().any(|apex| host_matches_apex(apex))
 }
 
 #[inline]
@@ -1207,6 +1223,7 @@ pub fn commit_changes(
     commit_mask: Option<u8>,
     commit_mask_users: &[String],
     commit_mask_bare: bool,
+    commit_mask_exempt_hosts: &[String],
 ) -> io::Result<()> {
     let git_quiet = quiet || limited_quiet;
     // Apply commit_mask only if either (a) no user allowlist is configured, or
@@ -1265,7 +1282,7 @@ pub fn commit_changes(
             .output();
 
         let masked = effective_mask
-            .map(|lvl| mask_urls_in_message(message, lvl, commit_mask_bare))
+            .map(|lvl| mask_urls_in_message_ext(message, lvl, commit_mask_bare, commit_mask_exempt_hosts))
             .unwrap_or(std::borrow::Cow::Borrowed(message.as_str()));
         let is_masked = masked.as_ref() != message.as_str();
 
@@ -1373,7 +1390,7 @@ pub fn commit_changes(
 
             // Apply URL masking after validation, before commit/display
             let masked_comment = effective_mask
-                .map(|lvl| mask_urls_in_message(&comment, lvl, commit_mask_bare).into_owned())
+                .map(|lvl| mask_urls_in_message_ext(&comment, lvl, commit_mask_bare, commit_mask_exempt_hosts).into_owned())
                 .unwrap_or_else(|| comment.clone());
             let is_masked = masked_comment != comment;
             let msg_label = if is_masked { "Commit message (masked):" } else { "Commit message:" };

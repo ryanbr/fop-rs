@@ -7,7 +7,7 @@
 //! Copyright (C) 2011 Michael (original Python version)
 //! Rust port maintains GPL-3.0 license compatibility.
 
-use crate::fop_git::{check_comment, mask_urls_in_message, valid_url};
+use crate::fop_git::{check_comment, mask_urls_in_message, mask_urls_in_message_ext, valid_url};
 use crate::fop_sort::is_tld_only;
 
 use crate::fop_sort::{
@@ -231,6 +231,29 @@ fn test_mask_urls_in_message() {
     assert_eq!(
         mask_urls_in_message("A: https://forums.lanik.us/foo", 1, true),
         "A: https://forums[.]lanik[.]us/foo"
+    );
+
+    // ---- Custom exempt hosts via mask_urls_in_message_ext ----
+    let extras = vec!["git.company.internal".to_string(), "gitea.example.org".to_string()];
+    // Self-hosted apex exempt
+    assert_eq!(
+        mask_urls_in_message_ext("A: https://git.company.internal/foo/issues/1", 1, false, &extras),
+        "A: https://git.company.internal/foo/issues/1"
+    );
+    // Subdomain of self-hosted apex also exempt
+    assert_eq!(
+        mask_urls_in_message_ext("A: https://wiki.gitea.example.org/page", 1, false, &extras),
+        "A: https://wiki.gitea.example.org/page"
+    );
+    // Non-exempt third-party still masked
+    assert_eq!(
+        mask_urls_in_message_ext("A: https://forums.lanik.us/foo", 1, false, &extras),
+        "A: https://forums[.]lanik[.]us/foo"
+    );
+    // Lookalike that ends in extra apex but isn't a subdomain still gets masked (level 1 → all dots)
+    assert_eq!(
+        mask_urls_in_message_ext("A: https://notgitea.example.org/foo", 1, false, &extras),
+        "A: https://notgitea[.]example[.]org/foo"
     );
 }
 

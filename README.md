@@ -115,6 +115,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--commit-mask=N` | Mask URLs in commit messages (1=`[.]`, 2=`(.)`, 3=space, 4=preserve subdomain dot, 5=Unicode lookalike `․`) |
 | `--commit-mask-users=u1,u2` | Restrict `--commit-mask` to these `git config user.name` values (lowercased) |
 | `--commit-mask-bare` | Also mask bare hostnames without `http(s)://`. Risks false positives on filenames |
+| `--commit-mask-exempt-hosts=h1,h2` | Additional apex hosts exempt from masking (e.g. self-hosted Gitea/Forgejo/GitLab) |
 | `--ignore-config` | Ignore .fopconfig file, use only CLI args |
 | `--output` | Output changed files with --changed suffix (no overwrite) |
 | `--check-file=FILE` | Process a single file | 
@@ -234,6 +235,11 @@ commit-mask-users =
 # Also mask bare hostnames (no http/https). Risks FP on filenames like config.toml.
 commit-mask-bare = false
 
+# Additional apex hosts (and subdomains) exempt from masking. Adds to the
+# built-in github.com / gitlab.com / codeberg.org list. Use for self-hosted
+# Gitea, Forgejo, or private GitLab instances.
+commit-mask-exempt-hosts =
+
 # Suppress most output (for CI)
 quiet = false
 
@@ -290,7 +296,7 @@ Notes:
 - **Level 4** masks only the registrable domain plus eTLD ("eTLD+1"). Compound TLDs (`co.uk`, `co.nz`, `com.au`, `co.jp`, `com.ng`, `com.hk`, `co.il`, `com.vn`, etc. — ~25 country codes) are recognised so `example.co.uk` is treated as a 2-label TLD. Apex-only inputs (`example.com`, no subdomain) still defang the only dot.
 - **Level 5** is the strongest defang: U+2024 is visually nearly identical to `.` but is not in IDNA UTS #46 normalization tables, so URLs containing it won't resolve in browsers, `curl`, or most parsers — even after copy/paste. Reviewers won't realise the link is dead until they try to click it.
 - **Unknown levels** (0, 6, 99…) silently fall through to level 1.
-- **Exempt hosts:** `github.com`, `gitlab.com`, `codeberg.org`, and any of their subdomains (`gist.github.com`, `docs.gitlab.com`, etc.) are never masked, so PR/issue links remain clickable on the hosting platform. Lookalike hosts like `notgitlab.com` or `evil.gitlab.com.attacker.com` still get masked.
+- **Exempt hosts:** `github.com`, `gitlab.com`, `codeberg.org`, and any of their subdomains (`gist.github.com`, `docs.gitlab.com`, etc.) are never masked, so PR/issue links remain clickable on the hosting platform. Lookalike hosts like `notgitlab.com` or `evil.gitlab.com.attacker.com` still get masked. For self-hosted Gitea/Forgejo/GitLab, add your host with `--commit-mask-exempt-hosts=git.company.internal,...`.
 
 #### Choosing a level
 

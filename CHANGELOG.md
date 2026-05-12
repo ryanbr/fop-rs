@@ -11,6 +11,7 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
   - Compound TLDs handled for ~25 country codes (`co.uk`, `co.nz`, `com.au`, `co.jp`, `com.ng`, `com.hk`, `co.il`, `com.vn`, etc.)
 - Add `--commit-mask-users=u1,u2` to restrict masking to specific `git user.name` values
 - Add `--commit-mask-bare` to also mask hostnames without `http(s)://` (opt-in; FP risk on filenames)
+- Add `--commit-mask-exempt-hosts=h1,h2` for self-hosted Gitea/Forgejo/private GitLab instances. Adds to the built-in `github.com` / `gitlab.com` / `codeberg.org` list.
 - Display `Commit message (masked):` label only when masking actually changed the text
 - Default `rebase-on-fail` to true; auto-recover from `[remote rejected] cannot lock ref` races between commits
 - Add `--no-rebase-on-fail` to opt out of auto-rebase
