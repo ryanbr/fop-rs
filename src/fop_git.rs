@@ -760,12 +760,46 @@ fn remote_url_to_https(url: &str) -> String {
     }
 }
 
-/// Get the commit URL for HEAD
-fn get_commit_url(base_cmd: &[String]) -> Option<String> {
+/// Substitute `{base}` and `{sha}` placeholders in `template`. Pure helper
+/// for unit testing. Unknown placeholders are preserved verbatim.
+pub fn apply_commit_url_template(template: &str, base: &str, sha: &str) -> String {
+    template.replace("{base}", base).replace("{sha}", sha)
+}
+
+/// Pick a sensible default commit URL template based on the host extracted
+/// from a base URL like `https://host/user/repo`. Bitbucket uses `/commits/`
+/// (plural); everything else uses `/commit/`.
+pub fn default_template_for_base(base: &str) -> &'static str {
+    let host = base
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(base)
+        .split('/')
+        .next()
+        .unwrap_or("");
+    let is_bitbucket = host.eq_ignore_ascii_case("bitbucket.org")
+        || (host.len() > "bitbucket.org".len()
+            && host[host.len() - "bitbucket.org".len()..].eq_ignore_ascii_case("bitbucket.org")
+            && host.as_bytes()[host.len() - "bitbucket.org".len() - 1] == b'.');
+    if is_bitbucket {
+        "{base}/commits/{sha}"
+    } else {
+        "{base}/commit/{sha}"
+    }
+}
+
+/// Get the commit URL for HEAD.
+///
+/// If `template` is `Some`, it's used verbatim with `{base}` and `{sha}`
+/// placeholders. Otherwise the default is picked based on the host —
+/// Bitbucket gets `/commits/<sha>` (plural); github/gitlab/gitea/forgejo/
+/// codeberg/sourcehut and self-hosted variants get `/commit/<sha>`.
+fn get_commit_url(base_cmd: &[String], template: Option<&str>) -> Option<String> {
     let hash = get_head_short_hash(base_cmd)?;
     let remote_url = get_remote_url(base_cmd, "origin")?;
     let base_url = remote_url_to_https(&remote_url);
-    Some(format!("{}/commit/{}", base_url, hash))
+    let tmpl = template.unwrap_or_else(|| default_template_for_base(&base_url));
+    Some(apply_commit_url_template(tmpl, &base_url, &hash))
 }
 
 /// Prompt user to select a remote
@@ -1093,7 +1127,7 @@ fn current_branch_name(base_cmd: &[String]) -> Option<String> {
 
 /// Attempt rebase and retry push after initial push failure
 #[inline]
-fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, comment: Option<&str>, no_color: bool, is_masked: bool) {
+fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, comment: Option<&str>, no_color: bool, is_masked: bool, commit_url_template: Option<&str>) {
     if !quiet {
         eprintln!("Push failed. Attempting rebase...");
     }
@@ -1156,7 +1190,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
         if !quiet {
             use owo_colors::OwoColorize;
             println!("Push succeeded after rebase.");
-            let commit_url = get_commit_url(base_cmd).unwrap_or_default();
+            let commit_url = get_commit_url(base_cmd, commit_url_template).unwrap_or_default();
             let label = if is_masked { "Commit message (masked):" } else { "Commit message:" };
             if no_color {
                 if let Some(c) = comment {
@@ -1224,6 +1258,7 @@ pub fn commit_changes(
     commit_mask_users: &[String],
     commit_mask_bare: bool,
     commit_mask_exempt_hosts: &[String],
+    commit_url_template: Option<&str>,
 ) -> io::Result<()> {
     let git_quiet = quiet || limited_quiet;
     // Apply commit_mask only if either (a) no user allowlist is configured, or
@@ -1294,12 +1329,12 @@ pub fn commit_changes(
 
         if pull_and_push(base_cmd, repo, git_quiet) {
             if rebase_on_fail {
-                rebase_and_retry_push(base_cmd, repo, git_quiet, Some(masked.as_ref()), no_color, is_masked);
+                rebase_and_retry_push(base_cmd, repo, git_quiet, Some(masked.as_ref()), no_color, is_masked, commit_url_template);
             } else {
                 eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
             }
         } else if !quiet {
-            let commit_url = get_commit_url(base_cmd).unwrap_or_default();
+            let commit_url = get_commit_url(base_cmd, commit_url_template).unwrap_or_default();
             if no_color {
                 println!("Commit successful:  {}", commit_url);
             } else {
@@ -1425,13 +1460,13 @@ pub fn commit_changes(
                     println!(); // finish the "Connecting" line
                 }
                 if rebase_on_fail {
-                    rebase_and_retry_push(base_cmd, repo, git_quiet, Some(&masked_comment), no_color, is_masked);
+                    rebase_and_retry_push(base_cmd, repo, git_quiet, Some(&masked_comment), no_color, is_masked, commit_url_template);
                 } else {
                     eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
                 }
             } else if !quiet {
                 // Overwrite "Connecting to server..." with commit message + URL
-                let commit_url = get_commit_url(base_cmd).unwrap_or_default();
+                let commit_url = get_commit_url(base_cmd, commit_url_template).unwrap_or_default();
                 if no_color {
                     println!("\r\x1b[2K\n{}   {}", msg_label, masked_comment);
                     print!("Commit successful:  {}", commit_url);

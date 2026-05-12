@@ -12,6 +12,8 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 - Add `--commit-mask-users=u1,u2` to restrict masking to specific `git user.name` values
 - Add `--commit-mask-bare` to also mask hostnames without `http(s)://` (opt-in; FP risk on filenames)
 - Add `--commit-mask-exempt-hosts=h1,h2` for self-hosted Gitea/Forgejo/private GitLab instances. Adds to the built-in `github.com` / `gitlab.com` / `codeberg.org` list.
+- Add `--commit-url-template=TMPL` to override the `Commit successful:` URL builder. Placeholders `{base}` and `{sha}`. Default is auto-picked per host: bitbucket.org gets `{base}/commits/{sha}` (plural), everything else gets `{base}/commit/{sha}`.
+- Warn at startup if `--commit-url-template` is set but missing `{sha}` (catches typos like `{shA}`).
 - Display `Commit message (masked):` label only when masking actually changed the text
 - Default `rebase-on-fail` to true; auto-recover from `[remote rejected] cannot lock ref` races between commits
 - Add `--no-rebase-on-fail` to opt out of auto-rebase

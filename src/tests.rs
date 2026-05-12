@@ -7,7 +7,7 @@
 //! Copyright (C) 2011 Michael (original Python version)
 //! Rust port maintains GPL-3.0 license compatibility.
 
-use crate::fop_git::{check_comment, mask_urls_in_message, mask_urls_in_message_ext, valid_url};
+use crate::fop_git::{apply_commit_url_template, check_comment, default_template_for_base, mask_urls_in_message, mask_urls_in_message_ext, valid_url};
 use crate::fop_sort::is_tld_only;
 
 use crate::fop_sort::{
@@ -255,6 +255,60 @@ fn test_mask_urls_in_message() {
         mask_urls_in_message_ext("A: https://notgitea.example.org/foo", 1, false, &extras),
         "A: https://notgitea[.]example[.]org/foo"
     );
+}
+
+#[test]
+fn test_apply_commit_url_template() {
+    let base = "https://github.com/foo/bar";
+    let sha = "abc12345";
+
+    // Default github-style
+    assert_eq!(
+        apply_commit_url_template("{base}/commit/{sha}", base, sha),
+        "https://github.com/foo/bar/commit/abc12345"
+    );
+    // Bitbucket-style (plural)
+    assert_eq!(
+        apply_commit_url_template("{base}/commits/{sha}", "https://bitbucket.org/foo/bar", sha),
+        "https://bitbucket.org/foo/bar/commits/abc12345"
+    );
+    // GitLab canonical form
+    assert_eq!(
+        apply_commit_url_template("{base}/-/commit/{sha}", "https://gitlab.com/foo/bar", sha),
+        "https://gitlab.com/foo/bar/-/commit/abc12345"
+    );
+    // Custom path segments preserved verbatim
+    assert_eq!(
+        apply_commit_url_template("{base}/r/{sha}/inspect", base, sha),
+        "https://github.com/foo/bar/r/abc12345/inspect"
+    );
+    // Unknown placeholders stay literal
+    assert_eq!(
+        apply_commit_url_template("{base}/commit/{shA}", base, sha),
+        "https://github.com/foo/bar/commit/{shA}"
+    );
+    // Multiple instances of {sha} both substituted
+    assert_eq!(
+        apply_commit_url_template("{base}/c/{sha}?q={sha}", base, sha),
+        "https://github.com/foo/bar/c/abc12345?q=abc12345"
+    );
+}
+
+#[test]
+fn test_default_template_for_base() {
+    // github / gitlab / gitea / codeberg / forgejo / sourcehut all use /commit/
+    assert_eq!(default_template_for_base("https://github.com/foo/bar"), "{base}/commit/{sha}");
+    assert_eq!(default_template_for_base("https://gitlab.com/foo/bar"), "{base}/commit/{sha}");
+    assert_eq!(default_template_for_base("https://codeberg.org/foo/bar"), "{base}/commit/{sha}");
+    assert_eq!(default_template_for_base("https://gitea.example.org/foo/bar"), "{base}/commit/{sha}");
+    // Bitbucket uses /commits/ (plural)
+    assert_eq!(default_template_for_base("https://bitbucket.org/foo/bar"), "{base}/commits/{sha}");
+    // Bitbucket subdomain
+    assert_eq!(default_template_for_base("https://api.bitbucket.org/foo/bar"), "{base}/commits/{sha}");
+    // Lookalike that ends in bitbucket.org but isn't a subdomain stays on default
+    assert_eq!(default_template_for_base("https://notbitbucket.org/foo/bar"), "{base}/commit/{sha}");
+    // Self-hosted unknown — defaults to github-style
+    assert_eq!(default_template_for_base("https://git.company.internal/foo/bar"), "{base}/commit/{sha}");
 }
 
 // =============================================================================

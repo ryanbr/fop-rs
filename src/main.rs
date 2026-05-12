@@ -213,6 +213,8 @@ struct Args {
     commit_mask_bare: bool,
     /// Additional apex hosts exempt from --commit-mask (apex match + dot-boundary subdomain).
     commit_mask_exempt_hosts: Vec<String>,
+    /// Override the commit URL template (placeholders: {base}, {sha}). Default: {base}/commit/{sha}.
+    commit_url_template: Option<String>,
     /// CI mode - exit with error code on failures
     ci: bool,
     /// Show applied configuration
@@ -497,6 +499,9 @@ impl Args {
             commit_mask_exempt_hosts: config.get("commit-mask-exempt-hosts")
                 .map(|s| s.split(',').map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty()).collect())
                 .unwrap_or_default(),
+            commit_url_template: config.get("commit-url-template")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             ci: parse_bool(&config, "ci", false),
             history: config.get("history")
                 .map(|s| s.split(',')
@@ -570,6 +575,10 @@ impl Args {
                         .map(|h| h.trim().to_lowercase())
                         .filter(|h| !h.is_empty())
                         .collect();
+                }
+                _ if arg.starts_with("--commit-url-template=") => {
+                    let tmpl = arg.trim_start_matches("--commit-url-template=").trim();
+                    args.commit_url_template = if tmpl.is_empty() { None } else { Some(tmpl.to_string()) };
                 }
                 "--pr-show-changes" => args.pr_show_changes = true,
                 _ if arg.starts_with("--check-banned-list=") => {
@@ -752,6 +761,7 @@ impl Args {
         println!("        --commit-mask-users=u1,u2  Restrict --commit-mask to these git user.name values (lowercased)");
         println!("        --commit-mask-bare    Also mask bare hostnames (no http/https). Risks FP on filenames.");
         println!("        --commit-mask-exempt-hosts=h1,h2  Additional apex hosts exempt from masking (e.g. self-hosted Gitea/Forgejo)");
+        println!("        --commit-url-template=TMPL  Override 'Commit successful' URL template ({{base}}, {{sha}}); default {{base}}/commit/{{sha}}");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
@@ -837,6 +847,9 @@ impl Args {
         println!("  commit-mask-bare = {}", self.commit_mask_bare);
         if !self.commit_mask_exempt_hosts.is_empty() {
             println!("  commit-mask-exempt-hosts = {}", self.commit_mask_exempt_hosts.join(","));
+        }
+        if let Some(ref t) = self.commit_url_template {
+            println!("  commit-url-template = {}", t);
         }
         println!("  ci              = {}", self.ci);
         println!("  pr-show-changes = {}", self.pr_show_changes);
@@ -1238,6 +1251,7 @@ fn process_location(
     commit_mask_users: &[String],
     commit_mask_bare: bool,
     commit_mask_exempt_hosts: &[String],
+    commit_url_template: Option<&str>,
     ci: bool,
     quiet: bool,
     limited_quiet: bool,
@@ -1617,7 +1631,7 @@ fn process_location(
                     if !quiet {
                         println!("Direct push authorized for user.");
                     }
-                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history, commit_mask, commit_mask_users, commit_mask_bare, commit_mask_exempt_hosts)?;
+                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history, commit_mask, commit_mask_users, commit_mask_bare, commit_mask_exempt_hosts, commit_url_template)?;
                 } else {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
@@ -1672,6 +1686,7 @@ fn process_location(
                     commit_mask_users,
                     commit_mask_bare,
                     commit_mask_exempt_hosts,
+                    commit_url_template,
                 )?;
             }
         }
@@ -1728,6 +1743,17 @@ fn print_greeting(no_commit: bool, no_color: bool, config_path: Option<&str>, ba
 
 fn main() {
     let (mut args, config_path) = Args::parse();
+
+    // Warn early if commit-url-template is missing the {sha} placeholder —
+    // the URL would otherwise be built without the commit hash.
+    if let Some(ref t) = args.commit_url_template {
+        if !t.contains("{sha}") {
+            eprintln!(
+                "Warning: commit-url-template '{}' does not contain {{sha}} — commit URLs will not include the hash.",
+                t
+            );
+        }
+    }
 
     // Handle help and version
     if args.help {
@@ -2138,6 +2164,7 @@ fn main() {
                     &args.commit_mask_users,
                     args.commit_mask_bare,
                     &args.commit_mask_exempt_hosts,
+                    args.commit_url_template.as_deref(),
                 ) {
                     eprintln!("Git error: {}", e);
                 }
@@ -2238,6 +2265,7 @@ fn main() {
                 &args.commit_mask_users,
                 args.commit_mask_bare,
                 &args.commit_mask_exempt_hosts,
+                args.commit_url_template.as_deref(),
                 args.ci,
                 args.quiet,
                 args.limited_quiet,

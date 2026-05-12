@@ -116,6 +116,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--commit-mask-users=u1,u2` | Restrict `--commit-mask` to these `git config user.name` values (lowercased) |
 | `--commit-mask-bare` | Also mask bare hostnames without `http(s)://`. Risks false positives on filenames |
 | `--commit-mask-exempt-hosts=h1,h2` | Additional apex hosts exempt from masking (e.g. self-hosted Gitea/Forgejo/GitLab) |
+| `--commit-url-template=TMPL` | Override the `Commit successful:` URL template. Placeholders: `{base}`, `{sha}`. Auto-detects Bitbucket (`/commits/`); everything else defaults to `/commit/` |
 | `--ignore-config` | Ignore .fopconfig file, use only CLI args |
 | `--output` | Output changed files with --changed suffix (no overwrite) |
 | `--check-file=FILE` | Process a single file | 
@@ -239,6 +240,12 @@ commit-mask-bare = false
 # built-in github.com / gitlab.com / codeberg.org list. Use for self-hosted
 # Gitea, Forgejo, or private GitLab instances.
 commit-mask-exempt-hosts =
+
+# Override the 'Commit successful:' URL template (placeholders: {base}, {sha}).
+# Default is auto-detected per host: bitbucket.org gets {base}/commits/{sha},
+# everything else gets {base}/commit/{sha}. Override here if your platform
+# uses something different (e.g. cgit, trac, custom redirector).
+commit-url-template =
 
 # Suppress most output (for CI)
 quiet = false
