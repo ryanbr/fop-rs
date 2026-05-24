@@ -1097,8 +1097,15 @@ fn pull_and_push(
                 }
             }
             Ok(out) => {
-                if !out.stderr.is_empty() {
-                    eprint!("{}", String::from_utf8_lossy(&out.stderr));
+                let stderr_text = String::from_utf8_lossy(&out.stderr);
+                if !stderr_text.is_empty() {
+                    eprint!("{}", stderr_text);
+                }
+                if i == 0 {
+                    // Pull failed — surface a suggested fix without blocking the push,
+                    // since in many cases (leftover rebase state, no upstream changes)
+                    // the push still goes through fine.
+                    diagnose_pull_failure(&stderr_text);
                 }
                 if i == 1 { push_failed = true; }
             }
@@ -1109,6 +1116,25 @@ fn pull_and_push(
         }
     }
     push_failed
+}
+
+/// Print an actionable suggested fix for a failed `git pull`.
+fn diagnose_pull_failure(stderr_text: &str) {
+    if stderr_text.contains("rebase-merge directory") {
+        eprintln!("\nPull failed: leftover rebase-merge state from a previous interrupted rebase. Suggested fix:");
+        eprintln!("    git status                  # check if a rebase is actually in progress");
+        eprintln!("    git rebase --abort          # if so, abort it");
+        eprintln!("    # If the directory is stale and 'abort' says no rebase in progress:");
+        eprintln!("    rm -fr .git/rebase-merge");
+    } else if stderr_text.contains("rebase-apply") {
+        eprintln!("\nPull failed: leftover rebase-apply / am state. Suggested fix:");
+        eprintln!("    git am --abort              # or: git rebase --abort");
+        eprintln!("    # If the directory is stale: rm -fr .git/rebase-apply");
+    } else {
+        eprintln!(
+            "\nWarning: pre-push pull failed. Push will still be attempted — if it succeeds, your commit landed despite the pull error."
+        );
+    }
 }
 
 /// Get the short name of the currently checked-out branch.
