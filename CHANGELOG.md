@@ -2,7 +2,7 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
-## [Unreleased]
+## [5.4.0] - 2026-09-01
 
 - Add `--commit-mask=N` to defang URLs in commit messages
   - Levels: `1=[.]`, `2=(.)`, `3=space`, `4=preserve subdomain dot (mask only eTLD+1)`, `5=Unicode U+2024 lookalike`
