@@ -320,6 +320,76 @@ fn test_default_template_for_base() {
 }
 
 #[test]
+fn test_filter_tidy_adguard_exception_forms_preserved() {
+    // `$@$` and `#@?#` were missing from the element-rule check, so these had
+    // their selector whitespace stripped while the identical `$$` / `#?#`
+    // forms were left alone.
+    for rule in [
+        "example.com$@$script[tag-content=\"ad config\"]",
+        "example.com$$script[tag-content=\"ad config\"]",
+        "example.com#@?#div.ad { x: y; }",
+        "example.com#?#div.ad { x: y; }",
+        "example.com$@$script[wildcard=\"*function break*\"]",
+    ] {
+        assert_eq!(filter_tidy(rule, false), rule, "must survive intact: {}", rule);
+    }
+}
+
+#[test]
+fn test_filter_tidy_network_rule_with_hash_or_dollars_in_path() {
+    // The cosmetic check that gates the `$option.option` fix is anchored, so a
+    // network rule whose URL path happens to contain `##` or `$$` is still a
+    // network rule and still gets its options normalised. A substring test
+    // read these as cosmetic and skipped the fix.
+    assert_eq!(
+        filter_tidy("||a.com/$$p^$third-party.script", false),
+        "||a.com/$$p^$script,third-party"
+    );
+    assert_eq!(
+        filter_tidy("||a.com/a##b^$third-party.script", false),
+        "||a.com/a##b^$script,third-party"
+    );
+    // A genuine cosmetic rule is still exempt.
+    assert_eq!(
+        filter_tidy("example.com##div[data-x=\"a.b$c.d\"]", false),
+        "example.com##div[data-x=\"a.b$c.d\"]"
+    );
+
+    // Regex-domain cosmetic rules too. ADGUARD_ELEMENT_PATTERN's domain group
+    // rejects a leading `/`, so these match only REGEX_ELEMENT_PATTERN -- and
+    // their host anchor ends in `$`, which reads as an option separator, so
+    // testing the AdGuard pattern alone let the typo fix corrupt them.
+    for rule in [
+        r"/^\w+\.example\.com$/##.ad",
+        r"/ads\.example\.com$/#@#.ad",
+        r"/^ad\d+\.com$/##div.banner",
+        r"/regex/##.a$b.c",
+        r"/^x\d+$/#?#div.ad",
+    ] {
+        assert_eq!(filter_tidy(rule, false), rule, "regex-domain rule must survive: {}", rule);
+    }
+
+    // But a regex *network* pattern with no cosmetic separator is still a
+    // network rule and still gets its options normalised.
+    assert_eq!(
+        filter_tidy(r"/ads\.js$/$third-party.script", false),
+        r"/ads\.js$/$script,third-party"
+    );
+}
+
+#[test]
+fn test_filter_tidy_all_wildcard_rule_not_blanked() {
+    // A rule that is nothing but wildcards reduces to `*`, which
+    // remove_unnecessary_wildcards clears — it was written back as a blank
+    // line. Every path through filter_tidy must put the `*` back.
+    assert_eq!(filter_tidy("***", false), "*");
+    assert_eq!(filter_tidy("**", false), "*");
+    assert_eq!(filter_tidy("*", false), "*");
+    assert_eq!(filter_tidy("@@***", false), "@@*");
+    assert!(!filter_tidy("***", false).is_empty(), "must never produce a blank line");
+}
+
+#[test]
 fn test_filter_tidy_cosmetic_dollar_not_option_separator() {
     // The `$` inside a cosmetic separator is not an option separator. Reading
     // it as one made the selector and stylesheet body look like an option list,
@@ -577,6 +647,76 @@ fn test_remove_unnecessary_wildcards() {
     // Fast path: no wildcards
     assert_eq!(remove_unnecessary_wildcards("example.com"), "example.com");
     assert_eq!(remove_unnecessary_wildcards("@@||example.com^"), "@@||example.com^");
+    // `*` before `$` is the pattern of an options-only rule, not padding.
+    // Reached directly when the options don't match OPTION_PATTERN.
+    assert_eq!(
+        remove_unnecessary_wildcards("*$csp=script-src 'self'"),
+        "*$csp=script-src 'self'"
+    );
+    assert_eq!(
+        remove_unnecessary_wildcards("**$csp=script-src 'self'"),
+        "*$csp=script-src 'self'"
+    );
+}
+
+#[test]
+fn test_filter_tidy_keeps_authors_options_only_form() {
+    // Both spellings of an options-only rule are valid. fop keeps whichever the
+    // author wrote rather than normalising one into the other -- the lists hold
+    // the bare form throughout, and rewriting them all would be pure churn.
+    for bare in [
+        "$ping,third-party",
+        "$popup,domain=a.com",
+        "$websocket,domain=a.com",
+        "@@$document",
+        "@@$generichide,domain=a.com",
+        "$csp=script-src 'self'",
+    ] {
+        assert_eq!(filter_tidy(bare, false), bare, "bare form must stay bare: {}", bare);
+    }
+    // ...and the wildcard form keeps its wildcard.
+    for starred in [
+        "*$ping,third-party",
+        "*$popup,domain=a.com",
+        "@@*$document",
+        "@@*$generichide,domain=a.com",
+        "*$csp=script-src 'self'",
+    ] {
+        assert_eq!(filter_tidy(starred, false), starred, "wildcard must survive: {}", starred);
+    }
+}
+
+#[test]
+fn test_filter_tidy_keeps_wildcard_on_options_only_rules() {
+    // A rule with options but no pattern is spelled `*$opts`. The `*` is the
+    // pattern; dropping it yields the pattern-less `$opts` form, which not
+    // every consumer of these lists accepts.
+    for rule in [
+        "*$ping,third-party",
+        "*$third-party",
+        "*$ping,domain=a.com",
+        "*$popup,third-party,domain=a.com|b.com",
+        "@@*$ping,third-party",
+        "@@*$generichide,domain=a.com",
+        "@@*$document",
+        "*$csp=script-src 'self'",
+        "*$replace=/a/b/",
+    ] {
+        assert_eq!(filter_tidy(rule, false), rule, "wildcard must survive: {}", rule);
+    }
+
+    // A repeated wildcard collapses to one — the repeat is just untidy.
+    assert_eq!(filter_tidy("**$ping", false), "*$ping");
+    assert_eq!(filter_tidy("***$ping,third-party", false), "*$ping,third-party");
+    assert_eq!(filter_tidy("@@**$document", false), "@@*$document");
+
+    // Rules that do have a pattern are still tidied as before.
+    assert_eq!(filter_tidy("*ads*", false), "ads");
+    assert_eq!(filter_tidy("@@*ads*", false), "@@ads");
+    assert_eq!(filter_tidy("*ads*$third-party", false), "ads$third-party");
+    // Existing guards are untouched.
+    assert_eq!(filter_tidy("*|$ping", false), "*|$ping");
+    assert_eq!(filter_tidy("*||a.com^", false), "*||a.com^");
 }
 
 #[test]

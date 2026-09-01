@@ -410,9 +410,23 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> Cow<'_, str> {
         .take_while(|&b| b == b'*')
         .count()
         .min(result.len().saturating_sub(1));
-    // Check char after leading *s isn't | or !
-    if skip > 0 && !matches!(result.as_bytes().get(skip), Some(b'|' | b'!')) {
-        result = result[skip..].to_string();
+    // A leading `*` is only redundant when a pattern follows it.
+    //   `|` / `!` — existing guards, left exactly as written.
+    //   `$` — there is no pattern, only options, and `*` is standing in as the
+    //         pattern. Reached when the whole rule arrives here rather than
+    //         just its pattern, i.e. when the options did not match
+    //         OPTION_PATTERN (`$csp=` and friends, whose values contain
+    //         spaces). Keep one `*`; collapse a repeat, which is just untidy.
+    if skip > 0 {
+        match result.as_bytes().get(skip) {
+            Some(b'|' | b'!') => {}
+            Some(b'$') => {
+                if skip > 1 {
+                    result = result[skip - 1..].to_string();
+                }
+            }
+            _ => result = result[skip..].to_string(),
+        }
     }
 
     // Remove trailing asterisks
@@ -441,7 +455,24 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> Cow<'_, str> {
     Cow::Owned(result)
 }
 
-/// Sort and clean filter options
+/// True when `filter` really is a cosmetic / HTML-filtering rule.
+///
+/// Anchored, unlike the looser substring test used to suppress space removal: a
+/// network rule can carry `##` or `$$` inside its URL path (`||a.com/a##b^`),
+/// and a substring test reads that as cosmetic, wrongly suppressing the
+/// `$option.option` fix for it.
+///
+/// Both patterns are needed. `ADGUARD_ELEMENT_PATTERN`'s domain group is
+/// `[^/|@"!]*?`, so a regex-domain rule — `/^\w+\.example\.com$/##.ad`, which
+/// element_tidy passes through untouched — can never match it. Its host anchor
+/// ends in `$`, which reads as an option separator, so relying on the AdGuard
+/// pattern alone let the typo fix rewrite `##.ad` to `##,ad`.
+#[inline]
+fn is_cosmetic_rule(filter: &str) -> bool {
+    crate::ADGUARD_ELEMENT_PATTERN.is_match(filter)
+        || crate::REGEX_ELEMENT_PATTERN.is_match(filter)
+}
+
 /// Is the `$` at `i` part of a cosmetic or HTML-filtering separator rather
 /// than the start of filter options?
 ///
@@ -526,6 +557,27 @@ fn split_filter_options(options: &str) -> Vec<&str> {
     result
 }
 
+/// `remove_unnecessary_wildcards` clears a pattern that reduces to `*`. Put a
+/// single `*` back — but only if the author wrote one.
+///
+/// Both spellings of an options-only rule are valid, so fop keeps whichever is
+/// used: `*$ping,third-party` stays as written (the `*` is the pattern, and the
+/// pattern-less form is not accepted by every consumer of these lists), and a
+/// bare `$ping,third-party` stays bare rather than being rewritten. Restoring
+/// unconditionally would have normalised one form to the other and churned
+/// every existing options-only rule in the lists.
+///
+/// Also stops a rule of nothing but wildcards (`***`) becoming a blank line.
+#[inline]
+fn restore_cleared_wildcard(original: &str, tidied: String) -> String {
+    if (tidied.is_empty() || tidied == "@@") && original.contains('*') {
+        format!("{}*", tidied)
+    } else {
+        tidied
+    }
+}
+
+/// Sort and clean filter options.
 pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Skip filters with regex values in options (contain =/.../ patterns)
     // ||example.com$removeparam=/^\\$ja=/
@@ -535,14 +587,20 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // may touch them. Computed before the typo fix rather than after: reading a
     // cosmetic separator's `$` as an option separator made the selector look
     // like options, and the typo fix rewrote every `.` in it to `,`.
+    // `#@?#` and `$@$` were missing, so AdGuard exception rules in those forms
+    // had their selector whitespace stripped: `$@$script[tag-content="ad
+    // config"]` became `"adconfig"` while the identical `$$` rule was left
+    // alone. Deliberately a loose substring test — erring towards not touching
+    // something that might be cosmetic.
     let is_element_rule = (filter_in.contains('#')
-        && ["##", "#@#", "#?#", "#$#", "#@$#", "#%#", "#@%#", "#$?#", "#@$?#"]
+        && ["##", "#@#", "#?#", "#@?#", "#$#", "#@$#", "#%#", "#@%#", "#$?#", "#@$?#"]
             .iter().any(|s| filter_in.contains(s)))
-        || filter_in.contains("$$");
+        || filter_in.contains("$$")
+        || filter_in.contains("$@$");
 
     // Fix typo: $option.option -> $option,option (before pattern matching)
     let filter_in: Cow<str> = match find_option_separator(filter_in) {
-        Some(dollar_pos) if !is_element_rule => {
+        Some(dollar_pos) if !is_cosmetic_rule(filter_in) => {
             let (base, opts) = filter_in.split_at(dollar_pos);
             if !opts.contains('=') && opts.contains('.') {
                 Cow::Owned(format!("{}{}", base, opts.replace('.', ",")))
@@ -581,15 +639,29 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
 
     // Fast path: no options to process (no $ in filter)
     if !filter_in.contains('$') {
-        return remove_unnecessary_wildcards(filter_in).into_owned();
+        return restore_cleared_wildcard(
+            filter_in,
+            remove_unnecessary_wildcards(filter_in).into_owned(),
+        );
     }
 
     let option_split = OPTION_PATTERN.captures(filter_in);
 
     match option_split {
-        None => remove_unnecessary_wildcards(filter_in).into_owned(),
+        None => restore_cleared_wildcard(
+            filter_in,
+            remove_unnecessary_wildcards(filter_in).into_owned(),
+        ),
         Some(caps) => {
-            let filter_text = remove_unnecessary_wildcards(&caps[1]).into_owned();
+            // A rule with options but no pattern is spelled `*$opts`, and the
+            // `*` IS the pattern. Tidying reduces it to nothing, producing the
+            // pattern-less `$opts` form, which not every consumer of these
+            // lists accepts — so put a single `*` back. Also collapses `**$opts`
+            // to one wildcard, since the repeat is just untidy.
+            let filter_text = restore_cleared_wildcard(
+                &caps[1],
+                remove_unnecessary_wildcards(&caps[1]).into_owned(),
+            );
             let option_list: Vec<String> = split_filter_options(&caps[2])
                 .into_iter()
                 .map(|opt| {
