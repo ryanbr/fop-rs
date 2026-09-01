@@ -9,6 +9,7 @@
 
 use crate::fop_git::{apply_commit_url_template, check_comment, default_template_for_base, mask_urls_in_message, mask_urls_in_message_ext, valid_url};
 use crate::fop_sort::is_tld_only;
+use crate::fop_datestamp::is_version_line;
 
 use crate::fop_sort::{
     convert_ubo_options, filter_tidy, is_localhost_entry, localhost_domain,
@@ -309,6 +310,85 @@ fn test_default_template_for_base() {
     assert_eq!(default_template_for_base("https://notbitbucket.org/foo/bar"), "{base}/commit/{sha}");
     // Self-hosted unknown — defaults to github-style
     assert_eq!(default_template_for_base("https://git.company.internal/foo/bar"), "{base}/commit/{sha}");
+    // Non-ASCII (IDN) remote host must not panic on a byte-boundary slice.
+    // This host is 18 bytes, so the old `host[len - 13..]` landed at byte 5 —
+    // inside a 3-byte character.
+    assert_eq!(default_template_for_base("https://\u{4f8b}\u{4f8b}\u{4f8b}\u{4f8b}\u{4f8b}.jp/foo/bar"), "{base}/commit/{sha}");
+    assert_eq!(default_template_for_base("https://\u{65e5}\u{672c}\u{8a9e}.example.jp/foo/bar"), "{base}/commit/{sha}");
+    // Host shorter than "bitbucket.org" but non-ASCII
+    assert_eq!(default_template_for_base("https://\u{e4}.de/foo/bar"), "{base}/commit/{sha}");
+}
+
+#[test]
+fn test_is_version_line() {
+    assert!(is_version_line("! Version: 202601011200"));
+    assert!(is_version_line("!Version: 1"));
+    assert!(is_version_line("# version: 1"));
+    assert!(!is_version_line("! Title: EasyList"));
+    // Non-ASCII comments must not panic on the byte-8 slice.
+    assert!(!is_version_line("! \u{65e5}\u{672c}\u{8a9e}\u{3067}\u{3059}"));
+    assert!(!is_version_line("! \u{421}\u{43f}\u{438}\u{441}\u{43e}\u{43a}"));
+    assert!(!is_version_line("! \u{1f600}\u{1f600}\u{1f600}"));
+}
+
+#[test]
+fn test_mask_urls_non_ascii_and_case() {
+    // A non-ASCII (IDN) host must be masked, not panic on a byte-index slice.
+    let out = mask_urls_in_message("A: https://\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}/x", 1, false);
+    assert_eq!(out, "A: https://\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}[.]\u{440}\u{444}/x");
+
+    // An uppercase scheme is still a URL and must be masked.
+    assert_eq!(
+        mask_urls_in_message("A: HTTPS://Example.com/foo", 1, false),
+        "A: HTTPS://Example[.]com/foo"
+    );
+    assert_eq!(
+        mask_urls_in_message("A: HtTp://example.com/foo", 1, false),
+        "A: HtTp://example[.]com/foo"
+    );
+    // Uppercase scheme on an exempt host stays exempt.
+    assert_eq!(
+        mask_urls_in_message("A: HTTPS://GitHub.com/foo/bar", 1, false),
+        "A: HTTPS://GitHub.com/foo/bar"
+    );
+
+    // Bare mode: Unicode case folding must not make `[a-z]` match U+212A
+    // (KELVIN SIGN) or U+017F, which previously produced a match starting
+    // mid-character and panicked on `trimmed[..7]`.
+    let kelvin = "M: see abcdef\u{212a}.com now";
+    let out = mask_urls_in_message(kelvin, 1, true);
+    assert_eq!(out, kelvin, "U+212A must not be treated as an ASCII letter");
+    let long_s = "M: see abcdef\u{17f}.com now";
+    assert_eq!(mask_urls_in_message(long_s, 1, true), long_s);
+    // ...but a genuine uppercase bare host still masks in bare mode.
+    assert_eq!(
+        mask_urls_in_message("M: see Example.COM now", 1, true),
+        "M: see Example[.]COM now"
+    );
+    // A non-ASCII host in bare mode must not panic either.
+    let idn_bare = "M: see \u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444} now";
+    assert_eq!(mask_urls_in_message(idn_bare, 1, true), idn_bare);
+
+    // Exemption matching stays char-boundary safe for a non-ASCII extra host,
+    // and matches when the bytes are identical.
+    let msg = "A: https://\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}/x";
+    let exempt = vec!["\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}".to_string()];
+    assert_eq!(mask_urls_in_message_ext(msg, 1, false, &exempt), msg);
+
+    // A case-variant of the same IDN host is exempt too: matching folds
+    // Unicode case for non-ASCII hosts, so a configured exemption isn't
+    // silently ignored just because the message spells the host differently.
+    let upper = "A: https://\u{41f}\u{420}\u{418}\u{41c}\u{415}\u{420}.\u{420}\u{424}/x";
+    assert_eq!(mask_urls_in_message_ext(upper, 1, false, &exempt), upper);
+    // Subdomain of an IDN exempt host, mixed case.
+    let sub = "A: https://WWW.\u{41f}\u{420}\u{418}\u{41c}\u{415}\u{420}.\u{420}\u{424}/x";
+    assert_eq!(mask_urls_in_message_ext(sub, 1, false, &exempt), sub);
+    // A different IDN host is still masked.
+    let other = "A: https://\u{434}\u{440}\u{443}\u{433}\u{43e}\u{439}.\u{440}\u{444}/x";
+    assert_eq!(
+        mask_urls_in_message_ext(other, 1, false, &exempt),
+        "A: https://\u{434}\u{440}\u{443}\u{433}\u{43e}\u{439}[.]\u{440}\u{444}/x"
+    );
 }
 
 // =============================================================================

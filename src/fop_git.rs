@@ -250,14 +250,16 @@ pub const REPO_TYPES: &[RepoDefinition] = &[GIT];
 static COMMIT_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(A|M|P):\s((\(.+\))\s)?(.+)$").unwrap());
 
+// `(?i-u:...)` scopes case-insensitivity to the scheme and disables Unicode
+// case folding, so `HTTPS://` matches but `httpſ://` (U+017F) does not.
 static URL_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"https?://[^\s]+").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i-u:https?://)[^\s]+").unwrap());
 
 /// Same as `URL_PATTERN` plus an alternative for bare hostnames (no scheme).
 /// The bare alternative requires at least one dot and a 2+ letter final
 /// label so version numbers like `1.2.3` won't match.
 static URL_OR_BARE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)https?://[^\s]+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b").unwrap()
+    Regex::new(r"(?i-u:https?://)[^\s]+|\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b").unwrap()
 });
 
 /// Mask host dots inside any http(s) URL found in `msg` per `level`:
@@ -294,9 +296,13 @@ pub fn mask_urls_in_message_ext<'a>(
         // Trim trailing sentence punctuation that the greedy match swallowed.
         let raw = m.as_str();
         let trimmed = raw.trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']']);
-        let has_scheme = trimmed.len() >= 7
-            && (trimmed[..7].eq_ignore_ascii_case("http://")
-                || (trimmed.len() >= 8 && trimmed[..8].eq_ignore_ascii_case("https://")));
+        // Compare bytes, not `&str` slices: with `(?i)` folding out of the
+        // bare-hostname pattern a match still can't start mid-character, but
+        // byte comparison makes that independent of the regex's flags.
+        let tb = trimmed.as_bytes();
+        let has_scheme = tb.len() >= 7
+            && (tb[..7].eq_ignore_ascii_case(b"http://")
+                || (tb.len() >= 8 && tb[..8].eq_ignore_ascii_case(b"https://")));
         if is_excluded_host(trimmed, extra_exempt) {
             result.push_str(raw);
         } else if has_scheme {
@@ -455,14 +461,36 @@ fn is_excluded_host(url: &str, extra: &[String]) -> bool {
         .next()
         .unwrap_or("");
     let host = host_with_port.split(':').next().unwrap_or("");
-    let host_matches_apex = |apex: &str| {
-        host.eq_ignore_ascii_case(apex)
-            || (host.len() > apex.len()
-                && host[host.len() - apex.len()..].eq_ignore_ascii_case(apex)
-                && host.as_bytes()[host.len() - apex.len() - 1] == b'.')
-    };
-    MASK_EXEMPT_HOSTS.iter().any(|apex| host_matches_apex(apex))
-        || extra.iter().any(|apex| host_matches_apex(apex))
+    MASK_EXEMPT_HOSTS.iter().any(|apex| host_is_at_or_under(host, apex))
+        || extra.iter().any(|apex| host_is_at_or_under(host, apex))
+}
+
+/// True when `host` is `apex` itself or a subdomain of it, case-insensitively.
+///
+/// Compares bytes rather than slicing `&str`, so a non-ASCII host (an IDN
+/// remote, or an internationalised URL in a commit message) can't land an
+/// index mid-character and panic.
+///
+/// Zero-alloc for ASCII hosts, which is every real-world git host. An IDN
+/// host takes a `to_lowercase()` fallback: `eq_ignore_ascii_case` leaves
+/// non-ASCII bytes unfolded, so an exempt host stored lowercased by
+/// `Args::parse` would not match a differently-cased spelling of itself in
+/// the commit message, and the user's exemption would be silently ignored.
+#[inline]
+fn host_is_at_or_under(host: &str, apex: &str) -> bool {
+    if host.is_ascii() && apex.is_ascii() {
+        let (h, a) = (host.as_bytes(), apex.as_bytes());
+        return h.eq_ignore_ascii_case(a)
+            || (h.len() > a.len()
+                && h[h.len() - a.len()..].eq_ignore_ascii_case(a)
+                && h[h.len() - a.len() - 1] == b'.');
+    }
+    let (h, a) = (host.to_lowercase(), apex.to_lowercase());
+    let (hb, ab) = (h.as_bytes(), a.as_bytes());
+    hb == ab
+        || (hb.len() > ab.len()
+            && &hb[hb.len() - ab.len()..] == ab
+            && hb[hb.len() - ab.len() - 1] == b'.')
 }
 
 #[inline]
@@ -777,11 +805,7 @@ pub fn default_template_for_base(base: &str) -> &'static str {
         .split('/')
         .next()
         .unwrap_or("");
-    let is_bitbucket = host.eq_ignore_ascii_case("bitbucket.org")
-        || (host.len() > "bitbucket.org".len()
-            && host[host.len() - "bitbucket.org".len()..].eq_ignore_ascii_case("bitbucket.org")
-            && host.as_bytes()[host.len() - "bitbucket.org".len() - 1] == b'.');
-    if is_bitbucket {
+    if host_is_at_or_under(host, "bitbucket.org") {
         "{base}/commits/{sha}"
     } else {
         "{base}/commit/{sha}"

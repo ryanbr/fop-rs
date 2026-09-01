@@ -25,7 +25,10 @@ pub fn is_timestamp_line(line: &str) -> bool {
 #[inline]
 pub fn is_version_line(line: &str) -> bool {
     let trimmed = line.trim_start().trim_start_matches(['!', '#']).trim_start();
-    trimmed.len() >= 8 && trimmed[..8].eq_ignore_ascii_case("version:")
+    // Compare bytes: `trimmed` is arbitrary list content, so slicing the
+    // `&str` at byte 8 panics on a non-ASCII comment (e.g. `! 日本語です`).
+    let tb = trimmed.as_bytes();
+    tb.len() >= 8 && tb[..8].eq_ignore_ascii_case(b"version:")
 }
 
 // =============================================================================

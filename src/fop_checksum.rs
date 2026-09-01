@@ -17,7 +17,10 @@ fn is_checksum_line(line: &str) -> bool {
     let trimmed = line.trim();
     if let Some(rest) = trimmed.strip_prefix('!').or_else(|| trimmed.strip_prefix('#')) {
         let rest = rest.trim_start();
-        rest.len() >= 8 && rest[..8].eq_ignore_ascii_case("checksum")
+        // Compare bytes: `rest` is arbitrary list content, so slicing the
+        // `&str` at byte 8 panics on a non-ASCII comment (e.g. `! 日本語です`).
+        let rb = rest.as_bytes();
+        rb.len() >= 8 && rb[..8].eq_ignore_ascii_case(b"checksum")
     } else {
         false
     }
@@ -198,4 +201,24 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
     }
 
     Ok(Some(checksum))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_checksum_line() {
+        assert!(is_checksum_line("! Checksum: abc123"));
+        assert!(is_checksum_line("!Checksum: abc123"));
+        assert!(is_checksum_line("# checksum: abc123"));
+        assert!(!is_checksum_line("! Title: EasyList"));
+        assert!(!is_checksum_line("||example.com^"));
+        // Non-ASCII comments must not panic: slicing the &str at byte 8 used
+        // to land mid-character. These run over every line of every list.
+        assert!(!is_checksum_line("! \u{65e5}\u{672c}\u{8a9e}\u{3067}\u{3059}"));
+        assert!(!is_checksum_line("! \u{421}\u{43f}\u{438}\u{441}\u{43e}\u{43a}"));
+        assert!(!is_checksum_line("# \u{4f8b}\u{4f8b}\u{4f8b}"));
+        assert!(!is_checksum_line("! \u{1f600}\u{1f600}\u{1f600}"));
+    }
 }

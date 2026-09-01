@@ -492,13 +492,19 @@ impl Args {
             rebase_on_fail: parse_bool(&config, "rebase-on-fail", true),
             commit_mask: config.get("commit-mask")
                 .and_then(|s| s.trim().parse::<u8>().ok()),
-            commit_mask_users: config.get("commit-mask-users")
-                .map(|s| s.split(',').map(|u| u.trim().to_lowercase()).collect())
-                .unwrap_or_default(),
+            // `parse_list` already trims and drops empty entries — important
+            // here, because a bare `commit-mask-users =` line would otherwise
+            // yield `[""]`, a non-empty allowlist that nothing can match, and
+            // silently disable masking entirely.
+            commit_mask_users: parse_list(&config, "commit-mask-users")
+                .into_iter()
+                .map(|u| u.to_lowercase())
+                .collect(),
             commit_mask_bare: parse_bool(&config, "commit-mask-bare", false),
-            commit_mask_exempt_hosts: config.get("commit-mask-exempt-hosts")
-                .map(|s| s.split(',').map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty()).collect())
-                .unwrap_or_default(),
+            commit_mask_exempt_hosts: parse_list(&config, "commit-mask-exempt-hosts")
+                .into_iter()
+                .map(|h| h.to_lowercase())
+                .collect(),
             commit_url_template: config.get("commit-url-template")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
