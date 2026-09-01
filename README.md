@@ -12,7 +12,7 @@ A Rust port of the EasyList FOP tool for sorting and cleaning ad-blocking filter
 - **Git integration**: Commit changes directly to repositories (can be disabled)
 - **easylist_adservers.txt validation**: Ensures rules start with `|` or `/`
 - **:has-text() merging**: Combines rules with same base selector into single regex
-- **Parallel processing**: Uses all CPU cores for faster processing via Rayon
+- **Parallel processing**: Processes files in parallel via Rayon, using up to 8 worker threads. Past that, extra workers cost memory without improving throughput; set `RAYON_NUM_THREADS` to override
 
 ## Extended Syntax Support
 

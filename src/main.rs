@@ -14,6 +14,10 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+/// Upper bound on rayon workers. Past this, extra workers cost a mimalloc heap
+/// each without improving throughput -- see the pool setup in `main`.
+const MAX_WORKERS: usize = 8;
+
 mod fop_git;
 mod fop_checksum;
 mod fop_sort;
@@ -1777,6 +1781,51 @@ fn main() {
     if args.show_config {
         args.print_config(config_path.as_deref());
         return;
+    }
+
+    // Size the rayon pool before anything touches it.
+    //
+    // Work is parallelised one task per file, but the default pool is one
+    // worker per core regardless of the workload, and each worker gets its own
+    // mimalloc heap (~1.75 MB) whether or not it does any work. On a 32-core
+    // machine that was 74 MB of resident memory to sort a two-line file, and
+    // it scales with the machine rather than the input -- a 128-core CI runner
+    // pays far more for the same work.
+    //
+    // Measured on 32 cores. Peak RSS, default vs capped: 2-line file 75 -> 27 MB,
+    // 65 files 223 -> 86 MB, 270 files (670k lines) 274 -> 115 MB. Wall time is
+    // equal or better on those, since throughput saturates well before 32.
+    //
+    // The trade-off, stated plainly: a workload of a few large files wants one
+    // worker per file, and 10 x 1 MB files run ~0.02s slower at 8 workers than
+    // at 16. 8 is chosen because the target workload is a filter-list repo --
+    // many small-to-medium files, where 8 measured fastest of all counts tried.
+    // RAYON_NUM_THREADS overrides the cap, but parse it here rather than
+    // deferring to rayon. Rayon ignores the variable unless it parses as
+    // usize >= 1 and falls back to the full core count otherwise, so merely
+    // testing that it is *set* would hand an empty or malformed value the
+    // uncapped behaviour this cap exists to avoid -- and `RAYON_NUM_THREADS:
+    // ${{ inputs.threads }}` with the input unset is a common CI shape.
+    let workers = std::env::var("RAYON_NUM_THREADS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+                .min(MAX_WORKERS)
+        });
+    // A failure here leaves the global pool uninitialised, and the first
+    // par_iter then lazily builds rayon's own uncapped pool -- the memory
+    // profile silently reverts. Say so rather than leave a mystery.
+    if let Err(e) = rayon::ThreadPoolBuilder::new()
+        .num_threads(workers)
+        .build_global()
+    {
+        if !args.quiet {
+            eprintln!("Warning: could not size the worker pool ({e}); using rayon's default.");
+        }
     }
 
     // Benchmark mode: force dry-run, no-commit, quiet

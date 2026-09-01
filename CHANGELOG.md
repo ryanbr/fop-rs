@@ -19,6 +19,7 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 - Add `--no-rebase-on-fail` to opt out of auto-rebase
 - Print actionable suggested-fix commands when push fails (rebase conflicts, no upstream branch)
 - Stop removing valid three-character rules. The minimum rule length was raised to 4 to catch garbage like `"])`, which also deleted `##a`, `*/*` and `/a/` from list files and reported them as malformed. The floor is back to 3 (counted in characters, so a lone multi-byte character or a stray BOM is still dropped), and lines starting with `"`, `)`, `]` or `}` are rejected instead — no filter syntax begins with a closing bracket or a quote.
+- Cap the worker pool at 8 threads (override with `RAYON_NUM_THREADS`). Work is parallelised one file per task, but the pool was sized to the core count regardless of the workload, and each worker holds its own allocator heap. Peak memory on a 32-core machine: 75 -> 27 MB for a single small file, 274 -> 115 MB for 670k lines across 270 files, at equal or better speed.
 - Fix crash on non-ASCII input. A CJK comment header (`! 日本語です`) aborted the run, as did an internationalised (IDN) host in a commit message or git remote.
 
 ## [5.3.0] - 2026-03-18
