@@ -18,6 +18,8 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 - Default `rebase-on-fail` to true; auto-recover from `[remote rejected] cannot lock ref` races between commits
 - Add `--no-rebase-on-fail` to opt out of auto-rebase
 - Print actionable suggested-fix commands when push fails (rebase conflicts, no upstream branch)
+- Stop removing valid three-character rules. The minimum rule length was raised to 4 to catch garbage like `"])`, which also deleted `##a`, `*/*` and `/a/` from list files and reported them as malformed. The floor is back to 3 (counted in characters, so a lone multi-byte character or a stray BOM is still dropped), and lines starting with `"`, `)`, `]` or `}` are rejected instead — no filter syntax begins with a closing bracket or a quote.
+- Fix crash on non-ASCII input. A CJK comment header (`! 日本語です`) aborted the run, as did an internationalised (IDN) host in a commit message or git remote.
 
 ## [5.3.0] - 2026-03-18
 

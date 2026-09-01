@@ -1181,7 +1181,6 @@ fn combine_filters(
 // Main Sorting Function
 // =============================================================================
 
-/// Sort the sections of a filter file and save modifications
 /// Why `line` can never be a valid filter rule, or `None` if it might be.
 ///
 /// Deliberately narrow. The set of characters that can *begin* a valid rule is
@@ -1194,13 +1193,18 @@ pub fn malformed_rule_reason(line: &str) -> Option<&'static str> {
     match line.as_bytes().first() {
         // Debris from a truncated selector, e.g. the tail of `[href="x"])`.
         Some(b'"' | b')' | b']' | b'}') => Some("invalid start"),
-        // `##a` (hide every <a>), `*/*` and `/a/` are all valid 3-character
+        // `##a` (hide every <a>), `*/*` and `/a/` are all valid three-character
         // rules, so the floor is 3 — not 4, which deleted them.
-        _ if line.len() < 3 => Some("too short"),
+        //
+        // Counted in characters, not bytes: a lone multi-byte character (or a
+        // stray UTF-8 BOM, which is 3 bytes) is not a rule, and a byte floor
+        // would keep it. `take(3)` so a long line stops after three.
+        _ if line.chars().take(3).count() < 3 => Some("too short"),
         _ => None,
     }
 }
 
+/// Sort the sections of a filter file and save modifications
 pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<String>> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;

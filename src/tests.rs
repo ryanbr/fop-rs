@@ -347,9 +347,16 @@ fn test_malformed_rule_reason() {
     // Total on empty input: the call site guarantees non-empty, but the
     // helper must not index into an empty slice regardless.
     assert_eq!(malformed_rule_reason(""), Some("too short"));
-    // Non-ASCII must not panic and must not be judged by byte length alone
-    // being >= 3 for a single character.
-    assert_eq!(malformed_rule_reason("\u{65e5}"), None);
+
+    // Length is counted in characters, not bytes. A lone 3-byte character is
+    // one character and is not a rule; a byte floor would have kept it.
+    assert_eq!(malformed_rule_reason("\u{65e5}"), Some("too short"));
+    assert_eq!(malformed_rule_reason("\u{65e5}\u{672c}"), Some("too short"));
+    assert_eq!(malformed_rule_reason("\u{65e5}\u{672c}\u{8a9e}"), None);
+    // A stray UTF-8 BOM is 3 bytes but one character — not a rule.
+    assert_eq!(malformed_rule_reason("\u{feff}"), Some("too short"));
+    // 4-byte characters count as one too.
+    assert_eq!(malformed_rule_reason("\u{1f600}"), Some("too short"));
 }
 
 #[test]
