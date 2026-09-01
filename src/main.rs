@@ -768,6 +768,8 @@ impl Args {
         println!("        --commit-mask-bare    Also mask bare hostnames (no http/https). Risks FP on filenames.");
         println!("        --commit-mask-exempt-hosts=h1,h2  Additional apex hosts exempt from masking (e.g. self-hosted Gitea/Forgejo)");
         println!("        --commit-url-template=TMPL  Override 'Commit successful' URL template ({{base}}, {{sha}}); default {{base}}/commit/{{sha}}");
+        println!("        --rebase-on-fail    Auto 'git pull --rebase --autostash' and retry a failed push (default: on)");
+        println!("        --no-rebase-on-fail Don't auto-rebase; print the suggested command and stop");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");

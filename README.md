@@ -111,7 +111,8 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--check-banned-list=FILE` | Check for banned domains in git additions |
 | `--auto-banned-remove` | Auto-remove banned domains and commit |
 | `--ci` | CI mode - exit with error code on failures (banned domains) |
-| `--rebase-on-fail` | Auto rebase and retry push if it fails |
+| `--rebase-on-fail` | Auto `git pull --rebase --autostash` and retry when a push fails. **On by default** |
+| `--no-rebase-on-fail` | Don't auto-rebase; print the suggested `git pull --rebase` command and stop |
 | `--commit-mask=N` | Mask URLs in commit messages (1=`[.]`, 2=`(.)`, 3=space, 4=preserve subdomain dot, 5=Unicode lookalike `․`) |
 | `--commit-mask-users=u1,u2` | Restrict `--commit-mask` to these `git config user.name` values (lowercased) |
 | `--commit-mask-bare` | Also mask bare hostnames without `http(s)://`. Risks false positives on filenames |
@@ -223,8 +224,11 @@ auto-banned-remove = false
 # CI mode - exit with error code on failures
 ci = false
 
-# Auto rebase and retry if push fails
-rebase-on-fail = false
+# Auto rebase and retry if push fails (default: true).
+# On failure fop runs 'git pull --rebase --autostash' and pushes again, which
+# reapplies your stashed changes and can leave conflicts to resolve. Set false
+# to be told the command to run instead of having it run for you.
+rebase-on-fail = true
 
 # Mask URLs in commit messages: 1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike
 # github.com, gitlab.com, and codeberg.org (and subdomains) are always exempt so PR/issue links stay clickable.
