@@ -320,6 +320,46 @@ fn test_default_template_for_base() {
 }
 
 #[test]
+fn test_filter_tidy_cosmetic_dollar_not_option_separator() {
+    // The `$` inside a cosmetic separator is not an option separator. Reading
+    // it as one made the selector and stylesheet body look like an option list,
+    // and the `$option.option` typo fix rewrote every `.` in it to `,` --
+    // turning `div.ad` ("div with class ad") into `div,ad` ("every div or every
+    // ad element"). Silent: the result is still a valid rule.
+    for rule in [
+        "example.com#$#div.ad { display: none; }",
+        "example.com#@$#div.ad { display: none; }",
+        "example.com#$?#div.ad { x: y; }",
+        "example.com#@$?#div.ad { x: y; }",
+        "example.com#$?#div:has(> .ad) { x: y; }",
+        "example.com$$div.ad",
+        "example.com$@$div.ad",
+        "#$#body.cls { color: red; }",
+        "example.com#$?#div:contains(a.b) { x: y; }",
+        // Not a `$` rule at all, but the same hazard: a literal `$` inside a
+        // plain cosmetic selector must not start an option list either.
+        "example.com##div[data-x=\"a.b$c.d\"]",
+    ] {
+        assert_eq!(filter_tidy(rule, false), rule, "must pass through unchanged: {}", rule);
+    }
+
+    // The typo fix it guards still works on real network options.
+    assert_eq!(
+        filter_tidy("||a.com^$third-party.script", false),
+        "||a.com^$script,third-party"
+    );
+    assert_eq!(
+        filter_tidy("||b.com^$image.script.font", false),
+        "||b.com^$font,image,script"
+    );
+    // An escaped `\$` in a value is still not an option separator.
+    assert_eq!(
+        filter_tidy("||a.com^$removeparam=/^\\$ja=/", false),
+        "||a.com^$removeparam=/^\\$ja=/"
+    );
+}
+
+#[test]
 fn test_malformed_rule_reason() {
     // Debris from a truncated selector — the case the check exists for.
     assert_eq!(malformed_rule_reason("\"])"), Some("invalid start"));

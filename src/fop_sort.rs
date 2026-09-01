@@ -442,14 +442,48 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> Cow<'_, str> {
 }
 
 /// Sort and clean filter options
+/// Is the `$` at `i` part of a cosmetic or HTML-filtering separator rather
+/// than the start of filter options?
+///
+/// Covers `#$#`, `#@$#`, `#$?#`, `#@$?#` (AdGuard CSS injection and extended
+/// CSS) and `$$` / `$@$` (AdGuard HTML filtering) — the same set treated as
+/// extended syntax by `element_tidy`.
+#[inline]
+fn dollar_is_element_separator(bytes: &[u8], i: usize) -> bool {
+    // `$$` / `$@$`, matched from either `$`.
+    if bytes.get(i + 1) == Some(&b'$') || (i > 0 && bytes[i - 1] == b'$') {
+        return true;
+    }
+    if bytes.get(i + 1) == Some(&b'@') && bytes.get(i + 2) == Some(&b'$') {
+        return true;
+    }
+    if i >= 2 && bytes[i - 1] == b'@' && bytes[i - 2] == b'$' {
+        return true;
+    }
+    // `#$#` / `#@$#` / `#$?#` / `#@$?#`
+    let after_hash = i > 0
+        && (bytes[i - 1] == b'#' || (bytes[i - 1] == b'@' && i >= 2 && bytes[i - 2] == b'#'));
+    let before_hash = bytes.get(i + 1) == Some(&b'#')
+        || (bytes.get(i + 1) == Some(&b'?') && bytes.get(i + 2) == Some(&b'#'));
+    after_hash && before_hash
+}
+
 /// Find the option separator `$` position, skipping escaped `\$` in values.
+///
+/// A `$` that forms part of a cosmetic separator is not an option separator:
+/// reading the `$` in `#$#` as one made the whole selector and stylesheet body
+/// look like an option list, and `filter_tidy`'s `$option.option` typo fix then
+/// rewrote every `.` in it to `,`, turning `div.ad` into `div,ad`.
 #[inline]
 fn find_option_separator(filter: &str) -> Option<usize> {
     let bytes = filter.as_bytes();
     let mut i = filter.len();
     while i > 0 {
         i -= 1;
-        if bytes[i] == b'$' && (i == 0 || bytes[i - 1] != b'\\') {
+        if bytes[i] == b'$'
+            && (i == 0 || bytes[i - 1] != b'\\')
+            && !dollar_is_element_separator(bytes, i)
+        {
             return Some(i);
         }
     }
@@ -497,25 +531,31 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // ||example.com$removeparam=/^\\$ja=/
     // ||example.com$removeparam=/regex/
 
+    // Element rules have no option list, so nothing below that rewrites options
+    // may touch them. Computed before the typo fix rather than after: reading a
+    // cosmetic separator's `$` as an option separator made the selector look
+    // like options, and the typo fix rewrote every `.` in it to `,`.
+    let is_element_rule = (filter_in.contains('#')
+        && ["##", "#@#", "#?#", "#$#", "#@$#", "#%#", "#@%#", "#$?#", "#@$?#"]
+            .iter().any(|s| filter_in.contains(s)))
+        || filter_in.contains("$$");
+
     // Fix typo: $option.option -> $option,option (before pattern matching)
-    let filter_in: Cow<str> = if let Some(dollar_pos) = find_option_separator(filter_in) {
-        let (base, opts) = filter_in.split_at(dollar_pos);
-        if !opts.contains('=') && opts.contains('.') {
-            Cow::Owned(format!("{}{}", base, opts.replace('.', ",")))
-        } else {
-            Cow::Borrowed(filter_in)
+    let filter_in: Cow<str> = match find_option_separator(filter_in) {
+        Some(dollar_pos) if !is_element_rule => {
+            let (base, opts) = filter_in.split_at(dollar_pos);
+            if !opts.contains('=') && opts.contains('.') {
+                Cow::Owned(format!("{}{}", base, opts.replace('.', ",")))
+            } else {
+                Cow::Borrowed(filter_in)
+            }
         }
-    } else {
-        Cow::Borrowed(filter_in)
+        _ => Cow::Borrowed(filter_in),
     };
     let filter_in = filter_in.as_ref();
 
     // Remove errant spaces from network filters only
     // Skip: element rules, regex patterns, and options with legitimate spaces
-    let is_element_rule = (filter_in.contains('#')
-        && ["##", "#@#", "#?#", "#$#", "#@$#", "#%#", "#@%#", "#$?#", "#@$?#"]
-            .iter().any(|s| filter_in.contains(s)))
-        || filter_in.contains("$$");
     let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=",
                              "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam=",
                              "$jsonprune=", ",jsonprune=",
