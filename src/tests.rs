@@ -372,6 +372,46 @@ fn test_is_version_line() {
 }
 
 #[test]
+fn test_mask_level4_compound_tld_case() {
+    // Level 4 masks every dot inside the eTLD+1 and preserves subdomain dots.
+    // The compound-TLD lookup is case-insensitive, so an uppercase or mixed
+    // -case TLD must be recognised as compound — otherwise only the final dot
+    // is masked and the registrable domain stays joined by a real dot.
+    assert_eq!(
+        mask_urls_in_message("A: https://www.Example.CO.UK/foo", 4, false),
+        "A: https://www.Example[.]CO[.]UK/foo"
+    );
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.Co.Uk/foo", 4, false),
+        "A: https://www.example[.]Co[.]Uk/foo"
+    );
+    assert_eq!(
+        mask_urls_in_message("A: https://WWW.EXAMPLE.COM.AU/foo", 4, false),
+        "A: https://WWW.EXAMPLE[.]COM[.]AU/foo"
+    );
+    // Lowercase behaviour is unchanged.
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.co.uk/foo", 4, false),
+        "A: https://www.example[.]co[.]uk/foo"
+    );
+    // Apex of a compound TLD, uppercase — every dot is inside eTLD+1.
+    assert_eq!(
+        mask_urls_in_message("A: https://Example.CO.UK/foo", 4, false),
+        "A: https://Example[.]CO[.]UK/foo"
+    );
+    // A single-label TLD stays single-label regardless of case.
+    assert_eq!(
+        mask_urls_in_message("A: https://www.Example.COM/foo", 4, false),
+        "A: https://www.Example[.]COM/foo"
+    );
+    // Not a compound TLD despite looking like one.
+    assert_eq!(
+        mask_urls_in_message("A: https://www.example.ZZ.UK/foo", 4, false),
+        "A: https://www.example.ZZ[.]UK/foo"
+    );
+}
+
+#[test]
 fn test_mask_urls_non_ascii_and_case() {
     // A non-ASCII (IDN) host must be masked, not panic on a byte-index slice.
     let out = mask_urls_in_message("A: https://\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}/x", 1, false);

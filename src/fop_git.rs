@@ -404,6 +404,13 @@ static COMPOUND_TLDS: LazyLock<ahash::AHashSet<&'static str>> = LazyLock::new(||
 
 /// How many trailing labels form the eTLD for `host`. Returns 2 for known
 /// compound TLDs, otherwise 1.
+///
+/// Matching is case-insensitive. `COMPOUND_TLDS` holds lowercase ASCII, and a
+/// host is not lowercased before it gets here, so a verbatim lookup missed
+/// `CO.UK` and level 4 then masked only the final dot — leaving the
+/// registrable domain joined by a real dot, which is what that level exists
+/// to prevent. Stays allocation-free for an already-lowercase host, which is
+/// the normal case.
 fn etld_label_count(host: &str) -> usize {
     // Slice the last two labels directly from `host` — no allocation.
     let last_two: &str = match host.rfind('.') {
@@ -413,7 +420,12 @@ fn etld_label_count(host: &str) -> usize {
             None => host,
         },
     };
-    if COMPOUND_TLDS.contains(last_two) { 2 } else { 1 }
+    if !last_two.bytes().any(|b| b.is_ascii_uppercase()) {
+        return if COMPOUND_TLDS.contains(last_two) { 2 } else { 1 };
+    }
+    // Mixed case: fold before the lookup. Only reached for a host that wasn't
+    // already lowercase, and every compound TLD is ASCII.
+    if COMPOUND_TLDS.contains(last_two.to_ascii_lowercase().as_str()) { 2 } else { 1 }
 }
 
 /// Mask the dots inside a single host string per the requested level.
