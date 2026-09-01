@@ -622,7 +622,7 @@ fn test_localhost_domain_extraction() {
 
 #[test]
 fn test_localhost_domain_sort_order() {
-    let mut entries = vec![
+    let mut entries = [
         "0.0.0.0 z-tracker.com".to_string(),
         "0.0.0.0 a-ads.net".to_string(),
         "127.0.0.1 m-stats.org".to_string(),
