@@ -13,7 +13,7 @@ use crate::fop_datestamp::is_version_line;
 
 use crate::fop_sort::{
     convert_ubo_options, filter_tidy, is_localhost_entry, localhost_domain,
-    remove_unnecessary_wildcards, sort_domains,
+    malformed_rule_reason, remove_unnecessary_wildcards, sort_domains,
 };
 
 // =============================================================================
@@ -317,6 +317,39 @@ fn test_default_template_for_base() {
     assert_eq!(default_template_for_base("https://\u{65e5}\u{672c}\u{8a9e}.example.jp/foo/bar"), "{base}/commit/{sha}");
     // Host shorter than "bitbucket.org" but non-ASCII
     assert_eq!(default_template_for_base("https://\u{e4}.de/foo/bar"), "{base}/commit/{sha}");
+}
+
+#[test]
+fn test_malformed_rule_reason() {
+    // Debris from a truncated selector — the case the check exists for.
+    assert_eq!(malformed_rule_reason("\"])"), Some("invalid start"));
+    assert_eq!(malformed_rule_reason("])"), Some("invalid start"));
+    assert_eq!(malformed_rule_reason("}]"), Some("invalid start"));
+    assert_eq!(malformed_rule_reason(")foo"), Some("invalid start"));
+
+    // Valid 3-character rules — these were deleted by the old 4-char floor.
+    assert_eq!(malformed_rule_reason("##a"), None);
+    assert_eq!(malformed_rule_reason("*/*"), None);
+    assert_eq!(malformed_rule_reason("/a/"), None);
+
+    // Leading characters an allowlist kept missing (274 `_` rules, 15 `=`,
+    // 8 `%` and 2 `^` across the local lists) must survive.
+    assert_eq!(malformed_rule_reason("_ad_banner"), None);
+    assert_eq!(malformed_rule_reason("%2Fads"), None);
+    assert_eq!(malformed_rule_reason("^tracker^"), None);
+    assert_eq!(malformed_rule_reason("=ad_id"), None);
+    assert_eq!(malformed_rule_reason("||example.com^"), None);
+    assert_eq!(malformed_rule_reason("##.ad"), None);
+
+    // Genuinely too short.
+    assert_eq!(malformed_rule_reason("ab"), Some("too short"));
+    assert_eq!(malformed_rule_reason("#"), Some("too short"));
+    // Total on empty input: the call site guarantees non-empty, but the
+    // helper must not index into an empty slice regardless.
+    assert_eq!(malformed_rule_reason(""), Some("too short"));
+    // Non-ASCII must not panic and must not be judged by byte length alone
+    // being >= 3 for a single character.
+    assert_eq!(malformed_rule_reason("\u{65e5}"), None);
 }
 
 #[test]

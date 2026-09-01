@@ -1182,6 +1182,25 @@ fn combine_filters(
 // =============================================================================
 
 /// Sort the sections of a filter file and save modifications
+/// Why `line` can never be a valid filter rule, or `None` if it might be.
+///
+/// Deliberately narrow. The set of characters that can *begin* a valid rule is
+/// open-ended — an allowlist of them deleted real rules starting with `_ % ^ =`
+/// and had to be reverted (94266d6) — but the set that can never begin one is
+/// closed, so match that instead. Catches only debris that leads with it:
+/// broader malformed-rule detection needs a parser, not a character check.
+#[inline]
+pub fn malformed_rule_reason(line: &str) -> Option<&'static str> {
+    match line.as_bytes().first() {
+        // Debris from a truncated selector, e.g. the tail of `[href="x"])`.
+        Some(b'"' | b')' | b']' | b'}') => Some("invalid start"),
+        // `##a` (hide every <a>), `*/*` and `/a/` are all valid 3-character
+        // rules, so the floor is 3 — not 4, which deleted them.
+        _ if line.len() < 3 => Some("too short"),
+        _ => None,
+    }
+}
+
 pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<String>> {
     let temp_file = filename.with_extension("temp");
     const CHECK_LINES: usize = 10;
@@ -1379,9 +1398,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         }
 
-        // Skip filters less than 4 characters — no valid rule is that short
-        if line.len() < 4 {
-            write_warning(&format!("Removed malformed rule (too short): {}", line));
+        if let Some(reason) = malformed_rule_reason(line) {
+            write_warning(&format!("Removed malformed rule ({}): {}", reason, line));
             continue;
         }
 
