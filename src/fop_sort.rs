@@ -200,8 +200,9 @@ pub struct SortConfig<'a> {
     pub alt_sort: bool,
     /// Convert ABP extended selectors to uBO format
     pub abp_convert: bool,
-    /// Promote a `:has-text()` exception separator from `#@#` to AdGuard's
-    /// `#@?#`. Independent of `abp_convert`, and off by default.
+    /// Promote a `:has-text()` rule's separator to AdGuard's spelling —
+    /// `##` -> `#?#`, `#@#` -> `#@?#`. Independent of `abp_convert`, off by
+    /// default.
     pub adguard_convert: bool,
     /// Convert trusted-set-cookie/storage to non-trusted when value is safe
     pub convert_trusted: bool,
@@ -1152,13 +1153,14 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
 /// Convert extended selectors between syntaxes.
 ///
 /// `abp` rewrites ABP operators to their uBO equivalents (`:-abp-contains(`
-/// -> `:has-text(`) and promotes a hiding rule's separator to `#?#`.
+/// -> `:has-text(`). It does not touch separators: uBO reads `##` and `#@#`
+/// for the rules it produces.
 ///
-/// `adguard` promotes a `:has-text()` exception separator to `#@?#`. That
-/// spelling is AdGuard's — uBO writes the same rule as plain `#@#` — so it is
-/// only right for a list AdGuard consumes, and is a separate switch rather
-/// than a side effect of `abp`: a rule can hit it while having nothing for
-/// `abp` to convert.
+/// `adguard` promotes a `:has-text()` rule's separator — `##` -> `#?#` and
+/// `#@#` -> `#@?#`. Those spellings are AdGuard's, so they are only right for
+/// a list AdGuard consumes, and are a separate switch rather than a side
+/// effect of `abp`: a rule can hit them while having nothing for `abp` to
+/// convert.
 pub(crate) fn convert_selectors(rule: &str, abp: bool, adguard: bool) -> String {
     let mut out = if abp && rule.contains(":-abp-") {
         rule.replace(":-abp-contains(", ":has-text(")
@@ -1167,13 +1169,13 @@ pub(crate) fn convert_selectors(rule: &str, abp: bool, adguard: bool) -> String 
         rule.to_string()
     };
 
-    // :has-text() wants the procedural separator; :has() alone is native CSS
-    // and works with ##. HTML filtering rules (##^) are uBO-specific — skip.
-    if out.contains(":has-text(") && !out.contains("##^") {
-        if abp && out.contains("##") && !out.contains("#?#") {
+    // Only :has-text() needs the procedural separator; :has() alone is native
+    // CSS and works with ##. HTML filtering rules (##^) are uBO-specific — skip.
+    if adguard && out.contains(":has-text(") && !out.contains("##^") {
+        if out.contains("##") && !out.contains("#?#") {
             out = out.replacen("##", "#?#", 1);
         }
-        if adguard && out.contains("#@#") && !out.contains("#@?#") {
+        if out.contains("#@#") && !out.contains("#@?#") {
             out = out.replacen("#@#", "#@?#", 1);
         }
     }

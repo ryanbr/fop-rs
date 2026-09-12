@@ -1239,52 +1239,52 @@ fn test_has_text_google_promo_example() {
 }
 
 #[test]
-fn test_convert_selectors_adguard_separator_is_separate() {
+fn test_convert_selectors_separators_belong_to_adguard() {
     use crate::fop_sort::convert_selectors as f;
+    const ABP_HIDE: &str = "example.com##.ad:-abp-contains(Anzeige)";
     const ABP_EXC: &str = "example.com#@#.ad:-abp-contains(Anzeige)";
-    // --abp-convert alone renames operators and leaves the exception at `#@#`,
-    // which is how uBO writes it.
+    // --abp-convert renames operators only; uBO reads ## and #@# for these.
+    assert_eq!(f(ABP_HIDE, true, false), "example.com##.ad:has-text(Anzeige)");
     assert_eq!(f(ABP_EXC, true, false), "example.com#@#.ad:has-text(Anzeige)");
-    // --adguard-convert adds the `#@?#` promotion.
+    // --adguard-convert promotes both separators to AdGuard's spelling.
+    assert_eq!(f(ABP_HIDE, true, true), "example.com#?#.ad:has-text(Anzeige)");
     assert_eq!(f(ABP_EXC, true, true), "example.com#@?#.ad:has-text(Anzeige)");
     // It is independent: a rule with nothing for --abp-convert to convert is
     // still promoted, and no operator is renamed.
+    let ubo_hide = "racurs.ua##.c:has(> .h:has-text(/новини|новости/i))";
     let ubo_exc = "racurs.ua#@#.c:has(> .h:has-text(/новини|новости/i))";
+    assert_eq!(f(ubo_hide, false, true), "racurs.ua#?#.c:has(> .h:has-text(/новини|новости/i))");
     assert_eq!(f(ubo_exc, false, true), "racurs.ua#@?#.c:has(> .h:has-text(/новини|новости/i))");
     // ...but the promotion keys on `:has-text()`, so a rule still in ABP
     // operator form is left alone until --abp-convert rewrites it.
+    assert_eq!(f(ABP_HIDE, false, true), ABP_HIDE);
     assert_eq!(f(ABP_EXC, false, true), ABP_EXC);
     // Neither flag is a no-op conversion.
     assert_eq!(f(ABP_EXC, false, false), ABP_EXC);
     assert_eq!(f(ubo_exc, true, false), ubo_exc);
 
-    // The hiding-rule promotion belongs to --abp-convert and is unaffected.
-    for adguard in [true, false] {
+    for abp in [true, false] {
+        // A rule that already carries the AdGuard spelling is never touched —
+        // this is the form the region allowlists ship.
         assert_eq!(
-            f("example.com##.ad:-abp-contains(Anzeige)", true, adguard),
-            "example.com#?#.ad:has-text(Anzeige)"
-        );
-        // A rule that already carries `#@?#` is never touched — this is the
-        // form the region allowlists ship.
-        assert_eq!(
-            f("berliner-zeitung.de#@?#.m-article-teaser:-abp-has(div:-abp-contains(Anzeige))", true, adguard),
-            "berliner-zeitung.de#@?#.m-article-teaser:has(div:has-text(Anzeige))"
-        );
-        assert_eq!(
-            f("wintersport.nl#@?#.mb-6:contains(gesponsord)", true, adguard),
+            f("wintersport.nl#@?#.mb-6:contains(gesponsord)", abp, true),
             "wintersport.nl#@?#.mb-6:contains(gesponsord)"
-        );
-        // :has() alone is native CSS — plain ## is right.
-        assert_eq!(
-            f("example.com##.ad:-abp-has(.x)", true, adguard),
-            "example.com##.ad:has(.x)"
         );
         // HTML filtering is uBO-specific and keeps ##^.
         assert_eq!(
-            f("example.com##^script:has-text(ads)", true, adguard),
+            f("example.com##^script:has-text(ads)", abp, true),
             "example.com##^script:has-text(ads)"
         );
         // A non-element rule is untouched.
-        assert_eq!(f("||example.com/ads^", true, adguard), "||example.com/ads^");
+        assert_eq!(f("||example.com/ads^", abp, true), "||example.com/ads^");
     }
+    // :has() alone is native CSS — plain ## is right even under --adguard-convert.
+    assert_eq!(
+        f("example.com##.ad:-abp-has(.x)", true, true),
+        "example.com##.ad:has(.x)"
+    );
+    assert_eq!(
+        f("berliner-zeitung.de#@?#.m-article-teaser:-abp-has(div:-abp-contains(Anzeige))", true, true),
+        "berliner-zeitung.de#@?#.m-article-teaser:has(div:has-text(Anzeige))"
+    );
 }

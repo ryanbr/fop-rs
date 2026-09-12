@@ -143,7 +143,7 @@ struct Args {
     alt_sort: bool,
     /// Convert ABP extended selectors to uBO format
     abp_convert: bool,
-    /// Promote a `:has-text()` exception separator to AdGuard's `#@?#`
+    /// Promote a `:has-text()` rule's separator to AdGuard's `#?#` / `#@?#`
     adguard_convert: bool,
     /// Convert trusted scriptlets to non-trusted when value is safe
     convert_trusted: bool,
@@ -790,7 +790,7 @@ impl Args {
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
-        println!("        --adguard-convert      Promote a :has-text() exception separator to AdGuard's #@?#");
+        println!("        --adguard-convert      Promote :has-text() separators to AdGuard's #?# / #@?#");
         println!("        --convert-trusted      Convert trusted scriptlets to non-trusted when value is safe");
         println!("        --ignoredirs=   Additional directories to ignore (comma-separated, partial names)");
         println!("        --ignore-all-but=   Only process these files, ignore all others (comma-separated)");

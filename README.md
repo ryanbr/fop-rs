@@ -135,7 +135,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--git-binary=<path>` | Path to git binary (default: git in PATH) |
 | `--benchmark` | Benchmark sorting performance (3 iterations, dry-run) |
 | `--abp-convert` | Convert ABP extended selectors to uBO format |
-| `--adguard-convert` | Promote a `:has-text()` exception separator from `#@#` to AdGuard's `#@?#` |
+| `--adguard-convert` | Promote a `:has-text()` rule's separator to AdGuard's spelling (`##` → `#?#`, `#@#` → `#@?#`) |
 | `--convert-trusted` | Convert trusted scriptlets to non-trusted when value is safe |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
