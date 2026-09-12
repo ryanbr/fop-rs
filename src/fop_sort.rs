@@ -200,6 +200,9 @@ pub struct SortConfig<'a> {
     pub alt_sort: bool,
     /// Convert ABP extended selectors to uBO format
     pub abp_convert: bool,
+    /// Promote a `:has-text()` exception separator from `#@#` to AdGuard's
+    /// `#@?#`. Independent of `abp_convert`, and off by default.
+    pub adguard_convert: bool,
     /// Convert trusted-set-cookie/storage to non-trusted when value is safe
     pub convert_trusted: bool,
     /// Parse AdGuard extended CSS selectors (#$?# and #@$?#)
@@ -1146,6 +1149,37 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
     result
 }
 
+/// Convert extended selectors between syntaxes.
+///
+/// `abp` rewrites ABP operators to their uBO equivalents (`:-abp-contains(`
+/// -> `:has-text(`) and promotes a hiding rule's separator to `#?#`.
+///
+/// `adguard` promotes a `:has-text()` exception separator to `#@?#`. That
+/// spelling is AdGuard's — uBO writes the same rule as plain `#@#` — so it is
+/// only right for a list AdGuard consumes, and is a separate switch rather
+/// than a side effect of `abp`: a rule can hit it while having nothing for
+/// `abp` to convert.
+pub(crate) fn convert_selectors(rule: &str, abp: bool, adguard: bool) -> String {
+    let mut out = if abp && rule.contains(":-abp-") {
+        rule.replace(":-abp-contains(", ":has-text(")
+            .replace(":-abp-has(", ":has(")
+    } else {
+        rule.to_string()
+    };
+
+    // :has-text() wants the procedural separator; :has() alone is native CSS
+    // and works with ##. HTML filtering rules (##^) are uBO-specific — skip.
+    if out.contains(":has-text(") && !out.contains("##^") {
+        if abp && out.contains("##") && !out.contains("#?#") {
+            out = out.replacen("##", "#?#", 1);
+        }
+        if adguard && out.contains("#@#") && !out.contains("#@?#") {
+            out = out.replacen("#@#", "#@?#", 1);
+        }
+    }
+    out
+}
+
 /// Combine filters with identical rules but different domains
 fn combine_filters(
     mut uncombined: Vec<String>,
@@ -1552,32 +1586,14 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
             let mut tidied = element_tidy(&domains, separator, selector);
 
-            // Convert ABP extended selectors
-            if config.abp_convert {
+            // Convert extended selectors between syntaxes
+            if config.abp_convert || config.adguard_convert {
                 let original = tidied.clone();
-
-                // Convert :-abp-contains() -> :has-text(), :-abp-has() -> :has()
-                if tidied.contains(":-abp-") {
-                    tidied = tidied
-                        .replace(":-abp-contains(", ":has-text(")
-                        .replace(":-abp-has(", ":has(");
-                }
-
-                // :has-text() requires #?# separator for ABP compatibility
-                // :has() alone is native CSS and works with ##
-                // Skip HTML filtering rules (##^) — they're uBO-specific, not ABP
-                if tidied.contains(":has-text(") && !tidied.contains("##^") {
-                    if tidied.contains("##") && !tidied.contains("#?#") && !tidied.contains("#@?#") {
-                        tidied = tidied.replacen("##", "#?#", 1);
-                    }
-                    if tidied.contains("#@#") && !tidied.contains("#@?#") {
-                        tidied = tidied.replacen("#@#", "#@?#", 1);
-                    }
-                }
+                tidied = convert_selectors(&tidied, config.abp_convert, config.adguard_convert);
 
                 if tidied != original && !config.quiet {
                     write_warning(&format!(
-                        "Converted ABP selector: {}",
+                        "Converted selector: {}",
                         tidied
                     ));
                 }

@@ -135,6 +135,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--git-binary=<path>` | Path to git binary (default: git in PATH) |
 | `--benchmark` | Benchmark sorting performance (3 iterations, dry-run) |
 | `--abp-convert` | Convert ABP extended selectors to uBO format |
+| `--adguard-convert` | Promote a `:has-text()` exception separator from `#@#` to AdGuard's `#@?#` |
 | `--convert-trusted` | Convert trusted scriptlets to non-trusted when value is safe |
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version number |
@@ -285,7 +286,7 @@ add-checksum = true
 add-timestamp = true
 ```
 
-Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`.
+Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`.
 
 ### Commit Message URL Masking
 
