@@ -2,6 +2,15 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [Unreleased]
+
+- Add `--no-commit-mask` to turn masking off when `.fopconfig` sets a level. `--commit-mask=0` cannot: 0 falls through to level 1 by design, so a config-set level had no command-line off switch.
+- Respect `--quiet` (but not `--limited-quiet`, which only suppresses the directory listing) when a pre-commit pull fails. The suggested-fix block was printed unconditionally, so CI logged it on every transient failure.
+- Fix the stray-branch recovery advice losing commits. It cherry-picked only `HEAD` and then ran `git branch -D`, so anyone following it with more than one unpushed commit on the branch lost the rest. Now resolves the repository's actual default branch rather than assuming `master`, shows the full commit range, and cherry-picks all of it. The ranges are remote-qualified (`origin/main..<branch>`), since the default branch is read from `refs/remotes/origin/HEAD` and a CI clone may have no local branch of that name — and a stale local one would re-apply already-pushed commits. On the default branch itself — or when no default branch resolves at all, where every suggested range would be `bad revision` — the advice is now just the `--set-upstream` route, instead of a no-op cherry-pick ending in a `git branch -D` that git refuses. The remote is resolved rather than assumed to be `origin`.
+- Fix the commit URL for hosts carrying a port or userinfo. `bitbucket.org:443` and `git@bitbucket.org` missed the Bitbucket check and got the singular `/commit/` template, and an `ssh://` remote was printed verbatim (`ssh://git@host/u/r/commits/<sha>`) rather than as a link. The scp form is recognised for any user, not just `git@`, so deploy-key remotes (`deploy@host:u/r`) are linkified too, and `git+ssh://` normalises like `ssh://`. Schemes with no web equivalent (`git://`, `file://`) are left untouched rather than mangled.
+- Never print remote credentials. A remote of the form `https://x-access-token:TOKEN@host/u/r`, common in CI, had its token echoed into the `Commit successful:` line. `http://` remotes are covered as well — a self-hosted host on plain http is exactly where an embedded token lives — and userinfo is anchored on the last `@` that is actually followed by a host, so a password containing `@` or `/` no longer leaves a fragment of itself in the printed URL. The same normaliser now backs the `Create PR at:` line, which kept a weaker private copy that passed an https remote through verbatim.
+- Treat a URL with userinfo as its host when checking `--commit-mask` exemptions, so `https://git@github.com/...` stays unmasked like every other github.com link.
+
 ## [5.4.0] - 2026-09-01
 
 - Add `--commit-mask=N` to defang URLs in commit messages

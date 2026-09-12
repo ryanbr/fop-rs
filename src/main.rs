@@ -570,6 +570,11 @@ impl Args {
                         }
                     }
                 }
+                // Turns masking off even when .fopconfig sets a level.
+                // `--commit-mask=0` can't do this: 0 falls through to level 1
+                // by design, so without this a config-set level was unreachable
+                // from the command line.
+                "--no-commit-mask" => args.commit_mask = None,
                 _ if arg.starts_with("--commit-mask-users=") => {
                     let users = arg.trim_start_matches("--commit-mask-users=");
                     args.commit_mask_users = users.split(',')
@@ -768,6 +773,7 @@ impl Args {
         println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
         println!("        --no-color      Disable colored output");
         println!("        --commit-mask=N Mask URLs in commit messages (1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike)");
+        println!("        --no-commit-mask    Disable URL masking even if .fopconfig sets commit-mask");
         println!("        --commit-mask-users=u1,u2  Restrict --commit-mask to these git user.name values (lowercased)");
         println!("        --commit-mask-bare    Also mask bare hostnames (no http/https). Risks FP on filenames.");
         println!("        --commit-mask-exempt-hosts=h1,h2  Additional apex hosts exempt from masking (e.g. self-hosted Gitea/Forgejo)");

@@ -114,6 +114,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--rebase-on-fail` | Auto `git pull --rebase --autostash` and retry when a push fails. **On by default** |
 | `--no-rebase-on-fail` | Don't auto-rebase; print the suggested `git pull --rebase` command and stop |
 | `--commit-mask=N` | Mask URLs in commit messages (1=`[.]`, 2=`(.)`, 3=space, 4=preserve subdomain dot, 5=Unicode lookalike `․`) |
+| `--no-commit-mask` | Disable URL masking even when `.fopconfig` sets `commit-mask` (`--commit-mask=0` cannot: 0 falls through to level 1) |
 | `--commit-mask-users=u1,u2` | Restrict `--commit-mask` to these `git config user.name` values (lowercased) |
 | `--commit-mask-bare` | Also mask bare hostnames without `http(s)://`. Risks false positives on filenames |
 | `--commit-mask-exempt-hosts=h1,h2` | Additional apex hosts exempt from masking (e.g. self-hosted Gitea/Forgejo/GitLab) |

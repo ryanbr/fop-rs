@@ -472,6 +472,9 @@ fn is_excluded_host(url: &str, extra: &[String]) -> bool {
         .split(['/', '?', '#'])
         .next()
         .unwrap_or("");
+    // Strip userinfo before the port: `https://git@github.com/u/r` is still
+    // github.com and must stay exempt.
+    let host_with_port = host_with_port.rsplit('@').next().unwrap_or("");
     let host = host_with_port.split(':').next().unwrap_or("");
     MASK_EXEMPT_HOSTS.iter().any(|apex| host_is_at_or_under(host, apex))
         || extra.iter().any(|apex| host_is_at_or_under(host, apex))
@@ -782,22 +785,106 @@ fn get_head_short_hash(base_cmd: &[String]) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Print the "your commit did NOT land on the default branch" recovery steps.
+///
+/// `base` comes from `refs/remotes/<remote>/HEAD`, so the ranges must be
+/// remote-qualified: a single-branch CI clone may have no local branch of that
+/// name at all (a bare `base..branch` then dies with "ambiguous argument"),
+/// and a stale local one would make `cherry-pick` re-apply commits that are
+/// already pushed. `git checkout <base>` stays bare — git DWIMs it into a
+/// tracking branch, which is exactly what is wanted there.
+fn print_no_upstream_advice(base_cmd: &[String], branch: &str, head: &str, indent: &str) {
+    // Non-prompting: this runs inside an error path, so it must never block on
+    // input. `origin` when it exists, else the only remote, else `origin`.
+    let remotes = get_remotes(base_cmd);
+    let remote = if remotes.iter().any(|r| r == "origin") || remotes.len() != 1 {
+        "origin".to_string()
+    } else {
+        remotes[0].clone()
+    };
+    // `get_default_branch` returns None only after <remote>/HEAD, <remote>/main
+    // and <remote>/master have all failed to resolve, so there is no branch to
+    // name: a `<remote>/master..` range would be guaranteed `bad revision`.
+    // Emit only the upstream route rather than commands that cannot run.
+    // On the default branch itself the cherry-pick route is likewise useless —
+    // it ends in `git branch -D <base>`, which git refuses for the checked-out
+    // branch.
+    let base = get_default_branch(base_cmd, &remote).filter(|base| base != branch);
+    if let Some(base) = base {
+        eprintln!("{}If you meant to commit to {} (typical case):", indent, base);
+        eprintln!("    git log --oneline {}/{}..{}   # everything on the branch, not just {}", remote, base, branch, head);
+        eprintln!("    git checkout {}", base);
+        eprintln!("    git cherry-pick {}/{}..{}", remote, base, branch);
+        eprintln!("    git push");
+        eprintln!("    git branch -D {}   # only once the log above is all pushed", branch);
+        eprintln!("{}If '{}' really is a feature branch you want to publish:", indent, branch);
+    } else {
+        eprintln!("{}To publish '{}' and set its upstream:", indent, branch);
+    }
+    eprintln!("    git push --set-upstream {} {}", remote, branch);
+}
+
+/// Strip a `[user[:password]@]` prefix from an authority.
+///
+/// Neither end of this is simple: a git-stored password may contain `@` *or*
+/// `/` (base64 tokens routinely do), so the authority does not reliably end at
+/// the first `/`; and a path may contain an `@` that is not userinfo at all
+/// (`/u/r@v2`). So anchor on the last `@` whose following text actually looks
+/// like a host — dotted or `localhost`, and carrying the rest of the path.
+fn strip_userinfo(rest: &str) -> &str {
+    for (at, _) in rest.rmatch_indices('@') {
+        let candidate = &rest[at + 1..];
+        let host = candidate.split(['/', ':']).next().unwrap_or(candidate);
+        let looks_like_host = host.contains('.') || host == "localhost";
+        // Real userinfo precedes the path, so the host carries it; the only
+        // exception is an authority-only remote, which has no path at all.
+        let carries_path = candidate.contains('/') || !rest.contains('/');
+        if looks_like_host && carries_path {
+            return candidate;
+        }
+    }
+    rest
+}
+
 /// Convert a git remote URL to a browser-friendly HTTPS URL
 #[inline]
-fn remote_url_to_https(url: &str) -> String {
+pub(crate) fn remote_url_to_https(url: &str) -> String {
     let url = url.trim();
-    if let Some(rest) = url.strip_prefix("git@") {
-        // git@github.com:user/repo.git -> https://github.com/user/repo
-        if let Some(colon_pos) = rest.find(':') {
-            let host = &rest[..colon_pos];
-            let path = &rest[colon_pos + 1..];
-            format!("https://{}/{}", host, path.trim_end_matches(".git"))
-        } else {
-            url.trim_end_matches(".git").to_string()
-        }
-    } else {
-        url.trim_end_matches(".git").to_string()
+    // `[git+]ssh://[user@]host[:port]/path` — normalise to https, drop userinfo.
+    if let Some(rest) = ["ssh://", "git+ssh://", "ssh+git://"]
+        .iter()
+        .find_map(|prefix| url.strip_prefix(prefix))
+    {
+        let (hostpart, path) = rest.split_once('/').unwrap_or((rest, ""));
+        let host = hostpart.rsplit('@').next().unwrap_or(hostpart);
+        let host = host.split(':').next().unwrap_or(host);
+        return format!("https://{}/{}", host, path.trim_end_matches(".git"));
     }
+    // Credentials in the remote (`https://x-access-token:TOKEN@host/...`, common
+    // in CI) must never reach the printed "Commit successful" line. `http://`
+    // counts too: a self-hosted host served over plain http is exactly where an
+    // embedded token shows up. The scheme is preserved rather than upgraded,
+    // since such a host may not answer on https at all.
+    if let Some((scheme, rest)) = url
+        .strip_prefix("https://")
+        .map(|rest| ("https://", rest))
+        .or_else(|| url.strip_prefix("http://").map(|rest| ("http://", rest)))
+    {
+        return format!("{}{}", scheme, strip_userinfo(rest).trim_end_matches(".git"));
+    }
+    // scp form, `[user@]host:path` — the user is not always `git` (deploy keys
+    // use `deploy@`, `forgejo@`, …), and it is userinfo either way.
+    if let Some((hostpart, path)) = url.split_once(':') {
+        // Anything but a bare host before the ':' means this is not scp form:
+        // a '/' makes it a path, a leading "//" in the remainder makes it some
+        // other scheme (`git://`, `file://`), and a one-character hostpart is
+        // a Windows drive letter (`C:\repo`). Those are left alone.
+        if !hostpart.contains('/') && !path.starts_with("//") && hostpart.chars().count() > 1 {
+            let host = hostpart.rsplit('@').next().unwrap_or(hostpart);
+            return format!("https://{}/{}", host, path.trim_end_matches(".git"));
+        }
+    }
+    url.trim_end_matches(".git").to_string()
 }
 
 /// Substitute `{base}` and `{sha}` placeholders in `template`. Pure helper
@@ -810,11 +897,20 @@ pub fn apply_commit_url_template(template: &str, base: &str, sha: &str) -> Strin
 /// from a base URL like `https://host/user/repo`. Bitbucket uses `/commits/`
 /// (plural); everything else uses `/commit/`.
 pub fn default_template_for_base(base: &str) -> &'static str {
+    // Strip userinfo and port, as is_excluded_host does — otherwise
+    // `bitbucket.org:443` and `git@bitbucket.org` miss the check and get the
+    // wrong (singular) template.
     let host = base
         .split_once("://")
         .map(|(_, rest)| rest)
         .unwrap_or(base)
         .split('/')
+        .next()
+        .unwrap_or("")
+        .rsplit('@')
+        .next()
+        .unwrap_or("")
+        .split(':')
         .next()
         .unwrap_or("");
     if host_is_at_or_under(host, "bitbucket.org") {
@@ -862,20 +958,15 @@ fn prompt_for_remote(remotes: &[String], no_color: bool) -> Option<String> {
 }
 
 /// Convert git remote URL to web URL and generate PR/MR link
-fn generate_pr_url(remote: &str, base_branch: &str, pr_branch: &str, body: Option<&str>) -> Option<String> {
-    let remote = remote.trim().trim_end_matches(".git");
-    
-    // Build base URL from SSH or HTTPS format
-    let base_url = if let Some(rest) = remote.strip_prefix("git@") {
-        // SSH format: git@host:user/repo
-        let colon_pos = rest.find(':')?;
-        let (host, path) = rest.split_at(colon_pos);
-        format!("https://{}/{}", host, &path[1..])
-    } else if remote.starts_with("https://") || remote.starts_with("http://") {
-        remote.to_string()
-    } else {
+pub(crate) fn generate_pr_url(remote: &str, base_branch: &str, pr_branch: &str, body: Option<&str>) -> Option<String> {
+    // Share the one normaliser: this used to keep a weaker private copy that
+    // passed an https remote through verbatim, so a CI remote's token was
+    // printed in the "Create PR at:" line, and that only knew the `git@` scp
+    // prefix — `ssh://` and deploy-key remotes fell through to None.
+    let base_url = remote_url_to_https(remote);
+    if !base_url.starts_with("https://") && !base_url.starts_with("http://") {
         return None;
-    };
+    }
     
     // Detect platform and generate URL (only for known platforms)
     if base_url.contains("gitlab") {
@@ -1115,6 +1206,10 @@ fn pull_and_push(
     base_cmd: &[String],
     repo: &RepoDefinition,
     git_quiet: bool,
+    // Separate from `git_quiet` (`quiet || limited_quiet`) on purpose:
+    // --limited-quiet only suppresses the directory listing, so it must not
+    // swallow the actionable pull-failure advice.
+    quiet: bool,
 ) -> bool {
     let mut push_failed = false;
     for (i, op) in [repo.pull, repo.push].iter().enumerate() {
@@ -1141,7 +1236,7 @@ fn pull_and_push(
                     // Pull failed — surface a suggested fix without blocking the push,
                     // since in many cases (leftover rebase state, no upstream changes)
                     // the push still goes through fine.
-                    diagnose_pull_failure(&stderr_text);
+                    diagnose_pull_failure(&stderr_text, quiet);
                 }
                 if i == 1 { push_failed = true; }
             }
@@ -1155,7 +1250,12 @@ fn pull_and_push(
 }
 
 /// Print an actionable suggested fix for a failed `git pull`.
-fn diagnose_pull_failure(stderr_text: &str) {
+fn diagnose_pull_failure(stderr_text: &str, quiet: bool) {
+    // Advice, not an error — the push usually still goes through. Under
+    // --quiet this fired on every transient pull failure in CI.
+    if quiet {
+        return;
+    }
     if stderr_text.contains("rebase-merge directory") {
         eprintln!("\nPull failed: leftover rebase-merge state from a previous interrupted rebase. Suggested fix:");
         eprintln!("    git status                  # check if a rebase is actually in progress");
@@ -1216,14 +1316,8 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
         if no_upstream {
             let branch = current_branch_name(base_cmd).unwrap_or_else(|| "<branch>".to_string());
             let head = get_head_short_hash(base_cmd).unwrap_or_else(|| "<sha>".to_string());
-            eprintln!("  Current branch '{}' has no upstream — your commit did NOT land on master.", branch);
-            eprintln!("  If you meant to commit to master (typical case):");
-            eprintln!("    git checkout master");
-            eprintln!("    git cherry-pick {}", head);
-            eprintln!("    git push");
-            eprintln!("    git branch -D {}        # delete the stray branch", branch);
-            eprintln!("  If '{}' really is a feature branch you want to publish:", branch);
-            eprintln!("    git push --set-upstream origin {}", branch);
+            eprintln!("  Current branch '{}' has no upstream — your commit was NOT published.", branch);
+            print_no_upstream_advice(base_cmd, &branch, &head, "  ");
         } else if has_conflict {
             eprintln!("  Merge conflict detected. To resolve:");
             eprintln!("    1. git status                  # see conflicted files");
@@ -1288,14 +1382,8 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
     if no_upstream {
         let branch = current_branch_name(base_cmd).unwrap_or_else(|| "<branch>".to_string());
         let head = get_head_short_hash(base_cmd).unwrap_or_else(|| "<sha>".to_string());
-        eprintln!("\nPush failed: branch '{}' has no upstream — your commit did NOT land on master.", branch);
-        eprintln!("If you meant to commit to master:");
-        eprintln!("    git checkout master");
-        eprintln!("    git cherry-pick {}", head);
-        eprintln!("    git push");
-        eprintln!("    git branch -D {}", branch);
-        eprintln!("If '{}' really is a feature branch you want to publish:", branch);
-        eprintln!("    git push --set-upstream origin {}", branch);
+        eprintln!("\nPush failed: branch '{}' has no upstream — your commit was NOT published.", branch);
+        print_no_upstream_advice(base_cmd, &branch, &head, "");
     } else {
         eprintln!("\nPush still failed (likely another concurrent commit). Suggested fix:");
         eprintln!("    git pull --rebase --autostash");
@@ -1389,7 +1477,7 @@ pub fn commit_changes(
             .arg(masked.as_ref())
             .status()?;
 
-        if pull_and_push(base_cmd, repo, git_quiet) {
+        if pull_and_push(base_cmd, repo, git_quiet, quiet) {
             if rebase_on_fail {
                 rebase_and_retry_push(base_cmd, repo, git_quiet, Some(masked.as_ref()), no_color, is_masked, commit_url_template);
             } else {
@@ -1517,7 +1605,7 @@ pub fn commit_changes(
                 io::stdout().flush().ok();
             }
 
-            if pull_and_push(base_cmd, repo, git_quiet) {
+            if pull_and_push(base_cmd, repo, git_quiet, quiet) {
                 if !quiet {
                     println!(); // finish the "Connecting" line
                 }

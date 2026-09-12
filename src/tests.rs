@@ -317,6 +317,15 @@ fn test_default_template_for_base() {
     assert_eq!(default_template_for_base("https://\u{65e5}\u{672c}\u{8a9e}.example.jp/foo/bar"), "{base}/commit/{sha}");
     // Host shorter than "bitbucket.org" but non-ASCII
     assert_eq!(default_template_for_base("https://\u{e4}.de/foo/bar"), "{base}/commit/{sha}");
+    // Port and userinfo must be stripped before the host check, as
+    // is_excluded_host does — otherwise these miss and get the wrong template.
+    assert_eq!(default_template_for_base("https://bitbucket.org:443/u/r"), "{base}/commits/{sha}");
+    assert_eq!(default_template_for_base("ssh://git@bitbucket.org/u/r"), "{base}/commits/{sha}");
+    assert_eq!(default_template_for_base("ssh://git@api.bitbucket.org:22/u/r"), "{base}/commits/{sha}");
+    // ...and stripping them must not turn a non-Bitbucket host into one.
+    assert_eq!(default_template_for_base("https://github.com:443/u/r"), "{base}/commit/{sha}");
+    assert_eq!(default_template_for_base("ssh://git@github.com/u/r"), "{base}/commit/{sha}");
+    assert_eq!(default_template_for_base("https://notbitbucket.org:443/u/r"), "{base}/commit/{sha}");
 }
 
 #[test]
@@ -479,6 +488,89 @@ fn test_is_version_line() {
     assert!(!is_version_line("! \u{65e5}\u{672c}\u{8a9e}\u{3067}\u{3059}"));
     assert!(!is_version_line("! \u{421}\u{43f}\u{438}\u{441}\u{43e}\u{43a}"));
     assert!(!is_version_line("! \u{1f600}\u{1f600}\u{1f600}"));
+}
+
+#[test]
+fn test_remote_url_to_https_forms() {
+    use crate::fop_git::remote_url_to_https as f;
+    // SCP form (already handled).
+    assert_eq!(f("git@github.com:u/r.git"), "https://github.com/u/r");
+    // ssh:// form was passed through untouched, so the printed commit URL was
+    // `ssh://git@host/u/r/commits/<sha>` — not a link.
+    assert_eq!(f("ssh://git@bitbucket.org/u/r.git"), "https://bitbucket.org/u/r");
+    assert_eq!(f("ssh://git@api.bitbucket.org:22/u/r"), "https://api.bitbucket.org/u/r");
+    // Credentials in an https remote must never reach the printed URL.
+    assert_eq!(f("https://x-access-token:SECRET@github.com/u/r.git"), "https://github.com/u/r");
+    assert_eq!(f("https://user@github.com/u/r"), "https://github.com/u/r");
+    // Plain https is unchanged apart from the .git suffix.
+    assert_eq!(f("https://github.com/u/r.git"), "https://github.com/u/r");
+    assert_eq!(f("https://github.com/u/r"), "https://github.com/u/r");
+    // http:// leaks the same credentials — a self-hosted host on plain http is
+    // exactly where an embedded CI token lives. The scheme is preserved.
+    assert_eq!(f("http://x-access-token:SECRET@gitea.internal/u/r.git"), "http://gitea.internal/u/r");
+    assert_eq!(f("http://gitea.internal/u/r"), "http://gitea.internal/u/r");
+    // A password may contain '@': splitting at the first one left a fragment of
+    // it behind and named a host that does not exist.
+    assert_eq!(f("https://user:p@ss@github.com/u/r"), "https://github.com/u/r");
+    // An '@' in the path is not userinfo.
+    assert_eq!(f("https://github.com/u/r@v2"), "https://github.com/u/r@v2");
+    // scp form with a deploy-key user, not just `git@`.
+    assert_eq!(f("deploy@github.com:u/r.git"), "https://github.com/u/r");
+    assert_eq!(f("github.com:u/r.git"), "https://github.com/u/r");
+    // A Windows drive letter is not a host.
+    assert_eq!(f("C:/repos/r"), "C:/repos/r");
+    // A bare local path is left alone.
+    assert_eq!(f("/srv/git/r.git"), "/srv/git/r");
+    // Schemes that are not ssh/http(s) are not scp form: generalising the scp
+    // branch past `git@` briefly turned these into `https://git///host/...`.
+    assert_eq!(f("git://host.example/u/r.git"), "git://host.example/u/r");
+    assert_eq!(f("file:///srv/git/r.git"), "file:///srv/git/r");
+    // git+ssh is an ssh remote and can carry userinfo, so it normalises.
+    assert_eq!(f("git+ssh://user:tok@host.example/u/r"), "https://host.example/u/r");
+    // A password may contain '/' too — base64-derived tokens routinely do —
+    // which made the authority appear to end before the userinfo did.
+    assert_eq!(f("https://user:a/b@gitea.internal/u/r"), "https://gitea.internal/u/r");
+    assert_eq!(f("https://x:a/b@c/d@gitea.internal/u/r.git"), "https://gitea.internal/u/r");
+    // An authority-only remote still has its userinfo stripped.
+    assert_eq!(f("https://user:tok@gitea.internal"), "https://gitea.internal");
+    // ...but a versioned path is not userinfo, even when it looks host-ish.
+    assert_eq!(f("https://github.com/u/r@v2"), "https://github.com/u/r@v2");
+}
+
+#[test]
+fn test_generate_pr_url_shares_the_normaliser() {
+    use crate::fop_git::generate_pr_url as f;
+    // A CI remote's token must not reach the printed "Create PR at:" line.
+    let url = f("https://x-access-token:SECRET@github.com/u/r.git", "main", "feat", None)
+        .expect("github remote should yield a PR url");
+    assert!(!url.contains("SECRET"), "token leaked into PR url: {}", url);
+    assert_eq!(url, "https://github.com/u/r/compare/main...feat?expand=1");
+    // Deploy-key and ssh:// remotes used to fall through to None.
+    assert_eq!(
+        f("deploy@github.com:u/r.git", "main", "feat", None).as_deref(),
+        Some("https://github.com/u/r/compare/main...feat?expand=1")
+    );
+    assert_eq!(
+        f("ssh://git@gitlab.com/u/r.git", "main", "feat", None).as_deref(),
+        Some("https://gitlab.com/u/r/-/merge_requests/new?merge_request[source_branch]=feat&merge_request[target_branch]=main")
+    );
+    // A scheme with no web equivalent still declines.
+    assert_eq!(f("git://host.example/u/r.git", "main", "feat", None), None);
+}
+
+#[test]
+fn test_mask_exempt_host_with_userinfo() {
+    // `git@github.com` is still github.com and must stay exempt — the host
+    // extractor stripped the port but not userinfo.
+    let msg = "A: https://git@github.com/easylist/easylist/issues/1";
+    assert_eq!(mask_urls_in_message(msg, 1, false), msg);
+    let msg2 = "A: https://github.com:443/easylist/easylist/issues/1";
+    assert_eq!(mask_urls_in_message(msg2, 1, false), msg2);
+    // A non-exempt host with userinfo is still masked.
+    assert_eq!(
+        mask_urls_in_message("A: https://git@example.com/x", 1, false),
+        "A: https://git@example[.]com/x"
+    );
 }
 
 #[test]
