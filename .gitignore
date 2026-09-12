@@ -1,5 +1,6 @@
 # Rust build output
 target/
+dist/
 
 # npm
 node_modules/
