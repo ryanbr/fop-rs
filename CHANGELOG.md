@@ -2,7 +2,7 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
-## [Unreleased]
+## [5.5.0] - 2026-09-13
 
 - Add `--ignore-line-minimum` (`.fopconfig`: `ignore-line-minimum`, also a per-file override) to keep rules shorter than three characters. They are dropped as `malformed rule (too short)` by default, which is right for truncation debris but deletes a short rule an author wrote on purpose. The flag lifts only the length floor: a line starting with `"`, `)`, `]` or `}` is still dropped as debris.
 - Move the `#@#` -> `#@?#` exception-separator promotion out of `--abp-convert` and into a new `--adguard-convert` (`.fopconfig`: `adguard-convert`), off by default. `#@?#` is AdGuard's spelling — uBO writes the same rule as plain `#@#` — so emitting it was never part of converting ABP selectors to uBO form, and it fired on rules that had nothing for `--abp-convert` to convert. `--abp-convert` alone no longer rewrites an exception separator; pass `--adguard-convert` (with or without it) to get the old behaviour. The `##` -> `#?#` hiding promotion moves with it, so `--abp-convert` now only renames ABP operators and never rewrites a separator.
