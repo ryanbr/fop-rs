@@ -181,7 +181,7 @@ fn is_bare_domain(line: &str) -> bool {
     count >= 2
         && (2..=24).contains(&last.len())
         && last.bytes().all(|b| b.is_ascii_alphabetic())
-        && !FILE_SUFFIXES.contains(&last.to_ascii_lowercase().as_str())
+        && !FILE_SUFFIXES.iter().any(|ext| ext.eq_ignore_ascii_case(last))
 }
 
 /// Why this rule looks wrong, or `None` if it looks fine.
