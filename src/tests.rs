@@ -1323,10 +1323,10 @@ fn test_check_rule_flags_bad_additions() {
         "unbalanced brackets in selector"
     );
     assert_eq!(f("example.com##)").unwrap().reason, "unbalanced brackets in selector");
-    assert_eq!(
-        f("example.com##.ad:has-text(x").unwrap().reason,
-        "unbalanced brackets in selector"
-    );
+    // Note the gap this leaves: `:has-text(` takes literal arguments, so an
+    // unterminated one cannot be told from a `)` that is part of the text.
+    assert!(f("example.com##.ad:has-text(x").is_none());
+    assert_eq!(f("example.com##.ad{color:red").unwrap().reason, "unbalanced brackets in selector");
     // Incomplete option lists.
     assert_eq!(f("||example.com$").unwrap().reason, "option marker with no options");
     assert_eq!(f("||example.com$domain=").unwrap().reason, "option with no value");
@@ -1365,5 +1365,39 @@ fn test_check_rule_leaves_valid_rules_alone() {
         "",
     ] {
         assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
+    }
+}
+
+#[test]
+fn test_check_rule_extra_shapes() {
+    use crate::fop_rules::check_rule as f;
+    // Braces balance like brackets -- AdGuard CSS injection relies on them.
+    assert_eq!(f("example.com#$#.ad { color: red").unwrap().reason, "unbalanced brackets in selector");
+    assert!(f("example.com#$#.ad { color: red; }").is_none());
+    // Domain lists.
+    assert_eq!(f(",example.com##.ad").unwrap().reason, "malformed domain list");
+    assert_eq!(f("a.com,,b.com##.ad").unwrap().reason, "malformed domain list");
+    assert_eq!(f("exa..mple.com##.ad").unwrap().reason, "malformed domain list");
+    assert!(f("a.com,~b.com,example.*##.ad").is_none());
+    // A regex domain keeps its dots and slashes.
+    assert!(f(r"/^ad\d+\.example\..*/##.ad").is_none());
+    // A selector cannot open on a combinator, but +js( is a scriptlet.
+    assert_eq!(f("example.com##> div").unwrap().reason, "selector starts with a combinator");
+    assert_eq!(f("example.com##+ div").unwrap().reason, "selector starts with a combinator");
+    assert!(f("example.com##+js(aopr, x)").is_none());
+    // Pipe-separated option values.
+    assert_eq!(f("||x.com^$domain=a.com|").unwrap().reason, "empty entry in option value");
+    assert_eq!(f("||x.com^$denyallow=|b.com").unwrap().reason, "empty entry in option value");
+    assert!(f("||x.com^$domain=a.com|~b.com").is_none());
+    // A regex option value keeps its pipes.
+    assert!(f("||x.com^$domain=/a|b/").is_none());
+    // Literal-argument constructs are exempt from balancing entirely.
+    for literal in [
+        "katestube.com##+js(nostif, '0x)",
+        "sunporno.com##+js(aeld, , ;})",
+        "t-online.de##^script:has-text(}(window);)",
+        "hdfull.*##+js(aeld, mousedown, !!{});)",
+    ] {
+        assert!(f(literal).is_none(), "{:?} flagged", literal);
     }
 }

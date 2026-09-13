@@ -38,13 +38,22 @@ fn split_cosmetic(line: &str) -> Option<(&str, &str, &str)> {
     None
 }
 
-/// Whether the selector's brackets balance.
+/// Constructs whose arguments are literal text, not CSS.
+///
+/// `+js(nostif, '0x)` and `:has-text(}(window);)` carry quotes, braces and
+/// parens that are ordinary characters -- balancing them flags valid rules, so
+/// a selector containing any of these is left unbalanced-checked.
+const LITERAL_ARG_CONSTRUCTS: [&str; 6] = [
+    "+js(", ":has-text(", ":contains(", ":matches-", ":xpath(", ":watch-attr(",
+];
+
+/// Whether the selector's brackets, parens and braces balance.
 ///
 /// Quote- and escape-aware, because `[href="("]` and `:has-text(/\)/)` both
 /// carry deliberately unbalanced characters inside a string or a regex.
 #[inline]
 fn brackets_balance(selector: &str) -> bool {
-    let (mut square, mut round) = (0i32, 0i32);
+    let (mut square, mut round, mut curly) = (0i32, 0i32, 0i32);
     let mut quote = 0u8;
     let mut escaped = false;
     for b in selector.bytes() {
@@ -61,15 +70,49 @@ fn brackets_balance(selector: &str) -> bool {
             b']' => square -= 1,
             b'(' => round += 1,
             b')' => round -= 1,
+            // AdGuard CSS injection (`#$#.ad { display: none; }`) and scriptlet
+            // bodies both carry braces, so they balance like the rest.
+            b'{' => curly += 1,
+            b'}' => curly -= 1,
             _ => {}
         }
         // A close before its open is already unbalanced; stop early.
-        if square < 0 || round < 0 {
+        if square < 0 || round < 0 || curly < 0 {
             return false;
         }
     }
-    square == 0 && round == 0 && quote == 0
+    square == 0 && round == 0 && curly == 0 && quote == 0
 }
+
+
+/// Whether a `,`-separated domain list is well formed.
+///
+/// Only the unarguable faults: an empty entry, or a doubled dot. A regex
+/// domain (`/^x\d+$/##.ad`) is left alone -- `..` is ordinary inside one.
+#[inline]
+fn domains_ok(domains: &str) -> bool {
+    if domains.is_empty() || domains.starts_with('/') {
+        return true;
+    }
+    domains.split(',').all(|d| {
+        let d = d.trim().trim_start_matches('~');
+        !d.is_empty() && !d.contains("..")
+    })
+}
+
+/// Whether a `|`-separated option value is well formed.
+///
+/// A regex value (`domain=/re|gex/`) keeps its pipes, so it is skipped.
+#[inline]
+fn pipe_values_ok(value: &str) -> bool {
+    if value.starts_with('/') {
+        return true;
+    }
+    value.split('|').all(|v| !v.trim().trim_start_matches('~').is_empty())
+}
+
+/// Options whose value is a `|`-separated list rather than free text.
+const PIPE_VALUED: [&str; 4] = ["domain", "denyallow", "from", "to"];
 
 /// Why this rule looks wrong, or `None` if it looks fine.
 ///
@@ -88,12 +131,22 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         return None;
     }
 
-    if let Some((_domains, sep, selector)) = split_cosmetic(line) {
+    if let Some((domains, sep, selector)) = split_cosmetic(line) {
         if selector.is_empty() {
             return Some(RuleProblem { reason: "separator with no selector", detail: sep });
         }
-        if !brackets_balance(selector) {
+        if !domains_ok(domains) {
+            return Some(RuleProblem { reason: "malformed domain list", detail: domains });
+        }
+        let literal_args = LITERAL_ARG_CONSTRUCTS.iter().any(|c| selector.contains(c));
+        if !literal_args && !brackets_balance(selector) {
             return Some(RuleProblem { reason: "unbalanced brackets in selector", detail: selector });
+        }
+        // A selector cannot open on a combinator. `+js(...)` is a scriptlet
+        // injection, not a sibling combinator, so it is exempt.
+        let first = selector.as_bytes()[0];
+        if first == b'>' || (first == b'+' && !selector.starts_with("+js(")) {
+            return Some(RuleProblem { reason: "selector starts with a combinator", detail: selector });
         }
         return None;
     }
@@ -120,6 +173,9 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
             // paths), so an unknown *key* is the signal, not an unknown option.
             if !crate::is_known_option(stripped) && !crate::is_known_option(key) {
                 return Some(RuleProblem { reason: "unknown option", detail: option });
+            }
+            if PIPE_VALUED.contains(&key) && !pipe_values_ok(value) {
+                return Some(RuleProblem { reason: "empty entry in option value", detail: option });
             }
         } else if !crate::is_known_option(stripped) {
             return Some(RuleProblem { reason: "unknown option", detail: option });
