@@ -1434,3 +1434,29 @@ fn test_suggest_option_catches_any_misspelling() {
     assert!(crate::fop_rules::check_rule("||example.com^$third-party,domain=a.com").is_none());
 }
 
+
+#[test]
+fn test_bare_domain_is_flagged_but_never_removed() {
+    use crate::fop_rules::check_rule as f;
+    for bare in ["domain.com", "anotherdomain.co.nz", "sub.example.org", "xn--80ak6aa92e.com", "a-b.io"] {
+        let p = f(bare).expect(bare);
+        assert_eq!(p.reason, "bare domain, did you mean ||host^ ?");
+        // Legal syntax, and correct in a plain domain-list file, so advice
+        // only -- --remove-bad-rules must leave it alone.
+        assert!(!p.removable, "{} must not be auto-removed", bare);
+    }
+    // Anything carrying filter syntax is the author being explicit.
+    for ok in [
+        "||domain.com^", "|http://domain.com", "domain.com^", "domain.com/path",
+        "@@domain.com", "domain.com$third-party", "domain.com##.ad",
+        // Substring patterns that merely look like hostnames.
+        ".cookielaw.js", "_chartbeat.js", "adserver.gif", ".PrivacyDataNotice.",
+        "ads.php", "track.json",
+        // Not hostname-shaped.
+        "nodots", "-lead.com", "trail-.com", "a..b.com", "x.toolongtobeatldxxxxxxxxxxxxxx",
+        // Hosts-file entries carry a space.
+        "127.0.0.1 domain.com",
+    ] {
+        assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
+    }
+}

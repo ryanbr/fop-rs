@@ -1364,14 +1364,14 @@ fn get_git_changed_files(location: &Path) -> Option<ahash::AHashSet<PathBuf>> {
 /// deleting: the diff was read moments ago, but if the file moved underneath
 /// us it is better to skip the line than to delete the wrong one.
 fn remove_flagged_lines(
-    problems: &[(&fop_typos::Addition, fop_rules::RuleProblem)],
+    targets: &[&fop_typos::Addition],
     base_cmd: &[String],
 ) -> io::Result<usize> {
     let root = fop_git::repo_root(base_cmd).ok_or_else(|| {
         io::Error::new(io::ErrorKind::NotFound, "could not resolve the repository root")
     })?;
     let mut by_file: HashMap<&str, Vec<(usize, &str)>> = HashMap::new();
-    for (add, _) in problems {
+    for add in targets {
         by_file
             .entry(add.file.as_str())
             .or_default()
@@ -1787,8 +1787,20 @@ fn process_location(
                         fop_rules::report_addition_problems(&problems, no_color);
                         println!("\nFound {} questionable rule(s) in added lines.", problems.len());
                         if remove_bad_rules {
-                            match remove_flagged_lines(&problems, &base_cmd) {
-                                Ok(n) => println!("Removed {} line(s). Re-stage before committing.", n),
+                            // Advice is never deleted -- only outright defects.
+                            let removable: Vec<&fop_typos::Addition> = problems
+                                .iter()
+                                .filter(|(_, p)| p.removable)
+                                .map(|(add, _)| *add)
+                                .collect();
+                            match remove_flagged_lines(&removable, &base_cmd) {
+                                Ok(n) => {
+                                    println!("Removed {} line(s). Re-stage before committing.", n);
+                                    let kept = problems.len() - removable.len();
+                                    if kept > 0 {
+                                        println!("{} left in place as advice rather than a defect.", kept);
+                                    }
+                                }
                                 Err(e) => eprintln!("Could not remove flagged lines: {}", e),
                             }
                             return Ok(());

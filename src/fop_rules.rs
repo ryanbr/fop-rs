@@ -15,12 +15,18 @@ pub struct RuleProblem<'a> {
     pub detail: &'a str,
     /// What the fragment was probably meant to be.
     pub suggestion: Option<&'static str>,
+    /// Whether --remove-bad-rules may delete this line.
+    ///
+    /// False for advice rather than a defect: a bare domain is legal syntax,
+    /// and in a plain domain-list file it is exactly what belongs there, so
+    /// deleting one would destroy a deliberate entry.
+    pub removable: bool,
 }
 
 impl<'a> RuleProblem<'a> {
     #[inline]
     fn new(reason: &'static str, detail: &'a str) -> Self {
-        Self { reason, detail, suggestion: None }
+        Self { reason, detail, suggestion: None, removable: true }
     }
 }
 
@@ -124,6 +130,60 @@ fn pipe_values_ok(value: &str) -> bool {
 /// Options whose value is a `|`-separated list rather than free text.
 const PIPE_VALUED: [&str; 4] = ["domain", "denyallow", "from", "to"];
 
+/// Final labels that mark a substring pattern for a file, not a domain.
+///
+/// `_chartbeat.js` and `.cookielaw.js` are ordinary substring rules; without
+/// this they read as `label.label` and look like hostnames.
+const FILE_SUFFIXES: [&str; 24] = [
+    "js", "css", "gif", "png", "jpg", "jpeg", "svg", "webp", "ico", "php",
+    "html", "htm", "asp", "aspx", "jsp", "cgi", "json", "xml", "swf", "woff",
+    "woff2", "mp4", "txt", "wasm",
+];
+
+/// Whether `line` is a bare hostname with no filter syntax around it.
+///
+/// Such a rule is legal -- it matches the text anywhere in a URL -- but it is
+/// almost always meant to be `||host^`, and as written it also matches
+/// `notdomain.com.evil.test` and any URL merely mentioning the name. Genuine
+/// filter lists effectively never carry one: across 608k lines of EasyList and
+/// the region lists, every instance was in a plain domain-list file.
+#[inline]
+fn is_bare_domain(line: &str) -> bool {
+    // Any filter syntax at all means the author knew what they were writing.
+    if line
+        .bytes()
+        .any(|b| matches!(b, b'|' | b'/' | b'^' | b'*' | b'=' | b':' | b' ' | b'\t' | b'?' | b'&' | b'@' | b'~' | b','))
+    {
+        return false;
+    }
+    // Leading or trailing dots mark a substring pattern (`.cookielaw.js`).
+    if line.starts_with('.') || line.ends_with('.') {
+        return false;
+    }
+    let mut labels = line.split('.').peekable();
+    let mut count = 0;
+    let mut last = "";
+    while let Some(label) = labels.next() {
+        // A label is alphanumeric with inner hyphens; `_chartbeat` is not one.
+        if label.is_empty()
+            || label.starts_with('-')
+            || label.ends_with('-')
+            || !label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        {
+            return false;
+        }
+        count += 1;
+        if labels.peek().is_none() {
+            last = label;
+        }
+    }
+    // A TLD is alphabetic; a trailing `.js` or `.gif` is a filename.
+    count >= 2
+        && (2..=24).contains(&last.len())
+        && last.bytes().all(|b| b.is_ascii_alphabetic())
+        && !FILE_SUFFIXES.contains(&last.to_ascii_lowercase().as_str())
+}
+
 /// Why this rule looks wrong, or `None` if it looks fine.
 ///
 /// Ordered cheapest-first: a byte-level reject for comments and for lines
@@ -138,7 +198,13 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         _ => {}
     }
     if !line.bytes().any(|b| b == b'#' || b == b'$') {
-        return None;
+        // No separator and no options: the only thing left worth saying is
+        // that a bare hostname was probably meant to be an anchored rule.
+        // No detail: the line itself is already printed beside the reason.
+        return is_bare_domain(line).then(|| RuleProblem {
+            removable: false,
+            ..RuleProblem::new("bare domain, did you mean ||host^ ?", "")
+        });
     }
 
     if let Some((domains, sep, selector)) = split_cosmetic(line) {
