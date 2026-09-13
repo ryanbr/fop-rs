@@ -1021,7 +1021,16 @@ fn normalize_has_text_arg(arg: &str) -> String {
 /// Parse a selector to extract base selector and :has-text() argument
 fn parse_has_text_selector(selector: &str) -> Option<(String, String, String)> {
     let caps = HAS_TEXT_PATTERN.captures(selector)?;
-    Some((caps[1].to_string(), caps[2].to_string(), caps[3].to_string()))
+    let (base, pseudo, arg) = (&caps[1], &caps[2], &caps[3]);
+    // The pattern is lazy on the left, so a nested `:has(span:has-text(x))`
+    // splits as base `…:has(span` and arg `x)` -- the base loses a paren and
+    // the argument gains one. Rebuilding from that yields a rule one `)` short
+    // whose regex looks for a literal bracket. Only merge when the split is
+    // clean on both sides.
+    if !crate::fop_rules::brackets_balance(base) || !crate::fop_rules::brackets_balance(arg) {
+        return None;
+    }
+    Some((base.to_string(), pseudo.to_string(), arg.to_string()))
 }
 
 /// Merge multiple :has-text() arguments into a single regex
@@ -1035,44 +1044,81 @@ fn merge_has_text_args(args: &[String]) -> String {
         return args[0].clone();
     }
 
-    // Multiple rules - combine into regex    
-   let combined = args.iter()
-        .map(|a| normalize_has_text_arg(a))
-        .collect::<Vec<_>>()
-        .join("|");
-    
-    format!("/{}/", combined)
+    // Multiple rules - combine into one regex. Alternatives are deduplicated:
+    // merging `/A|B/` with `A` and `B`, which is what a part-merged group looks
+    // like on the next run, would otherwise grow `/A|B|A|B/` every time.
+    let mut seen: Vec<String> = Vec::with_capacity(args.len());
+    for arg in args {
+        for alt in top_level_alternatives(&normalize_has_text_arg(arg)) {
+            if !seen.iter().any(|s| s == &alt) {
+                seen.push(alt);
+            }
+        }
+    }
+    format!("/{}/", seen.join("|"))
+}
+
+/// Split a regex body on its top-level `|`.
+///
+/// A `|` inside a group or a character class is part of one alternative, so
+/// `(a|b)c` stays whole rather than becoming `(a` and `b)c`.
+fn top_level_alternatives(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let (mut depth, mut class, mut escaped, mut start) = (0i32, false, false, 0usize);
+    for (i, b) in body.bytes().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match b {
+            b'\\' => escaped = true,
+            b'[' if !class => class = true,
+            b']' if class => class = false,
+            b'(' if !class => depth += 1,
+            b')' if !class => depth -= 1,
+            b'|' if !class && depth == 0 => {
+                out.push(body[start..i].to_string());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(body[start..].to_string());
+    out.retain(|a| !a.is_empty());
+    out
 }
 
 /// Combine element rules with same domain and base selector but different :has-text() args
 pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
     let capacity = lines.len();
-    let mut groups: AHashMap<(String, String, String), (usize, Vec<String>)> = AHashMap::with_capacity(capacity / 4);
+    // (domains, separator, base selector, pseudo-class) -> (position, args)
+    type HasTextKey = (String, String, String, String);
+    let mut groups: AHashMap<HasTextKey, (usize, Vec<String>)> =
+        AHashMap::with_capacity(capacity / 4);
     let mut order: Vec<(usize, String)> = Vec::with_capacity(capacity);
     let mut idx = 0;
     
     for line in lines {
-        // Skip non-standard separators (#?#, #@#, #$#, etc.) and non-element rules
-        if line.starts_with('!') 
-            || line.starts_with('[') 
-            || !line.contains("##") 
-        {
-
-            order.push((idx, line));
-            idx += 1;
-            continue;
-        }
-        
-        let (domains, selector) = if let Some(pos) = line.find("##") {
-            (&line[..pos], &line[pos+2..])
-        } else {
+        // `#$#`/`#%#` inject CSS and JavaScript, where :has-text() means
+        // nothing; the rest carry selectors and merge alike. Each separator
+        // groups separately -- a hiding rule and an exception must never be
+        // folded together.
+        const MERGEABLE: [&str; 4] = ["#@?#", "#@#", "#?#", "##"];
+        let split = (!line.starts_with('!') && !line.starts_with('['))
+            .then(|| {
+                MERGEABLE.iter().find_map(|sep| {
+                    line.find(sep).map(|pos| (&line[..pos], *sep, &line[pos + sep.len()..]))
+                })
+            })
+            .flatten();
+        let Some((domains, separator, selector)) = split else {
             order.push((idx, line));
             idx += 1;
             continue;
         };
-        
+
         if let Some((base, pseudo, arg)) = parse_has_text_selector(selector) {
-            let key = (domains.to_string(), base, pseudo);
+            let key = (domains.to_string(), separator.to_string(), base, pseudo);
             let entry = groups.entry(key).or_insert_with(|| (idx, Vec::new()));
             entry.1.push(arg);
             // Only increment idx for first occurrence of this group
@@ -1086,27 +1132,20 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
     }
     
     // Add merged has-text rules with their original position
-    for ((domains, base, pseudo), (pos, args)) in groups {
+    for ((domains, separator, base, pseudo), (pos, args)) in groups {
         // Only track if multiple rules were merged
         let was_merged = args.len() > 1;
                
         let merged_arg = merge_has_text_args(&args);
-        let merged_rule = if domains.is_empty() {
-            format!("##{}:{}({})", base, pseudo, merged_arg)
-        } else {
-            format!("{}##{}:{}({})", domains, base, pseudo, merged_arg)
-        };
+        let merged_rule = format!("{}{}{}:{}({})", domains, separator, base, pseudo, merged_arg);
         
         // Track merge
         if was_merged {
             with_tracked_changes(|changes| {
-                let originals: Vec<String> = args.iter().map(|arg| {
-                    if domains.is_empty() {
-                        format!("##{}:{}({})", base, pseudo, arg)
-                    } else {
-                        format!("{}##{}:{}({})", domains, base, pseudo, arg)
-                    }
-                }).collect();
+                let originals: Vec<String> = args
+                    .iter()
+                    .map(|arg| format!("{}{}{}:{}({})", domains, separator, base, pseudo, arg))
+                    .collect();
                 changes.has_text_merged.push((originals, merged_rule.clone()));
             });
         }

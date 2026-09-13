@@ -68,7 +68,7 @@ const LITERAL_ARG_CONSTRUCTS: [&str; 6] = [
 /// Quote- and escape-aware, because `[href="("]` and `:has-text(/\)/)` both
 /// carry deliberately unbalanced characters inside a string or a regex.
 #[inline]
-fn brackets_balance(selector: &str) -> bool {
+pub(crate) fn brackets_balance(selector: &str) -> bool {
     let (mut square, mut round, mut curly) = (0i32, 0i32, 0i32);
     let mut quote = 0u8;
     let mut escaped = false;

@@ -1516,3 +1516,57 @@ fn test_suggest_option_is_deterministic() {
         assert_eq!(crate::suggest_option("beacom"), crate::suggest_option("beacom"));
     }
 }
+
+#[test]
+fn test_has_text_merges_across_separators_and_dedups() {
+    use crate::fop_sort::combine_has_text_rules as c;
+    // The case this was written for: a part-merged group, where one rule is
+    // already the regex and the others are the plain texts it covers.
+    for sep in ["##", "#@#", "#?#", "#@?#"] {
+        let base = format!(r#"bol.com{}[data-bltgi*="ProductList_"]"#, sep);
+        let got = c(vec![
+            format!("{}:has-text(/Gesponsord|Sponsorisé/)", base),
+            format!("{}:has-text(Sponsorisé)", base),
+            format!("{}:has-text(Gesponsord)", base),
+        ]);
+        assert_eq!(got, vec![format!("{}:has-text(/Gesponsord|Sponsorisé/)", base)], "{}", sep);
+    }
+    // Merging is idempotent now: running it again must not grow the regex.
+    let once = c(vec![
+        "a.com##.x:has-text(A)".into(),
+        "a.com##.x:has-text(B)".into(),
+    ]);
+    assert_eq!(once, vec!["a.com##.x:has-text(/A|B/)".to_string()]);
+    assert_eq!(c(once.clone()), once);
+
+    // A hiding rule and an exception are never folded together.
+    let mixed = c(vec![
+        "a.com##.x:has-text(A)".into(),
+        "a.com#@#.x:has-text(B)".into(),
+    ]);
+    assert_eq!(mixed.len(), 2);
+
+    // A `|` inside a group belongs to its alternative, not to the split.
+    let grouped = c(vec![
+        "a.com##.x:has-text(/(a|b)c/)".into(),
+        "a.com##.x:has-text(d)".into(),
+    ]);
+    assert_eq!(grouped, vec!["a.com##.x:has-text(/(a|b)c|d/)".to_string()]);
+
+    // A nested `:has(span:has-text(x))` splits badly -- the pattern is lazy, so
+    // the base keeps an unclosed `(` and the argument an extra `)`. Merging on
+    // that split produced a rule one bracket short whose regex hunted for a
+    // literal `)`; such a group is left alone instead.
+    let nested = vec![
+        r#"instagram.com#?#div[style="x"]:has(span:has-text(Paid partnership with ))"#.to_string(),
+        r#"instagram.com#?#div[style="x"]:has(span:has-text(Paid partnership))"#.to_string(),
+    ];
+    assert_eq!(c(nested.clone()), nested);
+
+    // CSS and JS injection carry no selector to merge.
+    let inject = c(vec![
+        "a.com#$#.x:has-text(A)".into(),
+        "a.com#$#.x:has-text(B)".into(),
+    ]);
+    assert_eq!(inject.len(), 2);
+}
