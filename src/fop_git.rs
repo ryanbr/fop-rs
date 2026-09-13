@@ -1016,16 +1016,37 @@ pub fn repo_root(base_cmd: &[String]) -> Option<std::path::PathBuf> {
     (!root.is_empty()).then(|| std::path::PathBuf::from(root))
 }
 
-pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addition>> {
-    use crate::fop_typos::Addition;
-
+/// Added lines in the diff against `base`, or against the working tree when
+/// `base` is `None`.
+///
+/// CI needs the former: by then the work is committed, so a working-tree diff
+/// is empty and nothing would be checked at all.
+pub fn get_added_lines_against(
+    base_cmd: &[String],
+    base: Option<&str>,
+) -> Option<Vec<crate::fop_typos::Addition>> {
+    let mut args = vec!["diff", "--no-color", "-U0"];
+    if let Some(base) = base {
+        args.push(base);
+    }
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
-        .args(["diff", "--no-color", "-U0"])
+        .args(&args)
         .output()
         .ok()?;
+    Some(parse_added_lines(&String::from_utf8(output.stdout).ok()?))
+}
 
-    let diff = String::from_utf8(output.stdout).ok()?;
+/// Added lines in the working tree, as `--fix-typos-on-add` sees them.
+#[inline]
+pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addition>> {
+    get_added_lines_against(base_cmd, None)
+}
+
+/// Parse `git diff -U0` output into the lines it adds.
+fn parse_added_lines(diff: &str) -> Vec<crate::fop_typos::Addition> {
+    use crate::fop_typos::Addition;
+
     let mut added = Vec::new();
     let mut current_file = String::new();
     let mut line_num: usize = 0;
@@ -1058,8 +1079,7 @@ pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addi
             // "\ No newline at end of file" marker; does not advance line numbers
         }
     }
-
-    Some(added)
+    added
 }
 
 /// Get the default branch name (main, master, etc.) - internal use

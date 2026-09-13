@@ -1357,6 +1357,31 @@ fn get_git_changed_files(location: &Path) -> Option<ahash::AHashSet<PathBuf>> {
     Some(files)
 }
 
+/// Which commit a CI run should diff against.
+///
+/// `origin/master` on a pull request. When HEAD already matches it -- a push
+/// to the branch itself -- there is nothing between them, so the last commit
+/// is what arrived.
+fn ci_diff_base(base_cmd: &[String]) -> String {
+    let same_as_origin = std::process::Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["diff", "--quiet", "HEAD", "origin/master"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if same_as_origin { "HEAD~1".to_string() } else { "origin/master".to_string() }
+}
+
+/// `git -C <location>`, so a CI audit inspects the repository it was pointed
+/// at rather than whatever directory fop was launched from.
+fn ci_git_cmd(git_binary: Option<&str>, location: &Path) -> Vec<String> {
+    vec![
+        git_binary.unwrap_or("git").to_string(),
+        "-C".to_string(),
+        location.display().to_string(),
+    ]
+}
+
 /// Delete the flagged lines from their files.
 ///
 /// Grouped per file and applied highest line number first, so removing one
@@ -2130,18 +2155,53 @@ fn main() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     // CI mode: Check diff for banned domains
+    // CI rule audit: the same checks --check-rules-on-add runs locally, but
+    // against the committed diff and ending in an exit code rather than a
+    // prompt. Defects fail the build; advice is printed and does not.
+    if args.ci && args.check_rules_on_add {
+        let base_cmd = ci_git_cmd(args.git_binary.as_deref(), &locations[0]);
+        let base = ci_diff_base(&base_cmd);
+        let additions = fop_git::get_added_lines_against(&base_cmd, Some(&base)).unwrap_or_default();
+        let additions: Vec<_> = additions
+            .into_iter()
+            .filter(|a| !args.ignore_files.iter().any(|f| a.file.ends_with(f)))
+            .collect();
+
+        let problems = fop_rules::check_additions(&additions);
+        let (defects, advice): (Vec<_>, Vec<_>) =
+            problems.iter().partition(|(_, p)| p.removable);
+
+        for (add, p) in &advice {
+            println!("Notice: {}:{}: {} ({})", add.file, add.line_num, add.content, p.reason);
+        }
+        if !defects.is_empty() {
+            eprintln!("\n{} bad rule(s) found:", defects.len());
+            for (add, p) in &defects {
+                let mut why = p.reason.to_string();
+                if !p.detail.is_empty() {
+                    why = format!("{}: {}", why, p.detail);
+                }
+                if let Some(s) = p.suggestion {
+                    why.push_str(&format!(" -- did you mean {}?", s));
+                }
+                eprintln!("  {}:{}: {} ({})", add.file, add.line_num, add.content, why);
+            }
+            std::process::exit(1);
+        }
+    }
+
     if let Some(banned) = args.ci.then_some(()).and(banned_domains.as_ref()) {
         let mut found: Vec<(String, String)> = Vec::new();
         let mut current_file = String::new();
 
-        let base = if std::process::Command::new("git")
-            .args(["diff", "--quiet", "HEAD", "origin/master"])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-        { "HEAD~1" } else { "origin/master" };
+        let base_cmd = ci_git_cmd(args.git_binary.as_deref(), &locations[0]);
+        let base = ci_diff_base(&base_cmd);
 
-        if let Ok(output) = std::process::Command::new("git").args(["diff", base, "--unified=0"]).output() {
+        if let Ok(output) = std::process::Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(["diff", &base, "--unified=0"])
+            .output()
+        {
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 if let Some(file) = line.strip_prefix("+++ b/") {
                     current_file = file.to_string();
