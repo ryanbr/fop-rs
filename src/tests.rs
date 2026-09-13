@@ -1433,3 +1433,4 @@ fn test_suggest_option_catches_any_misspelling() {
     // ...and a rule whose options are all known carries none.
     assert!(crate::fop_rules::check_rule("||example.com^$third-party,domain=a.com").is_none());
 }
+

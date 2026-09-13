@@ -7,6 +7,7 @@
 
 use crate::fop_typos::Addition;
 
+
 /// What is wrong with a rule, and the fragment that proves it.
 pub struct RuleProblem<'a> {
     pub reason: &'static str,
@@ -147,7 +148,12 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         if !domains_ok(domains) {
             return Some(RuleProblem::new("malformed domain list", domains));
         }
-        let literal_args = LITERAL_ARG_CONSTRUCTS.iter().any(|c| selector.contains(c));
+        // Every literal-argument construct contains a `(`, and a selector with
+        // no `(` cannot be unbalanced in one either -- so one byte search gates
+        // both the six substring scans and the balance walk.
+        let has_paren = selector.as_bytes().contains(&b'(');
+        let literal_args =
+            has_paren && LITERAL_ARG_CONSTRUCTS.iter().any(|c| selector.contains(c));
         if !literal_args && !brackets_balance(selector) {
             return Some(RuleProblem::new("unbalanced brackets in selector", selector));
         }

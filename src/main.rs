@@ -1178,21 +1178,24 @@ pub(crate) static KNOWN_OPTION_PREFIXES: LazyLock<HashSet<&'static str>> = LazyL
 /// for one. Rows are bailed out of as soon as every cell exceeds `max`, so a
 /// distant candidate costs a fraction of the full computation.
 fn edit_distance_within(a: &str, b: &str, max: usize) -> Option<usize> {
+    // Rows are u8: no distance here can exceed CAP, and the narrower rows mean
+    // an eighth of the stack traffic and a single cache line per row.
     const CAP: usize = 48;
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() >= CAP || b.len() >= CAP || a.len().abs_diff(b.len()) > max {
         return None;
     }
-    let mut prev = [0usize; CAP];
-    let mut curr = [0usize; CAP];
+    let max = max as u8;
+    let mut prev = [0u8; CAP];
+    let mut curr = [0u8; CAP];
     for (j, slot) in prev.iter_mut().enumerate().take(b.len() + 1) {
-        *slot = j;
+        *slot = j as u8;
     }
     for i in 1..=a.len() {
-        curr[0] = i;
-        let mut row_best = i;
+        curr[0] = i as u8;
+        let mut row_best = i as u8;
         for j in 1..=b.len() {
-            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let cost = u8::from(a[i - 1] != b[j - 1]);
             curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
             row_best = row_best.min(curr[j]);
         }
@@ -1201,7 +1204,7 @@ fn edit_distance_within(a: &str, b: &str, max: usize) -> Option<usize> {
         }
         prev[..=b.len()].copy_from_slice(&curr[..=b.len()]);
     }
-    (prev[b.len()] <= max).then_some(prev[b.len()])
+    (prev[b.len()] <= max).then_some(prev[b.len()] as usize)
 }
 
 /// The known option `unknown` was most likely meant to be.
