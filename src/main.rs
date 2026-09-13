@@ -21,6 +21,7 @@ const MAX_WORKERS: usize = 8;
 mod fop_git;
 mod fop_checksum;
 mod fop_sort;
+mod fop_rules;
 mod fop_typos;
 mod fop_datestamp;
 
@@ -191,6 +192,10 @@ struct Args {
     auto_banned_remove: bool,
     /// Check typos in git additions before commit
     fix_typos_on_add: bool,
+    /// Check newly added lines for rules that cannot work
+    check_rules_on_add: bool,
+    /// Delete the flagged lines instead of only reporting them
+    remove_bad_rules: bool,
     /// Users allowed to push directly (bypass create-pr)
     direct_push_users: Vec<String>,
     /// Auto-fix without prompting (use with --fix-typos or --fix-typos-on-add)
@@ -494,6 +499,8 @@ impl Args {
             fix_typos: parse_bool(&config, "fix-typos", false),
             ignore_line_minimum: parse_bool(&config, "ignore-line-minimum", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
+            check_rules_on_add: parse_bool(&config, "check-rules-on-add", false),
+            remove_bad_rules: parse_bool(&config, "remove-bad-rules", false),
             direct_push_users: config.get("direct-push-users")
                 .map(|s| s.split(',').map(|u| u.trim().to_lowercase()).collect())
                 .unwrap_or_default(),
@@ -664,6 +671,13 @@ impl Args {
                 "--fix-typos" => args.fix_typos = true,
                 "--ignore-line-minimum" => args.ignore_line_minimum = true,
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
+                "--check-rules-on-add" => args.check_rules_on_add = true,
+                // Removing implies checking: the flag is useless alone, and
+                // requiring both would be a trap that silently does nothing.
+                "--remove-bad-rules" => {
+                    args.remove_bad_rules = true;
+                    args.check_rules_on_add = true;
+                }
                 "--auto-fix" => args.auto_fix = true,
                 _ if arg.starts_with("--add-timestamp=") => {
                     args.add_timestamp = arg.trim_start_matches("--add-timestamp=")
@@ -813,6 +827,8 @@ impl Args {
         println!("        --git-pr-branch=NAME   Base branch for PR (default: main/master)");
         println!("        --fix-typos      Fix cosmetic rule typos in all files");
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
+        println!("        --check-rules-on-add  Check git additions for rules that cannot work");
+        println!("        --remove-bad-rules    Delete those lines instead of reporting them");
         println!("        --ignore-line-minimum  Keep rules under 3 chars instead of dropping them");
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("    -q, --quiet                Suppress most output (for CI)");
@@ -1138,6 +1154,34 @@ pub(crate) static KNOWN_OPTIONS: LazyLock<HashSet<&'static str>> = LazyLock::new
     .collect()
 });
 
+/// Option keys that take a `=value`. Kept separate from `KNOWN_OPTIONS`, whose
+/// entries are matched whole: `csp` is a valid bare option *and* a valid
+/// prefix, so the two sets deliberately overlap.
+pub(crate) static KNOWN_OPTION_PREFIXES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    [
+        "addheader", "app", "cookie", "csp", "denyallow", "domain", "from",
+        "header", "hls", "ipaddress", "jsonprune", "method", "permissions",
+        "reason", "redirect", "redirect-rule", "referrerpolicy", "removeheader",
+        "removeparam", "replace", "responseheader", "rewrite", "sitekey",
+        "stealth", "tag", "to", "uritransform", "urlskip", "urltransform",
+        "xmlprune",
+    ]
+    .into_iter()
+    .collect()
+});
+
+/// Whether `stripped` (a single option, `~` already removed) is one FOP knows.
+///
+/// One hash lookup for the whole-word forms and one more for the `key=value`
+/// forms, rather than walking a chain of `starts_with` per option.
+#[inline]
+pub(crate) fn is_known_option(stripped: &str) -> bool {
+    KNOWN_OPTIONS.contains(stripped)
+        || stripped
+            .split_once('=')
+            .is_some_and(|(key, _)| KNOWN_OPTION_PREFIXES.contains(key))
+}
+
 /// uBO to ABP option conversions
 pub(crate) static UBO_CONVERSIONS: LazyLock<AHashMap<&'static str, &'static str>> =
     LazyLock::new(|| {
@@ -1258,6 +1302,54 @@ fn get_git_changed_files(location: &Path) -> Option<ahash::AHashSet<PathBuf>> {
     Some(files)
 }
 
+/// Delete the flagged lines from their files.
+///
+/// Grouped per file and applied highest line number first, so removing one
+/// line cannot shift the position of the next. The content is compared before
+/// deleting: the diff was read moments ago, but if the file moved underneath
+/// us it is better to skip the line than to delete the wrong one.
+fn remove_flagged_lines(
+    problems: &[(&fop_typos::Addition, fop_rules::RuleProblem)],
+    base_cmd: &[String],
+) -> io::Result<usize> {
+    let root = fop_git::repo_root(base_cmd).ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotFound, "could not resolve the repository root")
+    })?;
+    let mut by_file: HashMap<&str, Vec<(usize, &str)>> = HashMap::new();
+    for (add, _) in problems {
+        by_file
+            .entry(add.file.as_str())
+            .or_default()
+            .push((add.line_num, add.content.as_str()));
+    }
+
+    let mut removed = 0;
+    for (file, mut targets) in by_file {
+        targets.sort_unstable_by_key(|&(line_num, _)| std::cmp::Reverse(line_num));
+        let path = root.join(file);
+        let content = fs::read_to_string(&path)?;
+        let mut lines: Vec<&str> = content.lines().collect();
+        for (line_num, expected) in targets {
+            match line_num.checked_sub(1).and_then(|i| lines.get(i)) {
+                Some(actual) if actual.trim() == expected.trim() => {
+                    lines.remove(line_num - 1);
+                    removed += 1;
+                }
+                _ => eprintln!(
+                    "Skipped {}:{} — the line no longer matches what was flagged.",
+                    file, line_num
+                ),
+            }
+        }
+        let mut out = lines.join("\n");
+        if content.ends_with('\n') {
+            out.push('\n');
+        }
+        fs::write(&path, out)?;
+    }
+    Ok(removed)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn process_location(
     location: &Path,
@@ -1280,6 +1372,8 @@ fn process_location(
     banned_list_file: Option<&str>,
     fix_typos: bool,
     fix_typos_on_add: bool,
+    check_rules_on_add: bool,
+    remove_bad_rules: bool,
     auto_fix: bool,
     only_sort_changed: bool,
     rebase_on_fail: bool,
@@ -1602,7 +1696,7 @@ fn process_location(
 
             // Check for typos in added lines
             // Get added lines once for both typo and banned domain checks
-            let additions = if fix_typos_on_add || banned_domains.as_ref().is_some_and(|b| !b.is_empty()) {
+            let additions = if fix_typos_on_add || check_rules_on_add || banned_domains.as_ref().is_some_and(|b| !b.is_empty()) {
                 get_added_lines(&base_cmd)
             } else {
                 None
@@ -1625,6 +1719,32 @@ fn process_location(
                             }
                         } else {
                             println!("Auto-fix enabled, continuing...");
+                        }
+                    }
+                }
+            }
+
+            // Check newly added lines for rules that cannot work
+            if check_rules_on_add {
+                if let Some(ref additions) = additions {
+                    let problems = fop_rules::check_additions(additions);
+                    if !problems.is_empty() {
+                        fop_rules::report_addition_problems(&problems, no_color);
+                        println!("\nFound {} questionable rule(s) in added lines.", problems.len());
+                        if remove_bad_rules {
+                            match remove_flagged_lines(&problems, &base_cmd) {
+                                Ok(n) => println!("Removed {} line(s). Re-stage before committing.", n),
+                                Err(e) => eprintln!("Could not remove flagged lines: {}", e),
+                            }
+                            return Ok(());
+                        }
+                        print!("Continue with commit? (y/N): ");
+                        io::stdout().flush().ok();
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).ok();
+                        if input.trim().to_lowercase() != "y" {
+                            println!("Commit aborted. Fix the rules and try again.");
+                            return Ok(());
                         }
                     }
                 }
@@ -2343,6 +2463,8 @@ fn main() {
                 args.check_banned_list.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
                 args.fix_typos,
                 args.fix_typos_on_add,
+                args.check_rules_on_add,
+                args.remove_bad_rules,
                 args.auto_fix,
                 args.only_sort_changed,
                 args.rebase_on_fail,

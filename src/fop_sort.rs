@@ -706,40 +706,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                     remove_entries.insert(option.clone());
                 } else {
                     let stripped = option.trim_start_matches('~');
-                    // Check if option is known (exact match or known prefix)
-                    let is_known = KNOWN_OPTIONS.contains(stripped)
-                        || stripped.starts_with("csp=")
-                        || stripped.starts_with("redirect=")
-                        || stripped.starts_with("redirect-rule=")
-                        || stripped.starts_with("rewrite=")
-                        || stripped.starts_with("replace=")
-                        || stripped.starts_with("header=")
-                        || stripped.starts_with("permissions=")
-                        || stripped.starts_with("to=")
-                        || stripped.starts_with("from=")
-                        || stripped.starts_with("ipaddress=")
-                        || stripped.starts_with("method=")
-                        || stripped.starts_with("denyallow=")
-                        || stripped.starts_with("removeparam=")
-                        || stripped.starts_with("urltransform=")
-                        || stripped.starts_with("responseheader=")
-                        || stripped.starts_with("sitekey=")
-                        || stripped.starts_with("app=")
-                        || stripped.starts_with("urlskip=")
-                        || stripped.starts_with("uritransform=")
-                        || stripped.starts_with("reason=")
-                        || stripped.starts_with("addheader=")
-                        || stripped.starts_with("referrerpolicy=")
-                        || stripped.starts_with("cookie=")
-                        || stripped.starts_with("removeheader=")
-                        || stripped.starts_with("jsonprune=")
-                        || stripped.starts_with("stealth=")
-                        || stripped.starts_with("hls=")
-                        || stripped.starts_with("xmlprune=")
-                        || stripped.starts_with("tag=")
-                        || stripped == "important"
-                        || stripped == "media"
-                        || stripped == "all";
+                    let is_known = crate::is_known_option(stripped);
                     if !is_known {
                         write_warning(&format!(
                             "Warning: The option \"{}\" used on the filter \"{}\" is not recognised by FOP",

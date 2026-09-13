@@ -2,6 +2,12 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [Unreleased]
+
+- Add `--check-rules-on-add` (`.fopconfig`: `check-rules-on-add`) to check newly added lines for rules that cannot work, reported with file and line and prompting before the commit goes ahead. It catches a separator with no selector (`example.com##`), a truncated selector (`##.ad[href="x"`), an option marker with no options (`||example.com$`), an option with no value (`$domain=`) and an unrecognised option (`$thrid-party`). `--remove-bad-rules` deletes the flagged lines instead of prompting.
+- These checks run only on added lines, never over whole files: with the author present a false positive costs a glance, so they can be stricter than `malformed_rule_reason`, which must only ever match rules that are impossible.
+- Collapse the unrecognised-option check from a chain of ~29 `starts_with` comparisons to a single hash lookup against a new `KNOWN_OPTION_PREFIXES` set, shared with the new addition checks rather than copied.
+
 ## [5.5.0] - 2026-09-13
 
 - Add `--ignore-line-minimum` (`.fopconfig`: `ignore-line-minimum`, also a per-file override) to keep rules shorter than three characters. They are dropped as `malformed rule (too short)` by default, which is right for truncation debris but deletes a short rule an author wrote on purpose. The flag lifts only the length floor: a line starting with `"`, `)`, `]` or `}` is still dropped as debris.

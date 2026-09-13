@@ -1309,3 +1309,61 @@ fn test_ignore_line_minimum_keeps_short_rules() {
         assert_eq!(f(ok, true), None);
     }
 }
+
+#[test]
+fn test_check_rule_flags_bad_additions() {
+    use crate::fop_rules::check_rule as f;
+    // Incomplete cosmetic rules.
+    assert_eq!(f("example.com##").unwrap().reason, "separator with no selector");
+    assert_eq!(f("example.com#?#").unwrap().reason, "separator with no selector");
+    assert_eq!(f("example.com#@#").unwrap().reason, "separator with no selector");
+    // Truncated selectors, which the leading-character check cannot see.
+    assert_eq!(
+        f("example.com##.ad[href=\"x\"").unwrap().reason,
+        "unbalanced brackets in selector"
+    );
+    assert_eq!(f("example.com##)").unwrap().reason, "unbalanced brackets in selector");
+    assert_eq!(
+        f("example.com##.ad:has-text(x").unwrap().reason,
+        "unbalanced brackets in selector"
+    );
+    // Incomplete option lists.
+    assert_eq!(f("||example.com$").unwrap().reason, "option marker with no options");
+    assert_eq!(f("||example.com$domain=").unwrap().reason, "option with no value");
+    assert_eq!(f("||example.com$third-party,").unwrap().reason, "empty option");
+    // Misspelled options -- the common case for a hand-written rule.
+    let p = f("||example.com$thrid-party").unwrap();
+    assert_eq!((p.reason, p.detail), ("unknown option", "thrid-party"));
+    assert_eq!(f("||example.com$domian=example.org").unwrap().reason, "unknown option");
+}
+
+#[test]
+fn test_check_rule_leaves_valid_rules_alone() {
+    use crate::fop_rules::check_rule as f;
+    for ok in [
+        // Brackets that are unbalanced only inside a string or a regex.
+        "example.com##[href=\"(\"]",
+        "example.com##.a:has-text(/\\)/)",
+        "example.com##.ad[href^=\"http\"][data-x='a(b']",
+        // Ordinary rules of each shape.
+        "example.com##.ad",
+        "example.com#@#.ad",
+        "example.com#?#.ad:has-text(x)",
+        "||example.com^$third-party",
+        "||example.com^$domain=a.com|b.com,important",
+        "||example.com^$removeparam=/^utm_/",
+        "||example.com^$csp=script-src 'none'",
+        "||example.com^$redirect=noopjs",
+        "/ads/banner.gif",
+        "||example.com/path#fragment",
+        "@@||example.com^$~third-party",
+        // Not ours to judge.
+        "! comment",
+        "[Adblock Plus 2.0]",
+        "[$path=/x/]example.com##.ad",
+        "127.0.0.1 example.com",
+        "",
+    ] {
+        assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
+    }
+}

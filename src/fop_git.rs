@@ -998,6 +998,24 @@ fn checkout_branch(base_cmd: &[String], branch: &str) -> io::Result<bool> {
 }
 
 /// Get added lines from git diff
+/// Absolute path of the repository's working tree root.
+///
+/// Diff paths are relative to this, which is not necessarily the directory fop
+/// was pointed at -- `-C sections/` still reports `sections/list.txt`.
+pub fn repo_root(base_cmd: &[String]) -> Option<std::path::PathBuf> {
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let root = String::from_utf8(output.stdout).ok()?;
+    let root = root.trim();
+    (!root.is_empty()).then(|| std::path::PathBuf::from(root))
+}
+
 pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addition>> {
     use crate::fop_typos::Addition;
 

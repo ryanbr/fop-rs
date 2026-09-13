@@ -1,0 +1,161 @@
+//! Validity checks for newly added filter rules.
+//!
+//! Deliberately separate from `malformed_rule_reason`, which runs over every
+//! line of every file and so must only ever match rules that are impossible.
+//! These checks run on lines the author just added, with the author present:
+//! a false positive costs one glance, so they can be stricter.
+
+use crate::fop_typos::Addition;
+
+/// What is wrong with a rule, and the fragment that proves it.
+pub struct RuleProblem<'a> {
+    pub reason: &'static str,
+    /// The offending fragment, empty when the whole line is the evidence.
+    pub detail: &'a str,
+}
+
+/// The cosmetic separators, longest first so `#@?#` wins over `#@#`.
+const SEPARATORS: [&str; 10] = [
+    "#@$?#", "#@%#", "#@$#", "#@?#", "#$?#", "#@#", "#$#", "#%#", "#?#", "##",
+];
+
+/// Split a rule at its cosmetic separator, if it has one.
+///
+/// A `#` inside a network rule's path is not a separator, so the separator
+/// must match one of the known spellings exactly rather than any `#`.
+#[inline]
+fn split_cosmetic(line: &str) -> Option<(&str, &str, &str)> {
+    let mut from = 0;
+    while let Some(hash) = line[from..].find('#') {
+        let at = from + hash;
+        for sep in SEPARATORS {
+            if line[at..].starts_with(sep) {
+                return Some((&line[..at], sep, &line[at + sep.len()..]));
+            }
+        }
+        from = at + 1;
+    }
+    None
+}
+
+/// Whether the selector's brackets balance.
+///
+/// Quote- and escape-aware, because `[href="("]` and `:has-text(/\)/)` both
+/// carry deliberately unbalanced characters inside a string or a regex.
+#[inline]
+fn brackets_balance(selector: &str) -> bool {
+    let (mut square, mut round) = (0i32, 0i32);
+    let mut quote = 0u8;
+    let mut escaped = false;
+    for b in selector.bytes() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match b {
+            b'\\' => escaped = true,
+            b'"' | b'\'' if quote == 0 => quote = b,
+            q if q == quote => quote = 0,
+            _ if quote != 0 => {}
+            b'[' => square += 1,
+            b']' => square -= 1,
+            b'(' => round += 1,
+            b')' => round -= 1,
+            _ => {}
+        }
+        // A close before its open is already unbalanced; stop early.
+        if square < 0 || round < 0 {
+            return false;
+        }
+    }
+    square == 0 && round == 0 && quote == 0
+}
+
+/// Why this rule looks wrong, or `None` if it looks fine.
+///
+/// Ordered cheapest-first: a byte-level reject for comments and for lines
+/// carrying neither `#` nor `$` means the great majority of additions leave
+/// here without any scanning at all.
+pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
+    let line = line.trim();
+    // Comments, section headers, AdGuard rule modifiers (`[$path=...]`) and
+    // hosts-style entries are not ours to judge.
+    match line.as_bytes().first()? {
+        b'!' | b'[' | b'%' => return None,
+        _ => {}
+    }
+    if !line.bytes().any(|b| b == b'#' || b == b'$') {
+        return None;
+    }
+
+    if let Some((_domains, sep, selector)) = split_cosmetic(line) {
+        if selector.is_empty() {
+            return Some(RuleProblem { reason: "separator with no selector", detail: sep });
+        }
+        if !brackets_balance(selector) {
+            return Some(RuleProblem { reason: "unbalanced brackets in selector", detail: selector });
+        }
+        return None;
+    }
+
+    // Network rule: everything after the last unescaped `$` is the option list.
+    let dollar = line.bytes().enumerate().rev().find_map(|(i, b)| {
+        (b == b'$' && (i == 0 || line.as_bytes()[i - 1] != b'\\')).then_some(i)
+    })?;
+    let options = &line[dollar + 1..];
+    if options.is_empty() {
+        return Some(RuleProblem { reason: "option marker with no options", detail: "" });
+    }
+    for option in options.split(',') {
+        let option = option.trim();
+        if option.is_empty() {
+            return Some(RuleProblem { reason: "empty option", detail: options });
+        }
+        let stripped = option.trim_start_matches('~');
+        if let Some((key, value)) = stripped.split_once('=') {
+            if value.is_empty() {
+                return Some(RuleProblem { reason: "option with no value", detail: option });
+            }
+            // A value may itself contain commas (removeparam regexes, jsonprune
+            // paths), so an unknown *key* is the signal, not an unknown option.
+            if !crate::is_known_option(stripped) && !crate::is_known_option(key) {
+                return Some(RuleProblem { reason: "unknown option", detail: option });
+            }
+        } else if !crate::is_known_option(stripped) {
+            return Some(RuleProblem { reason: "unknown option", detail: option });
+        }
+    }
+    None
+}
+
+/// Check added lines for bad rules.
+pub fn check_additions(additions: &[Addition]) -> Vec<(&Addition, RuleProblem<'_>)> {
+    additions
+        .iter()
+        .filter_map(|add| check_rule(&add.content).map(|problem| (add, problem)))
+        .collect()
+}
+
+/// Report bad rules in additions (formatted output).
+pub fn report_addition_problems(problems: &[(&Addition, RuleProblem)], no_color: bool) {
+    if problems.is_empty() {
+        return;
+    }
+    println!("\nQuestionable rules in added lines:");
+    for (add, problem) in problems {
+        let location = format!("{}:{}", add.file, add.line_num);
+        // The fragment is what makes a report actionable -- "unknown option"
+        // sends you hunting, "unknown option: thrid-party" does not.
+        let why = if problem.detail.is_empty() {
+            problem.reason.to_string()
+        } else {
+            format!("{}: {}", problem.reason, problem.detail)
+        };
+        if no_color {
+            println!("  {}: {} ({})", location, add.content, why);
+        } else {
+            use owo_colors::OwoColorize;
+            println!("  {}: {} ({})", location.cyan(), add.content, why.yellow());
+        }
+    }
+}
