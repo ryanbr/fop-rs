@@ -1170,6 +1170,58 @@ pub(crate) static KNOWN_OPTION_PREFIXES: LazyLock<HashSet<&'static str>> = LazyL
     .collect()
 });
 
+/// Edit distance between `a` and `b`, or `None` once it provably exceeds
+/// `max`.
+///
+/// Two rolling rows rather than a matrix, on the stack: option names are
+/// short, and anything long enough to overflow the buffer is not a near-miss
+/// for one. Rows are bailed out of as soon as every cell exceeds `max`, so a
+/// distant candidate costs a fraction of the full computation.
+fn edit_distance_within(a: &str, b: &str, max: usize) -> Option<usize> {
+    const CAP: usize = 48;
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() >= CAP || b.len() >= CAP || a.len().abs_diff(b.len()) > max {
+        return None;
+    }
+    let mut prev = [0usize; CAP];
+    let mut curr = [0usize; CAP];
+    for (j, slot) in prev.iter_mut().enumerate().take(b.len() + 1) {
+        *slot = j;
+    }
+    for i in 1..=a.len() {
+        curr[0] = i;
+        let mut row_best = i;
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+            row_best = row_best.min(curr[j]);
+        }
+        if row_best > max {
+            return None;
+        }
+        prev[..=b.len()].copy_from_slice(&curr[..=b.len()]);
+    }
+    (prev[b.len()] <= max).then_some(prev[b.len()])
+}
+
+/// The known option `unknown` was most likely meant to be.
+///
+/// Only consulted for options that already failed `is_known_option`, so the
+/// ~100 candidate comparisons never touch a well-formed rule. Short names get
+/// a tighter budget: at distance 2, `app` is as close to `all` as to anything.
+pub(crate) fn suggest_option(unknown: &str) -> Option<&'static str> {
+    let max = if unknown.len() <= 4 { 1 } else { 2 };
+    let mut best: Option<(usize, &'static str)> = None;
+    for candidate in KNOWN_OPTIONS.iter().chain(KNOWN_OPTION_PREFIXES.iter()) {
+        if let Some(d) = edit_distance_within(unknown, candidate, max) {
+            if best.is_none_or(|(bd, _)| d < bd) {
+                best = Some((d, candidate));
+            }
+        }
+    }
+    best.map(|(_, name)| name)
+}
+
 /// Whether `stripped` (a single option, `~` already removed) is one FOP knows.
 ///
 /// One hash lookup for the whole-word forms and one more for the `key=value`

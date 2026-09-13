@@ -1401,3 +1401,35 @@ fn test_check_rule_extra_shapes() {
         assert!(f(literal).is_none(), "{:?} flagged", literal);
     }
 }
+
+#[test]
+fn test_suggest_option_catches_any_misspelling() {
+    use crate::suggest_option as s;
+    // Generic, rather than a table of known typos: distance to the real set.
+    for (typo, want) in [
+        ("thrid-party", "third-party"),
+        ("domian", "domain"),
+        ("docuemnt", "document"),
+        ("scrpit", "script"),
+        ("removeparm", "removeparam"),
+        ("redirct", "redirect"),
+        ("elemhid", "elemhide"),
+        ("genericblcok", "genericblock"),
+        ("objectsubrequest", "object-subrequest"),
+        ("matchcase", "match-case"),
+    ] {
+        assert_eq!(s(typo), Some(want), "{}", typo);
+    }
+    // An option that is simply new must not be "corrected" into something else.
+    assert_eq!(s("totallynewoption2030"), None);
+    assert_eq!(s("aaaaaaaaaaaaaaaa"), None);
+    // Short names get a tighter budget, so unrelated three-letter options are
+    // not proposed for one another.
+    assert_eq!(s("zzz"), None);
+
+    // End to end, the suggestion rides along with the problem.
+    let p = crate::fop_rules::check_rule("||example.com^$thrid-party").unwrap();
+    assert_eq!((p.reason, p.detail, p.suggestion), ("unknown option", "thrid-party", Some("third-party")));
+    // ...and a rule whose options are all known carries none.
+    assert!(crate::fop_rules::check_rule("||example.com^$third-party,domain=a.com").is_none());
+}
