@@ -1288,3 +1288,25 @@ fn test_convert_selectors_separators_belong_to_adguard() {
         "berliner-zeitung.de#@?#.m-article-teaser:has(div:has-text(Anzeige))"
     );
 }
+#[test]
+fn test_ignore_line_minimum_reaches_short_lines() {
+    use crate::fop_typos::{detect_typo, fix_all_typos, MIN_TYPO_LINE_LEN};
+    // Below the floor these are skipped outright, however malformed they are.
+    for short in [",##", "#,,", ",,#", ",a#"] {
+        assert!(short.len() < MIN_TYPO_LINE_LEN);
+        assert!(detect_typo(short, false).is_none(), "{} should be skipped", short);
+        assert!(detect_typo(short, true).is_some(), "{} should be caught", short);
+    }
+    // The fixes themselves are the ordinary comma ones.
+    assert_eq!(fix_all_typos(",##", true).0, "##");
+    assert_eq!(fix_all_typos(",##", false).0, ",##");
+    // At or above the floor the flag changes nothing.
+    for normal in ["example.com###.ad", "##..ad-class", ",,x##.ad"] {
+        assert_eq!(
+            fix_all_typos(normal, false).0,
+            fix_all_typos(normal, true).0,
+            "{} must not depend on the flag",
+            normal
+        );
+    }
+}

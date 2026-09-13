@@ -106,6 +106,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--pr-show-changes` | Include rule changes (combines, merges, typos) in PR body |
 | `--fix-typos` | Fix cosmetic rule typos in all files during sort |
 | `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
+| `--ignore-line-minimum` | Run the typo checks on lines shorter than 4 characters, which are skipped by default |
 | `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
 | `--only-sort-changed` | Only process files changed according to git |
 | `--check-banned-list=FILE` | Check for banned domains in git additions |
@@ -286,7 +287,7 @@ add-checksum = true
 add-timestamp = true
 ```
 
-Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`.
+Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`, `ignore-line-minimum`.
 
 ### Commit Message URL Masking
 

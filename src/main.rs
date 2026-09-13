@@ -179,6 +179,8 @@ struct Args {
     create_pr: Option<String>,
     /// Fix cosmetic typos in all processed files
     fix_typos: bool,
+    /// Run the typo checks on short lines the minimum-length guard skips
+    ignore_line_minimum: bool,
     /// Base branch for PR (default: auto-detect main/master)
     git_pr_branch: Option<String>,
     /// Include rule changes in PR body
@@ -265,6 +267,7 @@ struct FileOverrides {
     keep_empty_lines: Option<bool>,
     ignore_dot_domains: Option<bool>,
     fix_typos: Option<bool>,
+    ignore_line_minimum: Option<bool>,
 }
 
 impl FileOverrides {
@@ -277,6 +280,7 @@ impl FileOverrides {
         if let Some(v) = self.keep_empty_lines { config.keep_empty_lines = v; }
         if let Some(v) = self.ignore_dot_domains { config.ignore_dot_domains = v; }
         if let Some(v) = self.fix_typos { config.fix_typos = v; }
+        if let Some(v) = self.ignore_line_minimum { config.ignore_line_minimum = v; }
         if let Some(v) = self.abp_convert { config.abp_convert = v; }
         if let Some(v) = self.adguard_convert { config.adguard_convert = v; }
         if let Some(v) = self.convert_trusted { config.convert_trusted = v; }
@@ -302,6 +306,7 @@ fn apply_file_override(entry: &mut FileOverrides, key: &str, value: &str) {
         "keep-empty-lines" => entry.keep_empty_lines = Some(b),
         "ignore-dot-domains" => entry.ignore_dot_domains = Some(b),
         "fix-typos" => entry.fix_typos = Some(b),
+        "ignore-line-minimum" => entry.ignore_line_minimum = Some(b),
         _ => {}
     }
 }
@@ -487,6 +492,7 @@ impl Args {
             check_banned_list: config.get("check-banned-list").map(PathBuf::from),
             auto_banned_remove: parse_bool(&config, "auto-banned-remove", false),
             fix_typos: parse_bool(&config, "fix-typos", false),
+            ignore_line_minimum: parse_bool(&config, "ignore-line-minimum", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
             direct_push_users: config.get("direct-push-users")
                 .map(|s| s.split(',').map(|u| u.trim().to_lowercase()).collect())
@@ -656,6 +662,7 @@ impl Args {
                         Some(arg.trim_start_matches("--git-pr-branch=").to_string());
                 }
                 "--fix-typos" => args.fix_typos = true,
+                "--ignore-line-minimum" => args.ignore_line_minimum = true,
                 "--fix-typos-on-add" => args.fix_typos_on_add = true,
                 "--auto-fix" => args.auto_fix = true,
                 _ if arg.starts_with("--add-timestamp=") => {
@@ -806,6 +813,7 @@ impl Args {
         println!("        --git-pr-branch=NAME   Base branch for PR (default: main/master)");
         println!("        --fix-typos      Fix cosmetic rule typos in all files");
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
+        println!("        --ignore-line-minimum  Run the typo checks on lines under 4 chars too");
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("    -q, --quiet                Suppress most output (for CI)");
         println!("        --limited-quiet        Suppress directory listing only");
@@ -961,6 +969,7 @@ impl Args {
                 if let Some(v) = overrides.keep_empty_lines { println!("    keep-empty-lines = {}", v); }
                 if let Some(v) = overrides.ignore_dot_domains { println!("    ignore-dot-domains = {}", v); }
                 if let Some(v) = overrides.fix_typos { println!("    fix-typos = {}", v); }
+                if let Some(v) = overrides.ignore_line_minimum { println!("    ignore-line-minimum = {}", v); }
             }
         }
 
@@ -1415,6 +1424,7 @@ fn process_location(
             keep_empty_lines: sort_config.keep_empty_lines,
             ignore_dot_domains: sort_config.ignore_dot_domains,
             fix_typos,
+            ignore_line_minimum: sort_config.ignore_line_minimum,
             abp_convert: sort_config.abp_convert,
             adguard_convert: sort_config.adguard_convert,
             convert_trusted: sort_config.convert_trusted,
@@ -1600,7 +1610,7 @@ fn process_location(
 
             if fix_typos_on_add {
                 if let Some(ref additions) = additions {
-                    let typos = fop_typos::check_additions(additions);
+                    let typos = fop_typos::check_additions(additions, sort_config.ignore_line_minimum);
                     if !typos.is_empty() {
                         fop_typos::report_addition_typos(&typos, no_color);
                         println!("\nFound {} typo(s) in added lines.", typos.len());
@@ -1904,6 +1914,7 @@ fn main() {
         adguard_convert: args.adguard_convert,
         convert_trusted: args.convert_trusted,
         fix_typos: args.fix_typos,
+        ignore_line_minimum: args.ignore_line_minimum,
         quiet: args.quiet,
         no_color: args.no_color,
         dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed || args.benchmark,
@@ -2055,7 +2066,7 @@ fn main() {
                     let mut new_lines: Vec<String> = Vec::new();
 
                     for (line_num, line) in content.lines().enumerate() {
-                        let (fixed, fixes) = fop_typos::fix_all_typos(line);
+                        let (fixed, fixes) = fop_typos::fix_all_typos(line, args.ignore_line_minimum);
                         if !fixes.is_empty() {
                             file_typo_count += 1;
                             file_modified = true;

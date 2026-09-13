@@ -4,6 +4,7 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Add `--ignore-line-minimum` (`.fopconfig`: `ignore-line-minimum`, also a per-file override) to run the typo checks on lines shorter than 4 characters. `detect_typo` skipped those outright, so a 3-character fragment like `,##` or `#,,` kept a comma typo that the same check fixes one character later. Off by default.
 - Move the `#@#` -> `#@?#` exception-separator promotion out of `--abp-convert` and into a new `--adguard-convert` (`.fopconfig`: `adguard-convert`), off by default. `#@?#` is AdGuard's spelling — uBO writes the same rule as plain `#@#` — so emitting it was never part of converting ABP selectors to uBO form, and it fired on rules that had nothing for `--abp-convert` to convert. `--abp-convert` alone no longer rewrites an exception separator; pass `--adguard-convert` (with or without it) to get the old behaviour. The `##` -> `#?#` hiding promotion moves with it, so `--abp-convert` now only renames ABP operators and never rewrites a separator.
 - Add `--no-commit-mask` to turn masking off when `.fopconfig` sets a level. `--commit-mask=0` cannot: 0 falls through to level 1 by design, so a config-set level had no command-line off switch.
 - Respect `--quiet` (but not `--limited-quiet`, which only suppresses the directory listing) when a pre-commit pull fails. The suggested-fix block was printed unconditionally, so CI logged it on every transient failure.

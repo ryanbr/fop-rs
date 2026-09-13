@@ -214,6 +214,8 @@ pub struct SortConfig<'a> {
     pub keep_empty_lines: bool,
     pub ignore_dot_domains: bool,
     pub fix_typos: bool,
+    /// Run the typo checks on lines shorter than `MIN_TYPO_LINE_LEN` too
+    pub ignore_line_minimum: bool,
     pub quiet: bool,
     pub no_color: bool,
     pub dry_run: bool,
@@ -1616,7 +1618,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
             // Fix typos if enabled
             if config.fix_typos {
-                let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
+                let (fixed, fixes) = fop_typos::fix_all_typos(&tidied, config.ignore_line_minimum);
                 if !fixes.is_empty() {
                 with_tracked_changes(|changes| {
                     changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));
@@ -1675,7 +1677,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Fix typos if enabled (network rules)
         if config.fix_typos {
-            let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
+            let (fixed, fixes) = fop_typos::fix_all_typos(&tidied, config.ignore_line_minimum);
             if !fixes.is_empty() {
                     with_tracked_changes(|changes| {
                         changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));
