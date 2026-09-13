@@ -208,50 +208,77 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
     }
 
     if let Some((domains, sep, selector)) = split_cosmetic(line) {
+        // `#%#` injects JavaScript and `//scriptlet(...)` is a scriptlet call;
+        // neither is a CSS selector, so brackets and combinators mean nothing
+        // there and a lone apostrophe in a comment is not an unbalanced quote.
+        let is_script = matches!(sep, "#%#" | "#@%#") || selector.starts_with("//");
         if selector.is_empty() {
             return Some(RuleProblem::new("separator with no selector", sep));
         }
-        if !domains_ok(domains) {
+        if !is_script && !domains_ok(domains) {
             return Some(RuleProblem::new("malformed domain list", domains));
         }
         // Every literal-argument construct contains a `(`, and a selector with
         // no `(` cannot be unbalanced in one either -- so one byte search gates
         // both the six substring scans and the balance walk.
-        let has_paren = selector.as_bytes().contains(&b'(');
+        let has_paren = !is_script && selector.as_bytes().contains(&b'(');
         let literal_args =
             has_paren && LITERAL_ARG_CONSTRUCTS.iter().any(|c| selector.contains(c));
-        if !literal_args && !brackets_balance(selector) {
+        if !is_script && !literal_args && !brackets_balance(selector) {
             return Some(RuleProblem::new("unbalanced brackets in selector", selector));
         }
         // A selector cannot open on a combinator. `+js(...)` is a scriptlet
         // injection, not a sibling combinator, so it is exempt.
         let first = selector.as_bytes()[0];
-        if first == b'>' || (first == b'+' && !selector.starts_with("+js(")) {
+        if !is_script && (first == b'>' || (first == b'+' && !selector.starts_with("+js("))) {
             return Some(RuleProblem::new("selector starts with a combinator", selector));
         }
         return None;
     }
 
-    // Network rule: everything after the last unescaped `$` is the option list.
-    let dollar = line.bytes().enumerate().rev().find_map(|(i, b)| {
-        (b == b'$' && (i == 0 || line.as_bytes()[i - 1] != b'\\')).then_some(i)
-    })?;
-    let options = &line[dollar + 1..];
-    if options.is_empty() {
+    // Network rule. The option list is recognised with the same pattern the
+    // sorter uses, rather than by taking the last `$`: a pattern may legally
+    // contain one (`$removeparam=/^utm$/`, `$replace=/(a)b/$1c/`), and a line
+    // that is not a rule at all may contain one anywhere.
+    let bytes = line.as_bytes();
+    if bytes.last() == Some(&b'$') && bytes.len() > 1 && bytes[bytes.len() - 2] != b'\\' {
         return Some(RuleProblem::new("option marker with no options", ""));
     }
-    for option in options.split(',') {
-        let option = option.trim();
-        if option.is_empty() {
-            return Some(RuleProblem::new("empty option", options));
+    let Some(caps) = crate::OPTION_PATTERN.captures(line) else {
+        // The pattern rejects a malformed option list and a line that is not a
+        // rule alike. Telling them apart is only safe behind an unambiguous
+        // filter-rule anchor, where a `$` cannot be a shell variable or a
+        // regex terminator in someone's source.
+        let anchored =
+            line.starts_with("||") || line.starts_with('|') || line.starts_with("@@");
+        // A rule with no `$` at all has no option list to be malformed.
+        if let (true, Some((_, tail))) = (anchored, line.rsplit_once('$')) {
+            for option in tail.split(',') {
+                if option.is_empty() {
+                    return Some(RuleProblem::new("empty option", tail));
+                }
+                if option.ends_with('=') {
+                    return Some(RuleProblem::new("option with no value", option));
+                }
+            }
         }
+        return None;
+    };
+    // The pattern half of a network rule never contains whitespace, but
+    // `OPTION_PATTERN` accepts anything before the `$`, so `some: $value` in a
+    // YAML file would otherwise read as a rule with an unknown option.
+    if caps.get(1)?.as_str().bytes().any(|b| b.is_ascii_whitespace()) {
+        return None;
+    }
+    let options = caps.get(2)?.as_str();
+    // Commas inside a `jsonprune=`/`xmlprune=` value are part of the value.
+    for option in crate::fop_sort::split_filter_options(options) {
+        let option = option.trim();
         let stripped = option.trim_start_matches('~');
         if let Some((key, value)) = stripped.split_once('=') {
             if value.is_empty() {
                 return Some(RuleProblem::new("option with no value", option));
             }
-            // A value may itself contain commas (removeparam regexes, jsonprune
-            // paths), so an unknown *key* is the signal, not an unknown option.
             if !crate::is_known_option(stripped) && !crate::is_known_option(key) {
                 return Some(RuleProblem {
                     suggestion: crate::suggest_option(key),

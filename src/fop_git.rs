@@ -1034,6 +1034,12 @@ pub fn get_added_lines_against(
         .args(&args)
         .output()
         .ok()?;
+    // A failed diff -- a base that does not exist, a shallow clone without the
+    // parent commit -- must not come back as an empty list, or an audit built
+    // on it passes having checked nothing.
+    if !output.status.success() {
+        return None;
+    }
     Some(parse_added_lines(&String::from_utf8(output.stdout).ok()?))
 }
 
@@ -1052,8 +1058,17 @@ fn parse_added_lines(diff: &str) -> Vec<crate::fop_typos::Addition> {
     let mut line_num: usize = 0;
 
     for line in diff.lines() {
-        if let Some(file) = line.strip_prefix("+++ b/") {
-            current_file = file.to_string();
+        if let Some(rest) = line.strip_prefix("+++ ") {
+            // core.quotepath renders unusual names as `"b/na\303\257ve.txt"`.
+            // Unquoting octal escapes is not worth it here, but the name must
+            // still change, or every addition in the hunk is attributed to the
+            // previous file.
+            let rest = rest.trim();
+            current_file = rest
+                .strip_prefix("b/")
+                .or_else(|| rest.strip_prefix("\"b/").and_then(|r| r.strip_suffix('"')))
+                .unwrap_or(rest)
+                .to_string();
         } else if line.starts_with("@@ ") {
             // Parse line number from @@ -x,y +n,m @@
             if let Some(plus_pos) = line.find(" +") {
@@ -1084,7 +1099,7 @@ fn parse_added_lines(diff: &str) -> Vec<crate::fop_typos::Addition> {
 
 /// Get the default branch name (main, master, etc.) - internal use
 #[inline]
-fn get_default_branch(base_cmd: &[String], remote: &str) -> Option<String> {
+pub(crate) fn get_default_branch(base_cmd: &[String], remote: &str) -> Option<String> {
     // Try to get from remote HEAD
     let output = Command::new(&base_cmd[0])
         .args(&base_cmd[1..])

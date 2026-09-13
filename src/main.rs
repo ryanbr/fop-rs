@@ -1157,6 +1157,11 @@ pub(crate) static KNOWN_OPTIONS: LazyLock<HashSet<&'static str>> = LazyLock::new
 /// Option keys that take a `=value`. Kept separate from `KNOWN_OPTIONS`, whose
 /// entries are matched whole: `csp` is a valid bare option *and* a valid
 /// prefix, so the two sets deliberately overlap.
+/// Options `KNOWN_OPTIONS` omitted. Harmless while an unknown option was only
+/// a warning; with the addition checks it would delete a valid rule.
+pub(crate) static EXTRA_KNOWN_OPTIONS: [&str; 5] =
+    ["inline-font", "beacon", "mp4", "noop", "queryprune"];
+
 pub(crate) static KNOWN_OPTION_PREFIXES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "addheader", "app", "cookie", "csp", "denyallow", "domain", "from",
@@ -1215,9 +1220,15 @@ fn edit_distance_within(a: &str, b: &str, max: usize) -> Option<usize> {
 pub(crate) fn suggest_option(unknown: &str) -> Option<&'static str> {
     let max = if unknown.len() <= 4 { 1 } else { 2 };
     let mut best: Option<(usize, &'static str)> = None;
-    for candidate in KNOWN_OPTIONS.iter().chain(KNOWN_OPTION_PREFIXES.iter()) {
+    // Both sets are hashed with a randomised hasher, so iteration order varies
+    // per process. Ties break on the name to keep the suggestion reproducible.
+    for candidate in KNOWN_OPTIONS
+        .iter()
+        .chain(KNOWN_OPTION_PREFIXES.iter())
+        .chain(EXTRA_KNOWN_OPTIONS.iter())
+    {
         if let Some(d) = edit_distance_within(unknown, candidate, max) {
-            if best.is_none_or(|(bd, _)| d < bd) {
+            if best.is_none_or(|(bd, bn)| (d, *candidate) < (bd, bn)) {
                 best = Some((d, candidate));
             }
         }
@@ -1232,6 +1243,7 @@ pub(crate) fn suggest_option(unknown: &str) -> Option<&'static str> {
 #[inline]
 pub(crate) fn is_known_option(stripped: &str) -> bool {
     KNOWN_OPTIONS.contains(stripped)
+        || EXTRA_KNOWN_OPTIONS.contains(&stripped)
         || stripped
             .split_once('=')
             .is_some_and(|(key, _)| KNOWN_OPTION_PREFIXES.contains(key))
@@ -1272,6 +1284,31 @@ fn should_ignore_file(filename: &str, ignore_files: &[String]) -> bool {
     ignore_files
         .iter()
         .any(|pattern| filename == pattern || filename.contains(pattern))
+}
+
+/// Whether a path from a git diff names a file fop would sort.
+///
+/// The rule checks must only look at filter lists. Without this they run on
+/// every added line in the repository, and any line carrying a `$` -- a shell
+/// `$PATH`, a workflow's `$GITHUB_SHA` -- reads as a network rule with a bad
+/// option. Mirrors the filter used to collect files for sorting, applied to
+/// the diff's repo-relative path.
+fn diff_path_is_filter_list(
+    file: &str,
+    file_extensions: &[String],
+    ignore_files: &[String],
+    ignore_dirs: &[String],
+    disable_ignored: bool,
+) -> bool {
+    let path = Path::new(file);
+    if should_ignore_dir(path, ignore_dirs) {
+        return false;
+    }
+    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    file_extensions.iter().any(|ext| ext == extension)
+        && (disable_ignored || !IGNORE_FILES.contains(&filename))
+        && !should_ignore_file(filename, ignore_files)
 }
 
 /// Check if directory path matches any ignore pattern
@@ -1362,14 +1399,36 @@ fn get_git_changed_files(location: &Path) -> Option<ahash::AHashSet<PathBuf>> {
 /// `origin/master` on a pull request. When HEAD already matches it -- a push
 /// to the branch itself -- there is nothing between them, so the last commit
 /// is what arrived.
-fn ci_diff_base(base_cmd: &[String]) -> String {
-    let same_as_origin = std::process::Command::new(&base_cmd[0])
+fn ci_diff_base(base_cmd: &[String]) -> Option<String> {
+    // The default branch is read from the remote rather than assumed to be
+    // `master`: on a `main` repository the assumed ref does not resolve, the
+    // diff fails, and an audit built on it reports nothing wrong.
+    let default = fop_git::get_default_branch(base_cmd, "origin")?;
+    let upstream = format!("origin/{}", default);
+    let resolves = |r: &str| {
+        std::process::Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(["rev-parse", "--verify", "--quiet", r])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    };
+    if !resolves(&upstream) {
+        return resolves("HEAD~1").then(|| "HEAD~1".to_string());
+    }
+    // HEAD already matching the upstream means this is a push to the branch
+    // itself, so what arrived is the last commit.
+    let same = std::process::Command::new(&base_cmd[0])
         .args(&base_cmd[1..])
-        .args(["diff", "--quiet", "HEAD", "origin/master"])
+        .args(["diff", "--quiet", "HEAD", &upstream])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    if same_as_origin { "HEAD~1".to_string() } else { "origin/master".to_string() }
+    if same {
+        resolves("HEAD~1").then(|| "HEAD~1".to_string())
+    } else {
+        Some(upstream)
+    }
 }
 
 /// `git -C <location>`, so a CI audit inspects the repository it was pointed
@@ -1407,13 +1466,22 @@ fn remove_flagged_lines(
     for (file, mut targets) in by_file {
         targets.sort_unstable_by_key(|&(line_num, _)| std::cmp::Reverse(line_num));
         let path = root.join(file);
-        let content = fs::read_to_string(&path)?;
+        // One unreadable file must not abandon the rest, nor discard the count
+        // of what was already rewritten.
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Skipped {}: {}", file, e);
+                continue;
+            }
+        };
         let mut lines: Vec<&str> = content.lines().collect();
+        let mut cut = 0;
         for (line_num, expected) in targets {
             match line_num.checked_sub(1).and_then(|i| lines.get(i)) {
                 Some(actual) if actual.trim() == expected.trim() => {
                     lines.remove(line_num - 1);
-                    removed += 1;
+                    cut += 1;
                 }
                 _ => eprintln!(
                     "Skipped {}:{} — the line no longer matches what was flagged.",
@@ -1421,11 +1489,22 @@ fn remove_flagged_lines(
                 ),
             }
         }
-        let mut out = lines.join("\n");
-        if content.ends_with('\n') {
-            out.push('\n');
+        // Nothing matched: leave the file alone rather than rewrite it
+        // byte-identically and touch its mtime.
+        if cut == 0 {
+            continue;
         }
-        fs::write(&path, out)?;
+        // `lines()` drops the `\r` of a CRLF file; rejoining with `\n` would
+        // rewrite every line in it as a side effect of removing one.
+        let newline = if content.contains("\r\n") { "\r\n" } else { "\n" };
+        let mut out = lines.join(newline);
+        if content.ends_with('\n') {
+            out.push_str(newline);
+        }
+        match fs::write(&path, out) {
+            Ok(()) => removed += cut,
+            Err(e) => eprintln!("Could not write {}: {}", file, e),
+        }
     }
     Ok(removed)
 }
@@ -1807,11 +1886,27 @@ fn process_location(
             // Check newly added lines for rules that cannot work
             if check_rules_on_add {
                 if let Some(ref additions) = additions {
-                    let problems = fop_rules::check_additions(additions);
+                    // Filter lists only -- the diff also carries workflows,
+                    // scripts and source, where a `$` is not an option marker
+                    // and --remove-bad-rules would delete a working line.
+                    let additions: Vec<_> = additions
+                        .iter()
+                        .filter(|a| {
+                            diff_path_is_filter_list(
+                                &a.file,
+                                file_extensions,
+                                ignore_files,
+                                ignore_dirs,
+                                disable_ignored,
+                            )
+                        })
+                        .cloned()
+                        .collect();
+                    let problems = fop_rules::check_additions(&additions);
                     if !problems.is_empty() {
                         fop_rules::report_addition_problems(&problems, no_color);
                         println!("\nFound {} questionable rule(s) in added lines.", problems.len());
-                        if remove_bad_rules {
+                        if remove_bad_rules && problems.iter().any(|(_, p)| p.removable) {
                             // Advice is never deleted -- only outright defects.
                             let removable: Vec<&fop_typos::Addition> = problems
                                 .iter()
@@ -2159,12 +2254,32 @@ fn main() {
     // against the committed diff and ending in an exit code rather than a
     // prompt. Defects fail the build; advice is printed and does not.
     if args.ci && args.check_rules_on_add {
-        let base_cmd = ci_git_cmd(args.git_binary.as_deref(), &locations[0]);
-        let base = ci_diff_base(&base_cmd);
-        let additions = fop_git::get_added_lines_against(&base_cmd, Some(&base)).unwrap_or_default();
+        let Some(location) = locations.first() else {
+            eprintln!("CI audit: no directory to check.");
+            std::process::exit(1);
+        };
+        let base_cmd = ci_git_cmd(args.git_binary.as_deref(), location);
+        let Some(base) = ci_diff_base(&base_cmd) else {
+            eprintln!("CI audit: could not resolve a base commit to diff against.");
+            std::process::exit(1);
+        };
+        let Some(additions) = fop_git::get_added_lines_against(&base_cmd, Some(&base)) else {
+            eprintln!("CI audit: could not read the diff against {}.", base);
+            std::process::exit(1);
+        };
+        // Only filter lists: the diff also carries workflows, scripts and
+        // source, where a `$` is not an option marker.
         let additions: Vec<_> = additions
             .into_iter()
-            .filter(|a| !args.ignore_files.iter().any(|f| a.file.ends_with(f)))
+            .filter(|a| {
+                diff_path_is_filter_list(
+                    &a.file,
+                    &args.file_extensions,
+                    &args.ignore_files,
+                    &args.ignore_dirs,
+                    args.disable_ignored,
+                )
+            })
             .collect();
 
         let problems = fop_rules::check_additions(&additions);
@@ -2194,12 +2309,24 @@ fn main() {
         let mut found: Vec<(String, String)> = Vec::new();
         let mut current_file = String::new();
 
-        let base_cmd = ci_git_cmd(args.git_binary.as_deref(), &locations[0]);
-        let base = ci_diff_base(&base_cmd);
+        let base_cmd = match locations.first() {
+            Some(location) => ci_git_cmd(args.git_binary.as_deref(), location),
+            None => {
+                eprintln!("CI audit: no directory to check.");
+                std::process::exit(1);
+            }
+        };
+        let base = match ci_diff_base(&base_cmd) {
+            Some(base) => base,
+            None => {
+                eprintln!("CI audit: could not resolve a base commit to diff against.");
+                std::process::exit(1);
+            }
+        };
 
         if let Ok(output) = std::process::Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
-            .args(["diff", &base, "--unified=0"])
+            .args(["diff", base.as_str(), "--unified=0"])
             .output()
         {
             for line in String::from_utf8_lossy(&output.stdout).lines() {

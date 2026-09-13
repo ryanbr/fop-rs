@@ -531,7 +531,7 @@ fn find_option_separator(filter: &str) -> Option<usize> {
 /// Split filter options on commas, keeping values intact for options like
 /// `jsonprune=`/`xmlprune=` where commas are part of the value syntax.
 #[inline]
-fn split_filter_options(options: &str) -> Vec<&str> {
+pub(crate) fn split_filter_options(options: &str) -> Vec<&str> {
     let parts: Vec<&str> = options.split(',').collect();
     if parts.len() <= 1 {
         return parts;

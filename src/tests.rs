@@ -1331,6 +1331,12 @@ fn test_check_rule_flags_bad_additions() {
     assert_eq!(f("||example.com$").unwrap().reason, "option marker with no options");
     assert_eq!(f("||example.com$domain=").unwrap().reason, "option with no value");
     assert_eq!(f("||example.com$third-party,").unwrap().reason, "empty option");
+    // A malformed option list fails the sorter's pattern the same way a line
+    // that is not a rule does, so these two are only told apart behind an
+    // unambiguous anchor. Without one the checker stays quiet, which is the
+    // right side to err on: the loose splitter this replaced flagged
+    // `$removeparam=/^utm$/` and shell `$PATH` as removable defects.
+    assert!(f("notarule.txt$third-party,").is_none());
     // Misspelled options -- the common case for a hand-written rule.
     let p = f("||example.com$thrid-party").unwrap();
     assert_eq!((p.reason, p.detail), ("unknown option", "thrid-party"));
@@ -1458,5 +1464,55 @@ fn test_bare_domain_is_flagged_but_never_removed() {
         "127.0.0.1 domain.com",
     ] {
         assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
+    }
+}
+
+
+#[test]
+fn test_check_rule_ignores_non_rule_lines() {
+    use crate::fop_rules::check_rule as f;
+    // A `$` is not an option marker outside a filter rule. These reach the
+    // checker whenever a commit touches a script, a workflow or source, and
+    // were previously reported as removable defects.
+    for not_a_rule in [
+        "export PATH=$PATH:/usr/bin",
+        "  run: echo \"$GITHUB_SHA\"",
+        "let x = format!(\"{}\", $y);",
+        "sed -i \"s/^version = .*/version = \\\"$V\\\"/\"",
+        "some: $value",
+    ] {
+        assert!(f(not_a_rule).is_none(), "{:?} flagged as {:?}", not_a_rule, f(not_a_rule).map(|p| p.reason));
+    }
+    // Valid rules whose pattern or value legitimately contains `$` or a comma.
+    for valid in [
+        "||example.com^$removeparam=/^utm$/",
+        "||example.com/script.js$replace=/(foo)bar/$1baz/",
+        "||example.com^$xmlprune=/a,b/",
+        "||example.com^$jsonprune=\\$..[?(has @.a,@.b)]",
+        "||example.com^$hls=/#UPLYNK-SEGMENT:.*\\,ad/",
+        // Options the known set had omitted.
+        "||example.com^$inline-font",
+        "||example.com^$beacon",
+        "||example.com^$mp4",
+        "||example.com^$queryprune=x",
+        // AdGuard JavaScript injection is not a CSS selector.
+        "example.com#%#window.__adblock = true; // don't show",
+        "example.com#@%#var x = '(';",
+        "example.com#$#//scriptlet('abort-on-property-read', 'x')",
+    ] {
+        assert!(f(valid).is_none(), "{:?} flagged as {:?}", valid, f(valid).map(|p| p.reason));
+    }
+    // Genuine defects still register.
+    assert_eq!(f("||example.com^$fakeopt").unwrap().reason, "unknown option");
+    assert_eq!(f("||example.com$").unwrap().reason, "option marker with no options");
+}
+
+#[test]
+fn test_suggest_option_is_deterministic() {
+    // Both option sets iterate in a randomised order; a tie must not make the
+    // suggestion vary between runs, or CI output stops being reproducible.
+    for _ in 0..64 {
+        assert_eq!(crate::suggest_option("thrid-party"), Some("third-party"));
+        assert_eq!(crate::suggest_option("beacom"), crate::suggest_option("beacom"));
     }
 }
