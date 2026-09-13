@@ -441,41 +441,41 @@ fn test_filter_tidy_cosmetic_dollar_not_option_separator() {
 #[test]
 fn test_malformed_rule_reason() {
     // Debris from a truncated selector — the case the check exists for.
-    assert_eq!(malformed_rule_reason("\"])"), Some("invalid start"));
-    assert_eq!(malformed_rule_reason("])"), Some("invalid start"));
-    assert_eq!(malformed_rule_reason("}]"), Some("invalid start"));
-    assert_eq!(malformed_rule_reason(")foo"), Some("invalid start"));
+    assert_eq!(malformed_rule_reason("\"])", false), Some("invalid start"));
+    assert_eq!(malformed_rule_reason("])", false), Some("invalid start"));
+    assert_eq!(malformed_rule_reason("}]", false), Some("invalid start"));
+    assert_eq!(malformed_rule_reason(")foo", false), Some("invalid start"));
 
     // Valid 3-character rules — these were deleted by the old 4-char floor.
-    assert_eq!(malformed_rule_reason("##a"), None);
-    assert_eq!(malformed_rule_reason("*/*"), None);
-    assert_eq!(malformed_rule_reason("/a/"), None);
+    assert_eq!(malformed_rule_reason("##a", false), None);
+    assert_eq!(malformed_rule_reason("*/*", false), None);
+    assert_eq!(malformed_rule_reason("/a/", false), None);
 
     // Leading characters an allowlist kept missing (274 `_` rules, 15 `=`,
     // 8 `%` and 2 `^` across the local lists) must survive.
-    assert_eq!(malformed_rule_reason("_ad_banner"), None);
-    assert_eq!(malformed_rule_reason("%2Fads"), None);
-    assert_eq!(malformed_rule_reason("^tracker^"), None);
-    assert_eq!(malformed_rule_reason("=ad_id"), None);
-    assert_eq!(malformed_rule_reason("||example.com^"), None);
-    assert_eq!(malformed_rule_reason("##.ad"), None);
+    assert_eq!(malformed_rule_reason("_ad_banner", false), None);
+    assert_eq!(malformed_rule_reason("%2Fads", false), None);
+    assert_eq!(malformed_rule_reason("^tracker^", false), None);
+    assert_eq!(malformed_rule_reason("=ad_id", false), None);
+    assert_eq!(malformed_rule_reason("||example.com^", false), None);
+    assert_eq!(malformed_rule_reason("##.ad", false), None);
 
     // Genuinely too short.
-    assert_eq!(malformed_rule_reason("ab"), Some("too short"));
-    assert_eq!(malformed_rule_reason("#"), Some("too short"));
+    assert_eq!(malformed_rule_reason("ab", false), Some("too short"));
+    assert_eq!(malformed_rule_reason("#", false), Some("too short"));
     // Total on empty input: the call site guarantees non-empty, but the
     // helper must not index into an empty slice regardless.
-    assert_eq!(malformed_rule_reason(""), Some("too short"));
+    assert_eq!(malformed_rule_reason("", false), Some("too short"));
 
     // Length is counted in characters, not bytes. A lone 3-byte character is
     // one character and is not a rule; a byte floor would have kept it.
-    assert_eq!(malformed_rule_reason("\u{65e5}"), Some("too short"));
-    assert_eq!(malformed_rule_reason("\u{65e5}\u{672c}"), Some("too short"));
-    assert_eq!(malformed_rule_reason("\u{65e5}\u{672c}\u{8a9e}"), None);
+    assert_eq!(malformed_rule_reason("\u{65e5}", false), Some("too short"));
+    assert_eq!(malformed_rule_reason("\u{65e5}\u{672c}", false), Some("too short"));
+    assert_eq!(malformed_rule_reason("\u{65e5}\u{672c}\u{8a9e}", false), None);
     // A stray UTF-8 BOM is 3 bytes but one character — not a rule.
-    assert_eq!(malformed_rule_reason("\u{feff}"), Some("too short"));
+    assert_eq!(malformed_rule_reason("\u{feff}", false), Some("too short"));
     // 4-byte characters count as one too.
-    assert_eq!(malformed_rule_reason("\u{1f600}"), Some("too short"));
+    assert_eq!(malformed_rule_reason("\u{1f600}", false), Some("too short"));
 }
 
 #[test]
@@ -1288,25 +1288,24 @@ fn test_convert_selectors_separators_belong_to_adguard() {
         "berliner-zeitung.de#@?#.m-article-teaser:has(div:has-text(Anzeige))"
     );
 }
+
 #[test]
-fn test_ignore_line_minimum_reaches_short_lines() {
-    use crate::fop_typos::{detect_typo, fix_all_typos, MIN_TYPO_LINE_LEN};
-    // Below the floor these are skipped outright, however malformed they are.
-    for short in [",##", "#,,", ",,#", ",a#"] {
-        assert!(short.len() < MIN_TYPO_LINE_LEN);
-        assert!(detect_typo(short, false).is_none(), "{} should be skipped", short);
-        assert!(detect_typo(short, true).is_some(), "{} should be caught", short);
+fn test_ignore_line_minimum_keeps_short_rules() {
+    use crate::fop_sort::malformed_rule_reason as f;
+    // Default: one- and two-character rules are dropped as malformed.
+    for short in ["#", "ab", "*", "/a", ""] {
+        assert_eq!(f(short, false), Some("too short"), "{:?}", short);
+        assert_eq!(f(short, true), None, "{:?} should survive the flag", short);
     }
-    // The fixes themselves are the ordinary comma ones.
-    assert_eq!(fix_all_typos(",##", true).0, "##");
-    assert_eq!(fix_all_typos(",##", false).0, ",##");
-    // At or above the floor the flag changes nothing.
-    for normal in ["example.com###.ad", "##..ad-class", ",,x##.ad"] {
-        assert_eq!(
-            fix_all_typos(normal, false).0,
-            fix_all_typos(normal, true).0,
-            "{} must not depend on the flag",
-            normal
-        );
+    // The flag only lifts the length floor -- debris is still debris, however
+    // long, so a truncated selector tail is dropped either way.
+    for debris in ["\"])", "])", "}]", ")foo"] {
+        assert_eq!(f(debris, false), Some("invalid start"), "{:?}", debris);
+        assert_eq!(f(debris, true), Some("invalid start"), "{:?}", debris);
+    }
+    // Three characters is already valid, so the flag changes nothing there.
+    for ok in ["##a", "*/*", "/a/", "||example.com^"] {
+        assert_eq!(f(ok, false), None);
+        assert_eq!(f(ok, true), None);
     }
 }

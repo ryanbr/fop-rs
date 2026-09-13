@@ -179,7 +179,7 @@ struct Args {
     create_pr: Option<String>,
     /// Fix cosmetic typos in all processed files
     fix_typos: bool,
-    /// Run the typo checks on short lines the minimum-length guard skips
+    /// Keep rules under the three-character floor instead of dropping them
     ignore_line_minimum: bool,
     /// Base branch for PR (default: auto-detect main/master)
     git_pr_branch: Option<String>,
@@ -813,7 +813,7 @@ impl Args {
         println!("        --git-pr-branch=NAME   Base branch for PR (default: main/master)");
         println!("        --fix-typos      Fix cosmetic rule typos in all files");
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
-        println!("        --ignore-line-minimum  Run the typo checks on lines under 4 chars too");
+        println!("        --ignore-line-minimum  Keep rules under 3 chars instead of dropping them");
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("    -q, --quiet                Suppress most output (for CI)");
         println!("        --limited-quiet        Suppress directory listing only");
@@ -1610,7 +1610,7 @@ fn process_location(
 
             if fix_typos_on_add {
                 if let Some(ref additions) = additions {
-                    let typos = fop_typos::check_additions(additions, sort_config.ignore_line_minimum);
+                    let typos = fop_typos::check_additions(additions);
                     if !typos.is_empty() {
                         fop_typos::report_addition_typos(&typos, no_color);
                         println!("\nFound {} typo(s) in added lines.", typos.len());
@@ -2066,7 +2066,7 @@ fn main() {
                     let mut new_lines: Vec<String> = Vec::new();
 
                     for (line_num, line) in content.lines().enumerate() {
-                        let (fixed, fixes) = fop_typos::fix_all_typos(line, args.ignore_line_minimum);
+                        let (fixed, fixes) = fop_typos::fix_all_typos(line);
                         if !fixes.is_empty() {
                             file_typo_count += 1;
                             file_modified = true;

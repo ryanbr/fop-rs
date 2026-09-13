@@ -106,7 +106,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--pr-show-changes` | Include rule changes (combines, merges, typos) in PR body |
 | `--fix-typos` | Fix cosmetic rule typos in all files during sort |
 | `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
-| `--ignore-line-minimum` | Run the typo checks on lines shorter than 4 characters, which are skipped by default |
+| `--ignore-line-minimum` | Keep rules shorter than 3 characters instead of dropping them as malformed |
 | `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
 | `--only-sort-changed` | Only process files changed according to git |
 | `--check-banned-list=FILE` | Check for banned domains in git additions |

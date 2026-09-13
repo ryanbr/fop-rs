@@ -214,7 +214,8 @@ pub struct SortConfig<'a> {
     pub keep_empty_lines: bool,
     pub ignore_dot_domains: bool,
     pub fix_typos: bool,
-    /// Run the typo checks on lines shorter than `MIN_TYPO_LINE_LEN` too
+    /// Keep rules shorter than the three-character floor instead of dropping
+    /// them as malformed
     pub ignore_line_minimum: bool,
     pub quiet: bool,
     pub no_color: bool,
@@ -1339,10 +1340,13 @@ fn combine_filters(
 /// closed, so match that instead. Catches only debris that leads with it:
 /// broader malformed-rule detection needs a parser, not a character check.
 #[inline]
-pub fn malformed_rule_reason(line: &str) -> Option<&'static str> {
+pub fn malformed_rule_reason(line: &str, ignore_minimum: bool) -> Option<&'static str> {
     match line.as_bytes().first() {
         // Debris from a truncated selector, e.g. the tail of `[href="x"])`.
         Some(b'"' | b')' | b']' | b'}') => Some("invalid start"),
+        // An author who deliberately wrote a one- or two-character rule keeps
+        // it under `ignore_minimum`; the debris check above still applies.
+        _ if ignore_minimum => None,
         // `##a` (hide every <a>), `*/*` and `/a/` are all valid three-character
         // rules, so the floor is 3 — not 4, which deleted them.
         //
@@ -1552,7 +1556,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         }
 
-        if let Some(reason) = malformed_rule_reason(line) {
+        if let Some(reason) = malformed_rule_reason(line, config.ignore_line_minimum) {
             write_warning(&format!("Removed malformed rule ({}): {}", reason, line));
             continue;
         }
@@ -1618,7 +1622,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
             // Fix typos if enabled
             if config.fix_typos {
-                let (fixed, fixes) = fop_typos::fix_all_typos(&tidied, config.ignore_line_minimum);
+                let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
                 if !fixes.is_empty() {
                 with_tracked_changes(|changes| {
                     changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));
@@ -1677,7 +1681,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Fix typos if enabled (network rules)
         if config.fix_typos {
-            let (fixed, fixes) = fop_typos::fix_all_typos(&tidied, config.ignore_line_minimum);
+            let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
             if !fixes.is_empty() {
                     with_tracked_changes(|changes| {
                         changes.typos_fixed.push((tidied.clone(), fixed.clone(), fixes.join(", ")));

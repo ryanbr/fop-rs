@@ -145,21 +145,11 @@ fn fix_leading_comma(line: &str) -> Option<Typo> {
     }
 }
 
-/// Shortest line the typo checks look at. Every pattern they match is at
-/// least this long once the rule body is included, so anything shorter is a
-/// fragment rather than a fixable rule. `ignore_minimum` lifts the floor for
-/// callers that would rather check everything.
-pub const MIN_TYPO_LINE_LEN: usize = 4;
-
 /// Check a cosmetic rule for typos
 #[inline]
-pub fn detect_typo(line: &str, ignore_minimum: bool) -> Option<Typo> {
+pub fn detect_typo(line: &str) -> Option<Typo> {
     // Skip comments, empty lines, special directives, short lines
-    if (!ignore_minimum && line.len() < MIN_TYPO_LINE_LEN)
-        || line.starts_with('!')
-        || line.starts_with('[')
-        || line.starts_with('%')
-    {
+    if line.len() < 4 || line.starts_with('!') || line.starts_with('[') || line.starts_with('%') {
         return None;
     }
 
@@ -236,11 +226,11 @@ pub fn detect_typo(line: &str, ignore_minimum: bool) -> Option<Typo> {
 }
 
 /// Fix all typos in a line (iterates until no more fixes)
-pub fn fix_all_typos(line: &str, ignore_minimum: bool) -> (String, Vec<String>) {
+pub fn fix_all_typos(line: &str) -> (String, Vec<String>) {
     let mut all_fixes = Vec::new();
 
     // Fast path: no typo on first check - return without allocating
-    let Some(first) = detect_typo(line, ignore_minimum) else {
+    let Some(first) = detect_typo(line) else {
         return (line.to_string(), all_fixes);
     };
     all_fixes.push(first.description.into_owned());
@@ -248,7 +238,7 @@ pub fn fix_all_typos(line: &str, ignore_minimum: bool) -> (String, Vec<String>) 
 
     // Limit iterations to prevent infinite loops
     for _ in 0..9 {
-        let Some(typo) = detect_typo(&current, ignore_minimum) else { break };
+        let Some(typo) = detect_typo(&current) else { break };
         all_fixes.push(typo.description.into_owned());
         current = typo.fixed;
     }
@@ -268,10 +258,10 @@ pub struct Addition {
 }
 
 /// Check added lines for typos
-pub fn check_additions(additions: &[Addition], ignore_minimum: bool) -> Vec<(&Addition, Typo)> {
+pub fn check_additions(additions: &[Addition]) -> Vec<(&Addition, Typo)> {
     additions
         .iter()
-        .filter_map(|add| detect_typo(&add.content, ignore_minimum).map(|typo| (add, typo)))
+        .filter_map(|add| detect_typo(&add.content).map(|typo| (add, typo)))
         .collect()
 }
 
@@ -312,79 +302,79 @@ mod tests {
 
     #[test]
     fn test_extra_hash() {
-        let typo = detect_typo("###.ad-banner", false).unwrap();
+        let typo = detect_typo("###.ad-banner").unwrap();
         assert_eq!(typo.fixed, "##.ad-banner");
 
-        let typo = detect_typo("example.com###.ad", false).unwrap();
+        let typo = detect_typo("example.com###.ad").unwrap();
         assert_eq!(typo.fixed, "example.com##.ad");
 
-        let typo = detect_typo("####.ad", false).unwrap();
+        let typo = detect_typo("####.ad").unwrap();
         assert_eq!(typo.fixed, "##.ad");
     }
 
     #[test]
     fn test_single_hash() {
-        let typo = detect_typo("domain#.ad", false).unwrap();
+        let typo = detect_typo("domain#.ad").unwrap();
         assert_eq!(typo.fixed, "domain##.ad");
 
-        let typo = detect_typo("example.com#.banner", false).unwrap();
+        let typo = detect_typo("example.com#.banner").unwrap();
         assert_eq!(typo.fixed, "example.com##.banner");
 
-        let typo = detect_typo("domain#[class]", false).unwrap();
+        let typo = detect_typo("domain#[class]").unwrap();
         assert_eq!(typo.fixed, "domain##[class]");
 
-        let typo = detect_typo("domain#+js(aopr)", false).unwrap();
+        let typo = detect_typo("domain#+js(aopr)").unwrap();
         assert_eq!(typo.fixed, "domain##+js(aopr)");
     }
 
     #[test]
     fn test_double_dot() {
-        let typo = detect_typo("##..ad-class", false).unwrap();
+        let typo = detect_typo("##..ad-class").unwrap();
         assert_eq!(typo.fixed, "##.ad-class");
     }
 
     #[test]
     fn test_double_comma() {
-        let typo = detect_typo("example.com,,test.com##.ad", false).unwrap();
+        let typo = detect_typo("example.com,,test.com##.ad").unwrap();
         assert_eq!(typo.fixed, "example.com,test.com##.ad");
     }
 
     #[test]
     fn test_triple_comma() {
-        let typo = detect_typo("a,,,b##.ad", false).unwrap();
+        let typo = detect_typo("a,,,b##.ad").unwrap();
         assert_eq!(typo.fixed, "a,b##.ad");
     }
 
     #[test]
     fn test_trailing_comma() {
-        let typo = detect_typo("example.com,##.ad", false).unwrap();
+        let typo = detect_typo("example.com,##.ad").unwrap();
         assert_eq!(typo.fixed, "example.com##.ad");
     }
 
     #[test]
     fn test_leading_comma() {
-        let typo = detect_typo(",example.com##.ad", false).unwrap();
+        let typo = detect_typo(",example.com##.ad").unwrap();
         assert_eq!(typo.fixed, "example.com##.ad");
     }
 
     #[test]
     fn test_no_typo() {
-        assert!(detect_typo("##.ad-banner", false).is_none());
-        assert!(detect_typo("example.com##.ad", false).is_none());
-        assert!(detect_typo("! comment", false).is_none());
-        assert!(detect_typo("||example.com^", false).is_none());
-        assert!(detect_typo("|https://example.com", false).is_none());
+        assert!(detect_typo("##.ad-banner").is_none());
+        assert!(detect_typo("example.com##.ad").is_none());
+        assert!(detect_typo("! comment").is_none());
+        assert!(detect_typo("||example.com^").is_none());
+        assert!(detect_typo("|https://example.com").is_none());
     }
 
     #[test]
     fn test_fix_all_typos() {
         // Multiple typos: ### and ..
-        let (fixed, fixes) = fix_all_typos("###..ad", false);
+        let (fixed, fixes) = fix_all_typos("###..ad");
         assert_eq!(fixed, "##.ad");
         assert_eq!(fixes.len(), 2);
 
         // Triple comma + single hash
-        let (fixed, fixes) = fix_all_typos("domain,,,b#.ad", false);
+        let (fixed, fixes) = fix_all_typos("domain,,,b#.ad");
         assert_eq!(fixed, "domain,b##.ad");
         assert_eq!(fixes.len(), 2);
     }
@@ -392,45 +382,45 @@ mod tests {
     #[test]
     fn test_extended_selectors_preserved() {
         // These should not be treated as typos
-        assert!(detect_typo("domain##.ad:has(.banner)", false).is_none());
-        assert!(detect_typo("domain##+js(aopr, ads)", false).is_none());
+        assert!(detect_typo("domain##.ad:has(.banner)").is_none());
+        assert!(detect_typo("domain##+js(aopr, ads)").is_none());
     }
 
     #[test]
     fn test_space_after_comma() {
         // Space after comma in domain list
-        let typo = detect_typo("domain.com, domain2.com##.ad", false).unwrap();
+        let typo = detect_typo("domain.com, domain2.com##.ad").unwrap();
         assert_eq!(typo.fixed, "domain.com,domain2.com##.ad");
 
         // Multiple spaces
-        let typo = detect_typo("domain.com,  domain2.com##.ad", false).unwrap();
+        let typo = detect_typo("domain.com,  domain2.com##.ad").unwrap();
         assert_eq!(typo.fixed, "domain.com,domain2.com##.ad");
 
         // Multiple domains with spaces
-        let (fixed, _) = fix_all_typos("a.com, b.com, c.com##.ad", false);
+        let (fixed, _) = fix_all_typos("a.com, b.com, c.com##.ad");
         assert_eq!(fixed, "a.com,b.com,c.com##.ad");
 
         // With +js
-        let typo = detect_typo("domain.com, domain2.com##+js(aopr)", false).unwrap();
+        let typo = detect_typo("domain.com, domain2.com##+js(aopr)").unwrap();
         assert_eq!(typo.fixed, "domain.com,domain2.com##+js(aopr)");
 
         // No space should not match
-        assert!(detect_typo("domain.com,domain2.com##.ad", false).is_none());
+        assert!(detect_typo("domain.com,domain2.com##.ad").is_none());
 
         // Spaces inside selector must NOT be touched
-        assert!(detect_typo("domain.com##+js(set-cookie, cookieAcknowledged, true)", false).is_none());
-        assert!(detect_typo("domain.com##body:has-text(hello, world)", false).is_none());
-        assert!(detect_typo("##.ad:has(.banner, .popup)", false).is_none());
+        assert!(detect_typo("domain.com##+js(set-cookie, cookieAcknowledged, true)").is_none());
+        assert!(detect_typo("domain.com##body:has-text(hello, world)").is_none());
+        assert!(detect_typo("##.ad:has(.banner, .popup)").is_none());
 
         // Real-world case: domain list + js with spaces in args
-        let (fixed, fixes) = fix_all_typos("domain.com, stromnetz.berlin##+js(set-cookie, cookieAgree, true)", false);
+        let (fixed, fixes) = fix_all_typos("domain.com, stromnetz.berlin##+js(set-cookie, cookieAgree, true)");
         assert_eq!(fixed, "domain.com,stromnetz.berlin##+js(set-cookie, cookieAgree, true)");
         assert_eq!(fixes.len(), 1);
     }
 
     #[test]
     fn test_triple_dollar() {
-        let result = detect_typo("@@||example.com/cc.js$$$domain=asket.com", false);
+        let result = detect_typo("@@||example.com/cc.js$$$domain=asket.com");
         assert!(result.is_some());
         assert_eq!(
             result.unwrap().fixed,
@@ -440,21 +430,21 @@ mod tests {
 
     #[test]
     fn test_double_dollar() {
-        let result = detect_typo("@@||example.com/cc.js$$domain=asket.com", false);
+        let result = detect_typo("@@||example.com/cc.js$$domain=asket.com");
         assert!(result.is_some());
         assert_eq!(
             result.unwrap().fixed,
             "@@||example.com/cc.js$domain=asket.com"
         );
 
-        let result = detect_typo("||example.com/ad.js$$domain=test.com", false);
+        let result = detect_typo("||example.com/ad.js$$domain=test.com");
         assert!(result.is_some());
         assert_eq!(result.unwrap().fixed, "||example.com/ad.js$domain=test.com");
     }
 
     #[test]
     fn test_missing_dollar() {
-        let result = detect_typo("@@||example.com/cc.jsdomain=asket.com", false);
+        let result = detect_typo("@@||example.com/cc.jsdomain=asket.com");
         assert!(result.is_some());
         assert_eq!(
             result.unwrap().fixed,
@@ -462,7 +452,7 @@ mod tests {
         );
 
         // With ^ separator
-        let result = detect_typo("@@||example.com/cc.js^domain=asket.com", false);
+        let result = detect_typo("@@||example.com/cc.js^domain=asket.com");
         assert!(result.is_some());
         assert_eq!(
             result.unwrap().fixed,
@@ -470,42 +460,42 @@ mod tests {
         );
 
         // Valid should not match
-        let result = detect_typo("@@||example.com/cc.js$domain=asket.com", false);
+        let result = detect_typo("@@||example.com/cc.js$domain=asket.com");
         assert!(result.is_none());
 
         // No domain after domain= should not match
-        let result = detect_typo("@@||example.com/cc.jsdomain=", false);
+        let result = detect_typo("@@||example.com/cc.jsdomain=");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_wrong_cosmetic_separator() {
         // Single pipe
-        let result = detect_typo("domain.com|domain2.com##.test", false);
+        let result = detect_typo("domain.com|domain2.com##.test");
         assert!(result.is_some());
         assert_eq!(result.unwrap().fixed, "domain.com,domain2.com##.test");
 
         // Multiple pipes (fix_all_typos handles iteratively)
-        let (fixed, _) = fix_all_typos("domain.com|domain2.com|domain3.com##.test", false);
+        let (fixed, _) = fix_all_typos("domain.com|domain2.com|domain3.com##.test");
         assert_eq!(fixed, "domain.com,domain2.com,domain3.com##.test");
 
         // Mixed separators
-        let (fixed, _) = fix_all_typos("domain.com|domain2.com,domain3.com##.test", false);
+        let (fixed, _) = fix_all_typos("domain.com|domain2.com,domain3.com##.test");
         assert_eq!(fixed, "domain.com,domain2.com,domain3.com##.test");
 
         // With ##+js
-        let (fixed, _) = fix_all_typos("domain3.com|domain2.com,domain1.com##+js(nowolf)", false);
+        let (fixed, _) = fix_all_typos("domain3.com|domain2.com,domain1.com##+js(nowolf)");
         assert_eq!(fixed, "domain3.com,domain2.com,domain1.com##+js(nowolf)");
 
         // Valid comma separator should not match
-        let result = detect_typo("domain.com,domain2.com##.test", false);
+        let result = detect_typo("domain.com,domain2.com##.test");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_wrong_domain_separator() {
         // Single comma
-        let result = detect_typo("||example.com$domain=site1.com,site2.com", false);
+        let result = detect_typo("||example.com$domain=site1.com,site2.com");
         assert!(result.is_some());
         assert_eq!(
             result.unwrap().fixed,
@@ -513,26 +503,26 @@ mod tests {
         );
 
         // Multiple commas (fix_all_typos handles iteratively)
-        let (fixed, fixes) = fix_all_typos("||example.com$3p,domain=a.com,b.com,c.com", false);
+        let (fixed, fixes) = fix_all_typos("||example.com$3p,domain=a.com,b.com,c.com");
         assert_eq!(fixed, "||example.com$3p,domain=a.com|b.com|c.com");
         assert_eq!(fixes.len(), 2);
 
         // Mixed separators
-        let (fixed, _) = fix_all_typos("*.global/$3p,domain=animepahe.si,daddyhd.com|soap2day.day", false);
+        let (fixed, _) = fix_all_typos("*.global/$3p,domain=animepahe.si,daddyhd.com|soap2day.day");
         assert_eq!(
             fixed,
             "*.global/$3p,domain=animepahe.si|daddyhd.com|soap2day.day"
         );
 
         // Valid pipe separator should not match
-        let result = detect_typo("||example.com$domain=site1.com|site2.com", false);
+        let result = detect_typo("||example.com$domain=site1.com|site2.com");
         assert!(result.is_none());
 
         // Option name after domain should not be treated as domain separator typo
-        let result = detect_typo("||example.com$domain=site1.com,image", false);
+        let result = detect_typo("||example.com$domain=site1.com,image");
         assert!(result.is_none());
 
-        let result = detect_typo("||example.com$image,domain=site1.com", false);
+        let result = detect_typo("||example.com$image,domain=site1.com");
         assert!(result.is_none());
     }
 }
