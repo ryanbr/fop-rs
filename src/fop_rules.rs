@@ -156,6 +156,12 @@ fn is_bare_domain(line: &str) -> bool {
     {
         return false;
     }
+    looks_like_hostname(line)
+}
+
+/// Whether `text` is shaped like a hostname and nothing else.
+#[inline]
+fn looks_like_hostname(line: &str) -> bool {
     // Leading or trailing dots mark a substring pattern (`.cookielaw.js`).
     if line.starts_with('.') || line.ends_with('.') {
         return false;
@@ -184,6 +190,26 @@ fn is_bare_domain(line: &str) -> bool {
         && !FILE_SUFFIXES.iter().any(|ext| ext.eq_ignore_ascii_case(last))
 }
 
+/// Whether `line` is a hostname rule that forgot its `||` anchor.
+///
+/// `rbush.shop^` is legal and matches that text anywhere in a URL, so it also
+/// blocks `lampedburbush.shop` and anything else ending in the name -- the
+/// over-blocking a missing anchor causes is invisible until someone reports a
+/// broken site. Deliberate uses are vanishingly rare: across 609k lines of
+/// EasyList and the region lists there was one, itself a typo.
+#[inline]
+fn is_unanchored_host(line: &str) -> bool {
+    // An anchor, a scheme, a wildcard or a leading dot all mean the author
+    // chose the matching they wanted.
+    if line.starts_with(['|', '@', '/', '.', '-', '*']) {
+        return false;
+    }
+    let Some((host, _)) = line.split_once('^') else {
+        return false;
+    };
+    looks_like_hostname(host)
+}
+
 /// Why this rule looks wrong, or `None` if it looks fine.
 ///
 /// Ordered cheapest-first: a byte-level reject for comments and for lines
@@ -201,9 +227,15 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // No separator and no options: the only thing left worth saying is
         // that a bare hostname was probably meant to be an anchored rule.
         // No detail: the line itself is already printed beside the reason.
-        return is_bare_domain(line).then(|| RuleProblem {
+        if is_bare_domain(line) {
+            return Some(RuleProblem {
+                removable: false,
+                ..RuleProblem::new("bare domain, did you mean ||host^ ?", "")
+            });
+        }
+        return is_unanchored_host(line).then(|| RuleProblem {
             removable: false,
-            ..RuleProblem::new("bare domain, did you mean ||host^ ?", "")
+            ..RuleProblem::new("host rule with no || anchor -- matches the name anywhere", "")
         });
     }
 
@@ -294,6 +326,15 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
                 ..RuleProblem::new("unknown option", option)
             });
         }
+    }
+    // The options are sound; the pattern they hang off may still have lost its
+    // anchor. Checked last so a real defect is reported ahead of this advice.
+    let pattern = caps.get(1)?.as_str();
+    if is_unanchored_host(pattern) || is_bare_domain(pattern) {
+        return Some(RuleProblem {
+            removable: false,
+            ..RuleProblem::new("host rule with no || anchor -- matches the name anywhere", "")
+        });
     }
     None
 }

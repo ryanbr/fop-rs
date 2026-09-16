@@ -1451,10 +1451,14 @@ fn test_bare_domain_is_flagged_but_never_removed() {
         // only -- --remove-bad-rules must leave it alone.
         assert!(!p.removable, "{} must not be auto-removed", bare);
     }
-    // Anything carrying filter syntax is the author being explicit.
+    // `domain.com^` is no longer in this list: it carries filter syntax but is
+    // still missing its anchor, so it is reported as such by its own check.
+    assert!(f("domain.com^").unwrap().reason.contains("no || anchor"));
+    assert!(f("domain.com$third-party").unwrap().reason.contains("no || anchor"));
+    // Anything else carrying filter syntax is the author being explicit.
     for ok in [
-        "||domain.com^", "|http://domain.com", "domain.com^", "domain.com/path",
-        "@@domain.com", "domain.com$third-party", "domain.com##.ad",
+        "||domain.com^", "|http://domain.com", "domain.com/path",
+        "@@domain.com", "domain.com##.ad",
         // Substring patterns that merely look like hostnames.
         ".cookielaw.js", "_chartbeat.js", "adserver.gif", ".PrivacyDataNotice.",
         "ads.php", "track.json",
@@ -1569,4 +1573,37 @@ fn test_has_text_merges_across_separators_and_dedups() {
         "a.com#$#.x:has-text(B)".into(),
     ]);
     assert_eq!(inject.len(), 2);
+}
+
+#[test]
+fn test_missing_anchor_is_flagged() {
+    use crate::fop_rules::check_rule as f;
+    // The rule that prompted this: `||` forgotten, so it matches the name
+    // anywhere -- `rbush.shop^` also blocks `lampedburbush.shop`.
+    for missing in [
+        "rbush.shop^",
+        "rbush.shop^$third-party",
+        "arketing.indianadunes.com^",
+        "sub.example.co.nz^",
+    ] {
+        let p = f(missing).expect(missing);
+        assert!(p.reason.contains("no || anchor"), "{}: {}", missing, p.reason);
+        // Advice: the fix is to add `||`, not to delete the author's rule.
+        assert!(!p.removable, "{} must not be auto-removed", missing);
+    }
+    // An author who chose their matching is left alone.
+    for ok in [
+        "||rbush.shop^",
+        "||rbush.shop^$third-party",
+        "@@||rbush.shop^",
+        "|http://rbush.shop^",
+        ".rbush.shop^",
+        "*.rbush.shop^",
+        "-ad.com^",
+        "/ads/banner^",
+        "ads.js^",
+        "example.com##.ad",
+    ] {
+        assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
+    }
 }
