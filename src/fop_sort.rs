@@ -1017,10 +1017,16 @@ fn is_regex_arg(arg: &str) -> bool {
 /// merging it away silently narrows what the group hides.
 #[inline]
 fn is_unmergeable_arg(arg: &str) -> bool {
+    // `/foo/i`: a closing `/` somewhere after the first, with only letters
+    // after it. `rfind` on `arg[1..]` cannot return past `len - 2`, and the
+    // byte it finds is an ASCII `/`, so `close + 1` is always in bounds and on
+    // a character boundary.
     let flagged = arg.starts_with('/')
         && !arg.ends_with('/')
         && arg[1..].rfind('/').is_some_and(|i| {
-            arg[i + 2..].bytes().all(|b| b.is_ascii_alphabetic()) && i + 2 <= arg.len()
+            let close = i + 1;
+            !arg[close + 1..].is_empty()
+                && arg[close + 1..].bytes().all(|b| b.is_ascii_alphabetic())
         });
     // An empty alternative -- `/foo|/`, or the empty regex `//` -- matches every
     // string. Dropping it as a duplicate would quietly narrow the rule, so the
