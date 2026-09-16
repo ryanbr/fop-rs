@@ -1005,7 +1005,33 @@ fn escape_regex_chars(text: &str) -> String {
 /// Check if a :has-text() argument is a regex (starts and ends with /)
 #[inline]
 fn is_regex_arg(arg: &str) -> bool {
-    arg.starts_with('/') && arg.ends_with('/')
+    // `len() >= 2` or a lone `/` satisfies both ends and the body slice below
+    // panics on it -- reachable from any truncated rule in a list.
+    arg.len() >= 2 && arg.starts_with('/') && arg.ends_with('/')
+}
+
+/// Whether an argument is a regex fop must not fold into a larger one.
+///
+/// `/foo/i` carries flags that cannot survive being joined with alternatives,
+/// and an empty alternative (`/foo|/`, or `//`) matches every string, so
+/// merging it away silently narrows what the group hides.
+#[inline]
+fn is_unmergeable_arg(arg: &str) -> bool {
+    let flagged = arg.starts_with('/')
+        && !arg.ends_with('/')
+        && arg[1..].rfind('/').is_some_and(|i| {
+            arg[i + 2..].bytes().all(|b| b.is_ascii_alphabetic()) && i + 2 <= arg.len()
+        });
+    // An empty alternative -- `/foo|/`, or the empty regex `//` -- matches every
+    // string. Dropping it as a duplicate would quietly narrow the rule, so the
+    // group is left alone instead. Detected directly rather than by comparing
+    // against a naive split, which also differs for a grouped `(a|b)c`.
+    let empty_alternative = is_regex_arg(arg)
+        && (arg.len() == 2
+            || top_level_alternatives(&arg[1..arg.len() - 1])
+                .iter()
+                .any(|a| a.is_empty()));
+    flagged || empty_alternative
 }
 
 /// Extract the regex content (without slashes) or escape plain text
@@ -1018,6 +1044,29 @@ fn normalize_has_text_arg(arg: &str) -> String {
     }
 }
 
+/// Bracket balance for text that is not CSS.
+///
+/// A `:has-text()` argument is literal, so an apostrophe in `Don't miss` is a
+/// character rather than an open quote -- the quote-aware check rejects such
+/// text and silently declines to merge perfectly good rules.
+#[inline]
+fn brackets_balance_literal(text: &str) -> bool {
+    let (mut round, mut square) = (0i32, 0i32);
+    for b in text.bytes() {
+        match b {
+            b'(' => round += 1,
+            b')' => round -= 1,
+            b'[' => square += 1,
+            b']' => square -= 1,
+            _ => {}
+        }
+        if round < 0 || square < 0 {
+            return false;
+        }
+    }
+    round == 0 && square == 0
+}
+
 /// Parse a selector to extract base selector and :has-text() argument
 fn parse_has_text_selector(selector: &str) -> Option<(String, String, String)> {
     let caps = HAS_TEXT_PATTERN.captures(selector)?;
@@ -1027,7 +1076,7 @@ fn parse_has_text_selector(selector: &str) -> Option<(String, String, String)> {
     // the argument gains one. Rebuilding from that yields a rule one `)` short
     // whose regex looks for a literal bracket. Only merge when the split is
     // clean on both sides.
-    if !crate::fop_rules::brackets_balance(base) || !crate::fop_rules::brackets_balance(arg) {
+    if !crate::fop_rules::brackets_balance(base) || !brackets_balance_literal(arg) {
         return None;
     }
     Some((base.to_string(), pseudo.to_string(), arg.to_string()))
@@ -1047,6 +1096,10 @@ fn merge_has_text_args(args: &[String]) -> String {
     // Multiple rules - combine into one regex. Alternatives are deduplicated:
     // merging `/A|B/` with `A` and `B`, which is what a part-merged group looks
     // like on the next run, would otherwise grow `/A|B|A|B/` every time.
+    // Any argument that cannot be folded leaves the group alone entirely.
+    if args.iter().any(|a| is_unmergeable_arg(a)) {
+        return String::new();
+    }
     let mut seen: Vec<String> = Vec::with_capacity(args.len());
     for arg in args {
         for alt in top_level_alternatives(&normalize_has_text_arg(arg)) {
@@ -1084,7 +1137,6 @@ fn top_level_alternatives(body: &str) -> Vec<String> {
         }
     }
     out.push(body[start..].to_string());
-    out.retain(|a| !a.is_empty());
     out
 }
 
@@ -1103,12 +1155,21 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
         // nothing; the rest carry selectors and merge alike. Each separator
         // groups separately -- a hiding rule and an exception must never be
         // folded together.
+        // Longest match at the first `#`, rather than the first separator that
+        // happens to appear anywhere: a selector may contain `#?#` inside an
+        // attribute value, and splitting there would group the wrong rules.
         const MERGEABLE: [&str; 4] = ["#@?#", "#@#", "#?#", "##"];
         let split = (!line.starts_with('!') && !line.starts_with('['))
             .then(|| {
-                MERGEABLE.iter().find_map(|sep| {
-                    line.find(sep).map(|pos| (&line[..pos], *sep, &line[pos + sep.len()..]))
-                })
+                let mut from = 0;
+                while let Some(hash) = line[from..].find('#') {
+                    let at = from + hash;
+                    if let Some(sep) = MERGEABLE.iter().find(|sep| line[at..].starts_with(**sep)) {
+                        return Some((&line[..at], *sep, &line[at + sep.len()..]));
+                    }
+                    from = at + 1;
+                }
+                None
             })
             .flatten();
         let Some((domains, separator, selector)) = split else {
@@ -1137,6 +1198,17 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
         let was_merged = args.len() > 1;
                
         let merged_arg = merge_has_text_args(&args);
+        // An empty result means the group holds something that must not be
+        // folded; put the rules back exactly as they came in.
+        if merged_arg.is_empty() {
+            for (offset, arg) in args.iter().enumerate() {
+                order.push((
+                    pos + offset,
+                    format!("{}{}{}:{}({})", domains, separator, base, pseudo, arg),
+                ));
+            }
+            continue;
+        }
         let merged_rule = format!("{}{}{}:{}({})", domains, separator, base, pseudo, merged_arg);
         
         // Track merge

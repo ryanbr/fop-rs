@@ -204,9 +204,14 @@ fn is_unanchored_host(line: &str) -> bool {
     if line.starts_with(['|', '@', '/', '.', '-', '*']) {
         return false;
     }
-    let Some((host, _)) = line.split_once('^') else {
+    let Some((host, rest)) = line.split_once('^') else {
         return false;
     };
+    // `example.com^somepath` is not a host rule and does not match the name
+    // anywhere, so the advice would misdescribe it.
+    if !rest.is_empty() && rest != "|" {
+        return false;
+    }
     looks_like_hostname(host)
 }
 
@@ -283,6 +288,17 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // regex terminator in someone's source.
         let anchored =
             line.starts_with("||") || line.starts_with('|') || line.starts_with("@@");
+        // `OPTION_PATTERN` rejects any option whose value holds a space, such
+        // as `$csp=script-src 'none'`. The pattern half is still worth judging,
+        // or an unanchored host escapes the check purely by its options.
+        if let Some((pattern, _)) = line.rsplit_once('$') {
+            if is_unanchored_host(pattern) || is_bare_domain(pattern) {
+                return Some(RuleProblem {
+                    removable: false,
+                    ..RuleProblem::new("host rule with no || anchor -- matches the name anywhere", "")
+                });
+            }
+        }
         // A rule with no `$` at all has no option list to be malformed.
         if let (true, Some((_, tail))) = (anchored, line.rsplit_once('$')) {
             for option in tail.split(',') {

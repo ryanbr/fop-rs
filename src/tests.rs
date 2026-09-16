@@ -1607,3 +1607,57 @@ fn test_missing_anchor_is_flagged() {
         assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
     }
 }
+
+#[test]
+fn test_has_text_merge_refuses_what_it_cannot_fold() {
+    use crate::fop_sort::combine_has_text_rules as c;
+    // A lone `/` is not a regex; treating it as one sliced [1..0] and aborted
+    // the whole sort on any list containing a truncated rule.
+    let slash = c(vec!["a.com##.x:has-text(/)".into(), "a.com##.x:has-text(B)".into()]);
+    assert_eq!(slash, vec!["a.com##.x:has-text(//|B/)".to_string()]);
+
+    // A regex carrying flags cannot be folded -- its flags would not survive,
+    // and `/foo/i` joined as text becomes a literal search for six characters.
+    let flagged = vec![
+        "a.com##.x:has-text(/foo/i)".to_string(),
+        "a.com##.x:has-text(bar)".to_string(),
+    ];
+    assert_eq!(c(flagged.clone()), flagged);
+
+    // An empty alternative matches everything; dropping it narrows the rule.
+    let empty_alt = vec![
+        "a.com##.x:has-text(/foo|/)".to_string(),
+        "a.com##.x:has-text(bar)".to_string(),
+    ];
+    assert_eq!(c(empty_alt.clone()), empty_alt);
+
+    // Ordinary English text is literal, so an apostrophe is a character rather
+    // than an open quote and must not block the merge.
+    assert_eq!(
+        c(vec!["a.com##.x:has-text(Don't miss)".into(), "a.com##.x:has-text(Bar)".into()]),
+        vec!["a.com##.x:has-text(/Don't miss|Bar/)".to_string()]
+    );
+
+    // The separator is found at the first `#`, not wherever one is listed, so
+    // a selector containing `#?#` in an attribute is not split inside it.
+    let attr = vec![
+        r##"a.com##a[href*="#?#top"]:has-text(A)"##.to_string(),
+        r##"a.com##a[href*="#?#top"]:has-text(B)"##.to_string(),
+    ];
+    assert_eq!(c(attr), vec![r##"a.com##a[href*="#?#top"]:has-text(/A|B/)"##.to_string()]);
+}
+
+#[test]
+fn test_missing_anchor_only_for_host_rules() {
+    use crate::fop_rules::check_rule as f;
+    // A path after the `^` means it is not a host rule, and the advice would
+    // describe it wrongly.
+    assert!(f("example.com^somepath").is_none());
+    assert!(f("example.com^*/ads").is_none());
+    assert!(f("example.com^").is_some());
+    assert!(f("example.com^|").is_some());
+    // An option value holding a space fails OPTION_PATTERN, which used to skip
+    // the pattern half entirely.
+    assert!(f("example.com^$csp=script-src 'none'").is_some());
+    assert!(f("||example.com^$csp=script-src 'none'").is_none());
+}
