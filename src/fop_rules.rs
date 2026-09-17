@@ -251,6 +251,21 @@ fn is_bare_token(text: &str) -> bool {
         && !text.bytes().any(|b| matches!(b.to_ascii_lowercase(), b'a' | b'e' | b'i' | b'o' | b'u'))
 }
 
+/// Whether `line` carries the syntax of a standard adblock network rule.
+///
+/// The anchors, or a separator, or an option list -- the marks that say the
+/// author was writing a rule rather than a bare word or a hosts entry.
+#[inline]
+fn is_standard_network_rule(line: &str) -> bool {
+    line.starts_with("||")
+        || line.starts_with('|')
+        || line.starts_with("@@")
+        // A trailing separator, rather than a `^` anywhere: a shell line like
+        // `sed -i "s/^version = .*/…"` carries one mid-string and is not a
+        // rule at all.
+        || line.ends_with('^')
+}
+
 /// Split a network rule into its pattern and option list.
 ///
 /// Does by hand what `OPTION_PATTERN` did: the regex leads with `.*`, and on a
@@ -315,6 +330,12 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // No separator and no options: the only thing left worth saying is
         // that a bare hostname was probably meant to be an anchored rule.
         // No detail: the line itself is already printed beside the reason.
+        // No options, so the whole line is the pattern.
+        if line.bytes().any(|b| b.is_ascii_whitespace()) {
+            return is_standard_network_rule(line).then(|| {
+                RuleProblem::new("space in the pattern -- a network rule cannot match one", "")
+            });
+        }
         if is_bare_domain(line) {
             return Some(RuleProblem {
                 removable: false,
@@ -371,6 +392,16 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // regex terminator in someone's source.
         let anchored =
             line.starts_with("||") || line.starts_with('|') || line.starts_with("@@");
+        // Same rule for a line with no option list: the pattern is all of it.
+        let pattern = line.rsplit_once('$').map_or(line, |(p, _)| p);
+        if pattern.bytes().any(|b| b.is_ascii_whitespace())
+            && is_standard_network_rule(pattern)
+        {
+            return Some(RuleProblem::new(
+                "space in the pattern -- a network rule cannot match one",
+                "",
+            ));
+        }
         // `OPTION_PATTERN` rejects any option whose value holds a space, such
         // as `$csp=script-src 'none'`. The pattern half is still worth judging,
         // or an unanchored host escapes the check purely by its options.
@@ -400,10 +431,13 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         }
         return None;
     };
-    // The pattern half of a network rule never contains whitespace, so
-    // `some: $value` in a YAML file is not a rule with an unknown option.
+    // The pattern half of a network rule never contains whitespace: across
+    // 609k lines of EasyList and the region lists, not one does. In a rule it
+    // is a defect; anywhere else -- `some: $value` in a YAML file -- it just
+    // means this was never a rule.
     if pattern.bytes().any(|b| b.is_ascii_whitespace()) {
-        return None;
+        return is_standard_network_rule(pattern)
+            .then(|| RuleProblem::new("space in the pattern -- a network rule cannot match one", ""));
     }
     // Commas inside a `jsonprune=`/`xmlprune=` value are part of the value.
     for option in crate::fop_sort::split_filter_options(options) {

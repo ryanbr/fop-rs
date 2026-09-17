@@ -4,6 +4,7 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Flag a space in the pattern of a standard adblock rule (`||exa mple.com^`, `@@||exa mple.com^`, `exa mple.com^`). Across 609k lines of EasyList and the region lists not one rule has a space there, so such a rule can never match. Spaces elsewhere are left alone: all 41 rules in those lists with a space in an option value are `$csp=` directives, and cosmetic selectors, hosts entries and comments carry them routinely. Limited to lines that open with `||`, `|` or `@@`, or end in `^` — a `^` mid-string is a regex anchor in someone's shell, not a separator.
 - Treat `+++` as a file header only before a hunk begins. A rule reading `++ b/other.txt` arrives in the diff as `+++ b/other.txt`, and taking it as a header dropped the rule, shifted every later line number, and repointed the parser at a file the commit never touched — which `--remove-bad-rules` would then have gone looking in.
 - Report nothing from a combined diff (`diff --cc`, emitted while a merge is unresolved) rather than wrong lines: its two status columns and `@@@` hunk headers are not parsed here.
 - Share the diff reader with the `--ci` banned-domain audit instead of keeping a second copy. That copy had drifted: no `--no-color`, so a colourised diff made the audit pass having read nothing; `+++` read as a header, so a rule beginning with `+` escaped the check; and no handling for a quoted non-ASCII path.

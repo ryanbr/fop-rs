@@ -1866,3 +1866,46 @@ fn test_parse_added_lines_refuses_combined_diffs() {
                  +one.com^\n";
     assert!(parse_added_lines(diff).is_empty());
 }
+
+#[test]
+fn test_space_in_pattern_only_for_standard_rules() {
+    use crate::fop_rules::check_rule as f;
+    // A network rule's pattern never holds a space: across 609k lines of
+    // EasyList and the region lists, not one does. In a standard rule that is
+    // a defect -- it can never match.
+    for broken in [
+        "||exa mple.com^",
+        "||exa mple.com^$third-party",
+        "exa mple.com^",
+        "@@||exa mple.com^",
+        "|http://exa mple.com",
+    ] {
+        let p = f(broken).expect(broken);
+        assert_eq!(p.reason, "space in the pattern -- a network rule cannot match one");
+        assert!(p.removable, "{} is a defect, not advice", broken);
+    }
+    // Everywhere else a space is ordinary and must be left alone. `$csp` is
+    // the case that matters: every one of the 41 rules in those lists with a
+    // space in an option value is a CSP directive.
+    for ok in [
+        "||example.com^$csp=script-src 'none'",
+        "$csp=child-src 'none'; frame-src 'self' *",
+        "||example.com^$replace=/foo bar/baz/",
+        // A hosts entry, which fop is given in localhost mode.
+        "127.0.0.1 example.com",
+        // Cosmetic selectors are full of spaces.
+        "example.com##div > span",
+        "example.com##.a:has-text(Buy now)",
+        "example.com#%#window.x = 1;",
+        // Not rule-shaped, so not ours to judge.
+        "++ dfsdsfdsf",
+        "! a comment with spaces",
+        "[Adblock Plus 2.0]",
+        // A `^` mid-string is a regex anchor in someone's shell, not a
+        // separator -- only a trailing one says "rule".
+        "sed -i \"s/^version = .*/version = \\\"$V\\\"/\"",
+        "  run: echo \"$GITHUB_SHA\"",
+    ] {
+        assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
+    }
+}
