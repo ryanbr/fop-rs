@@ -1441,6 +1441,95 @@ fn ci_git_cmd(git_binary: Option<&str>, location: &Path) -> Vec<String> {
     ]
 }
 
+/// Run the addition checks, returning false when the caller should stop.
+///
+/// `interactive` is false in sort-only mode, where there is no commit to
+/// confirm and the findings are a report.
+#[allow(clippy::too_many_arguments)]
+fn run_rule_checks(
+    base_cmd: &[String],
+    remove_bad_rules: bool,
+    no_color: bool,
+    file_extensions: &[String],
+    ignore_files: &[String],
+    ignore_dirs: &[String],
+    disable_ignored: bool,
+    interactive: bool,
+) -> bool {
+    // Filter lists only -- the diff also carries workflows, scripts and
+    // source, where a `$` is not an option marker and --remove-bad-rules would
+    // delete a working line.
+    let gather = || -> Vec<fop_typos::Addition> {
+        fop_git::get_added_lines(base_cmd)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|a| {
+                diff_path_is_filter_list(
+                    &a.file,
+                    file_extensions,
+                    ignore_files,
+                    ignore_dirs,
+                    disable_ignored,
+                )
+            })
+            .collect()
+    };
+
+    let additions = gather();
+    let problems = fop_rules::check_additions(&additions);
+    if problems.is_empty() {
+        return true;
+    }
+    fop_rules::report_addition_problems(&problems, no_color);
+    println!("\nFound {} questionable rule(s) in added lines.", problems.len());
+
+    if remove_bad_rules {
+        // Every flagged line goes, advice included, so what remains is only
+        // what passed. A bare hostname is legal in a plain domain-list file,
+        // so exclude such files with `ignorefiles` if fop is pointed at a
+        // repository holding them.
+        let advice = problems.iter().filter(|(_, p)| !p.removable).count();
+        let targets: Vec<&fop_typos::Addition> = problems.iter().map(|(add, _)| *add).collect();
+        match remove_flagged_lines(&targets, base_cmd) {
+            Ok(n) => {
+                println!("Removed {} line(s).", n);
+                if advice > 0 {
+                    println!(
+                        "{} of those were advice rather than a defect -- \
+                         check they were not deliberate.",
+                        advice
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("Could not remove flagged lines: {}", e);
+                return false;
+            }
+        }
+        // Re-read the diff: `commit -a` will pick up the working tree as it
+        // now stands, so anything still flagged would be committed.
+        let left = fop_rules::check_additions(&gather()).len();
+        if left > 0 {
+            eprintln!("{} rule(s) could not be removed; stopping rather than committing them.", left);
+            return false;
+        }
+        return true;
+    }
+
+    if !interactive {
+        return true;
+    }
+    print!("Continue with commit? (y/N): ");
+    io::stdout().flush().ok();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).ok();
+    if input.trim().to_lowercase() != "y" {
+        println!("Commit aborted. Fix the rules and try again.");
+        return false;
+    }
+    true
+}
+
 /// Delete the flagged lines from their files.
 ///
 /// Grouped per file and applied highest line number first, so removing one
@@ -1561,9 +1650,10 @@ fn process_location(
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
     }
-    // Detect repository type (skip if no_commit mode)
+    // Detect repository type. Needed without a commit too when the rule checks
+    // are on: they read the diff to find what was added.
     let mut repository: Option<&RepoDefinition> = None;
-    if !no_commit {
+    if !no_commit || check_rules_on_add {
         for repo_type in REPO_TYPES {
             if location.join(repo_type.directory).is_dir() {
                 repository = Some(repo_type);
@@ -1846,6 +1936,28 @@ fn process_location(
     }
 
     // Offer to commit changes (skip if no_commit mode)
+    // Sort-only: no commit to gate, but the checks still work off the diff, so
+    // run them as a report rather than silently ignoring the flag.
+    if no_commit && check_rules_on_add {
+        match base_cmd.as_ref().filter(|_| git_available()) {
+            Some(base_cmd) => {
+                run_rule_checks(
+                    base_cmd,
+                    remove_bad_rules,
+                    no_color,
+                    file_extensions,
+                    ignore_files,
+                    ignore_dirs,
+                    disable_ignored,
+                    false,
+                );
+            }
+            None => eprintln!(
+                "Warning: --check-rules-on-add needs a git repository; skipping the rule checks."
+            ),
+        }
+    }
+
     if !no_commit {
         if let (Some(repo), Some(base_cmd)) = (repository, base_cmd) {
             if !git_available() {
@@ -1884,62 +1996,19 @@ fn process_location(
             }
 
             // Check newly added lines for rules that cannot work
-            if check_rules_on_add {
-                if let Some(ref additions) = additions {
-                    // Filter lists only -- the diff also carries workflows,
-                    // scripts and source, where a `$` is not an option marker
-                    // and --remove-bad-rules would delete a working line.
-                    let additions: Vec<_> = additions
-                        .iter()
-                        .filter(|a| {
-                            diff_path_is_filter_list(
-                                &a.file,
-                                file_extensions,
-                                ignore_files,
-                                ignore_dirs,
-                                disable_ignored,
-                            )
-                        })
-                        .cloned()
-                        .collect();
-                    let problems = fop_rules::check_additions(&additions);
-                    if !problems.is_empty() {
-                        fop_rules::report_addition_problems(&problems, no_color);
-                        println!("\nFound {} questionable rule(s) in added lines.", problems.len());
-                        if remove_bad_rules {
-                            // Every flagged line goes, advice included, so what
-                            // remains to commit is only what passed. A bare
-                            // hostname is legal in a plain domain-list file, so
-                            // exclude such files with `ignorefiles` if fop is
-                            // pointed at a repository holding them.
-                            let advice = problems.iter().filter(|(_, p)| !p.removable).count();
-                            let targets: Vec<&fop_typos::Addition> =
-                                problems.iter().map(|(add, _)| *add).collect();
-                            match remove_flagged_lines(&targets, &base_cmd) {
-                                Ok(n) => {
-                                    println!("Removed {} line(s). Re-stage before committing.", n);
-                                    if advice > 0 {
-                                        println!(
-                                            "{} of those were advice rather than a defect -- \
-                                             check they were not deliberate.",
-                                            advice
-                                        );
-                                    }
-                                }
-                                Err(e) => eprintln!("Could not remove flagged lines: {}", e),
-                            }
-                            return Ok(());
-                        }
-                        print!("Continue with commit? (y/N): ");
-                        io::stdout().flush().ok();
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input).ok();
-                        if input.trim().to_lowercase() != "y" {
-                            println!("Commit aborted. Fix the rules and try again.");
-                            return Ok(());
-                        }
-                    }
-                }
+            if check_rules_on_add
+                && !run_rule_checks(
+                    &base_cmd,
+                    remove_bad_rules,
+                    no_color,
+                    file_extensions,
+                    ignore_files,
+                    ignore_dirs,
+                    disable_ignored,
+                    true,
+                )
+            {
+                return Ok(());
             }
 
            // Check for banned domains in added lines
