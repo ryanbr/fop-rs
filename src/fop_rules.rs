@@ -198,21 +198,47 @@ fn looks_like_hostname(line: &str) -> bool {
 /// broken site. Deliberate uses are vanishingly rare: across 609k lines of
 /// EasyList and the region lists there was one, itself a typo.
 #[inline]
-fn is_unanchored_host(line: &str) -> bool {
+fn unanchored_reason(line: &str) -> Option<&'static str> {
     // An anchor, a scheme, a wildcard or a leading dot all mean the author
     // chose the matching they wanted.
     if line.starts_with(['|', '@', '/', '.', '-', '*']) {
-        return false;
+        return None;
     }
-    let Some((host, rest)) = line.split_once('^') else {
-        return false;
-    };
+    let (host, rest) = line.split_once('^')?;
     // `example.com^somepath` is not a host rule and does not match the name
     // anywhere, so the advice would misdescribe it.
     if !rest.is_empty() && rest != "|" {
-        return false;
+        return None;
     }
-    looks_like_hostname(host)
+    if looks_like_hostname(host) {
+        // A real hostname, so the anchored form is the obvious intent.
+        Some("host rule with no || anchor -- matches the name anywhere")
+    } else if is_bare_token(host) {
+        // No domain at all: naming what it is beats guessing what was meant.
+        Some("unanchored pattern with no domain -- matches this text anywhere")
+    } else {
+        None
+    }
+}
+
+/// Whether `text` looks like keyboard mash rather than a word, as in
+/// `fdfdgfgdgfd^`.
+///
+/// The form -- a dotless token terminated by `^` -- appears nowhere in 609k
+/// lines of EasyList and the region lists, but that only says it is unused,
+/// not that any such token is a mistake: `doubleclick^`, `prebid^` and
+/// `300x250^` are all patterns someone could reasonably write, and flagging
+/// them would see them deleted under `--remove-bad-rules`.
+///
+/// So the bar is a token that reads as nothing at all: six or more letters,
+/// no digits or punctuation, and not one vowel. That catches the mash and
+/// leaves every real keyword alone, at the cost of missing mash that happens
+/// to contain a vowel.
+#[inline]
+fn is_bare_token(text: &str) -> bool {
+    text.len() >= 6
+        && text.bytes().all(|b| b.is_ascii_alphabetic())
+        && !text.bytes().any(|b| matches!(b.to_ascii_lowercase(), b'a' | b'e' | b'i' | b'o' | b'u'))
 }
 
 /// Why this rule looks wrong, or `None` if it looks fine.
@@ -238,9 +264,9 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
                 ..RuleProblem::new("bare domain, did you mean ||host^ ?", "")
             });
         }
-        return is_unanchored_host(line).then(|| RuleProblem {
+        return unanchored_reason(line).map(|reason| RuleProblem {
             removable: false,
-            ..RuleProblem::new("host rule with no || anchor -- matches the name anywhere", "")
+            ..RuleProblem::new(reason, "")
         });
     }
 
@@ -292,11 +318,12 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // as `$csp=script-src 'none'`. The pattern half is still worth judging,
         // or an unanchored host escapes the check purely by its options.
         if let Some((pattern, _)) = line.rsplit_once('$') {
-            if is_unanchored_host(pattern) || is_bare_domain(pattern) {
-                return Some(RuleProblem {
-                    removable: false,
-                    ..RuleProblem::new("host rule with no || anchor -- matches the name anywhere", "")
-                });
+            let reason = unanchored_reason(pattern).or_else(|| {
+                is_bare_domain(pattern)
+                    .then_some("host rule with no || anchor -- matches the name anywhere")
+            });
+            if let Some(reason) = reason {
+                return Some(RuleProblem { removable: false, ..RuleProblem::new(reason, "") });
             }
         }
         // A rule with no `$` at all has no option list to be malformed.
@@ -346,11 +373,11 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
     // The options are sound; the pattern they hang off may still have lost its
     // anchor. Checked last so a real defect is reported ahead of this advice.
     let pattern = caps.get(1)?.as_str();
-    if is_unanchored_host(pattern) || is_bare_domain(pattern) {
-        return Some(RuleProblem {
-            removable: false,
-            ..RuleProblem::new("host rule with no || anchor -- matches the name anywhere", "")
-        });
+    let reason = unanchored_reason(pattern).or_else(|| {
+        is_bare_domain(pattern).then_some("host rule with no || anchor -- matches the name anywhere")
+    });
+    if let Some(reason) = reason {
+        return Some(RuleProblem { removable: false, ..RuleProblem::new(reason, "") });
     }
     None
 }

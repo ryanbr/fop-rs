@@ -1604,6 +1604,26 @@ fn test_missing_anchor_is_flagged() {
     use crate::fop_rules::check_rule as f;
     // The rule that prompted this: `||` forgotten, so it matches the name
     // anywhere -- `rbush.shop^` also blocks `lampedburbush.shop`.
+    // A dotless token is the same mistake without even a domain in it. The
+    // form does not occur once in 609k lines of real lists.
+    for garbage in ["fdfdgfgdgfd^", "ffgdfgdfgd^", "wxyzzzq^", "kjhgfdsz^"] {
+        let p = f(garbage).expect(garbage);
+        // Its own wording: there is no host here, so "did you mean ||host^"
+        // would be guessing at an intent the rule does not show.
+        assert_eq!(p.reason, "unanchored pattern with no domain -- matches this text anywhere");
+        assert!(!p.removable);
+    }
+    // A token that reads as a word is left alone, however unusual: every one
+    // of these is a pattern someone could reasonably write, and under
+    // --remove-bad-rules a false positive is a deleted rule.
+    for ok in [
+        "doubleclick^", "prebid^", "sponsored^", "adsbygoogle^", "300x250^",
+        "click^", "adserv^", "_ads^", "-ads^", "a^", "cdn^",
+        // ...as is anything the author anchored or gave a path.
+        "||adserv^", "/ads^", "adserv^somepath", ".adserv^", "|adserv^",
+    ] {
+        assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
+    }
     for missing in [
         "rbush.shop^",
         "rbush.shop^$third-party",

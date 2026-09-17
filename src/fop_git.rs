@@ -590,7 +590,15 @@ pub fn build_base_command(repo: &RepoDefinition, location: &Path, git_binary: Op
 /// Check if git command is available
 #[inline]
 pub fn git_available() -> bool {
-    Command::new("git")
+    git_binary_available("git")
+}
+
+/// Whether the git binary fop is actually configured to use will run.
+///
+/// `--git-binary` may point somewhere other than `PATH`, in which case asking
+/// about plain `git` answers a different question than the one being asked.
+pub fn git_binary_available(binary: &str) -> bool {
+    Command::new(binary)
         .arg("--version")
         .output()
         .map(|o| o.status.success())

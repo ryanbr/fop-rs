@@ -1887,7 +1887,7 @@ fn process_location(
     // describing content that is no longer there.
     let mut rules_ok = true;
     if check_rules_on_add {
-        match base_cmd.as_ref().filter(|_| git_available()) {
+        match base_cmd.as_ref().filter(|c| fop_git::git_binary_available(&c[0])) {
             Some(base_cmd) => {
                 rules_ok = run_rule_checks(
                     base_cmd,
@@ -1902,8 +1902,16 @@ fn process_location(
                     !no_commit,
                 );
             }
+            // Two different failures, and blaming the wrong one sends people
+            // hunting: no `.git` here means fop was pointed at a subdirectory,
+            // which is a different problem from git being unrunnable.
+            None if repository.is_none() => eprintln!(
+                "Warning: no repository in {} -- fop looks for .git in the directory it is \
+                 given, so run it from the repository root. Skipping the rule checks.",
+                location.display()
+            ),
             None => eprintln!(
-                "Warning: --check-rules-on-add needs a working git; skipping the rule checks."
+                "Warning: git could not be run; skipping the rule checks."
             ),
         }
     }
