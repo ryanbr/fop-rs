@@ -1891,6 +1891,11 @@ fn test_space_in_pattern_only_for_standard_rules() {
         "||example.com^$csp=script-src 'none'",
         "$csp=child-src 'none'; frame-src 'self' *",
         "||example.com^$replace=/foo bar/baz/",
+        // Real uBO rules whose `$replace=` rewrite carries HTML, so the option
+        // list does not parse and the pattern half is unknowable. Flagging
+        // these called three valid uAssets rules defects.
+        r#"||dragontea.ink^$document,replace=/(var tea='\{"ct":"[0-9a-f]+"\}';)/$1document.write('<link rel="stylesheet" href="x">')/"#,
+        r#"||wiki.yjsnpi.nu/comments/$script,replace=/(;\}\}function [A-Za-z]+\([A-Za-z]?\))/$1 var x = 1;/"#,
         // A hosts entry, which fop is given in localhost mode.
         "127.0.0.1 example.com",
         // Cosmetic selectors are full of spaces, and carry `^=` attribute

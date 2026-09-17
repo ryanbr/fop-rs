@@ -392,16 +392,11 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // regex terminator in someone's source.
         let anchored =
             line.starts_with("||") || line.starts_with('|') || line.starts_with("@@");
-        // Same rule for a line with no option list: the pattern is all of it.
-        let pattern = line.rsplit_once('$').map_or(line, |(p, _)| p);
-        if pattern.bytes().any(|b| b.is_ascii_whitespace())
-            && is_standard_network_rule(pattern)
-        {
-            return Some(RuleProblem::new(
-                "space in the pattern -- a network rule cannot match one",
-                "",
-            ));
-        }
+        // No space check here. Reaching this branch means the option list did
+        // not parse, and one reason it may not is a value that legitimately
+        // holds spaces -- uBO's `$replace=` rewrites carry whole snippets of
+        // HTML. Without a parse there is no way to say where the pattern ends,
+        // and guessing flagged three valid rules in uAssets as defects.
         // `OPTION_PATTERN` rejects any option whose value holds a space, such
         // as `$csp=script-src 'none'`. The pattern half is still worth judging,
         // or an unanchored host escapes the check purely by its options.
