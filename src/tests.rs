@@ -1732,3 +1732,67 @@ fn test_missing_anchor_only_for_host_rules() {
     assert!(f("example.com^$csp=script-src 'none'").is_some());
     assert!(f("||example.com^$csp=script-src 'none'").is_none());
 }
+
+#[test]
+fn test_split_options_matches_the_pattern_it_replaced() {
+    use crate::fop_rules::check_rule as f;
+    // A `$` that is not an option marker: the option keys would have to hold
+    // characters no key may carry.
+    for not_a_rule in [
+        "export PATH=$PATH:/usr/bin",
+        "  run: echo \"$GITHUB_SHA\"",
+        "some: $value",
+        "let x = format!(\"{}\", $y);",
+    ] {
+        assert!(f(not_a_rule).is_none(), "{:?} flagged", not_a_rule);
+    }
+    // Values that legitimately carry `$`, commas or spaces.
+    for valid in [
+        "||example.com^$removeparam=/^utm$/",
+        "||example.com/script.js$replace=/(foo)bar/$1baz/",
+        "||example.com^$xmlprune=/a,b/",
+        "||example.com^$csp=script-src 'none'",
+        "||example.com^$third-party",
+        "||example.com^$inline-font",
+    ] {
+        assert!(f(valid).is_none(), "{:?} flagged as {:?}", valid, f(valid).map(|p| p.reason));
+    }
+    // Defects still register, by each of the routes through the splitter.
+    assert_eq!(f("||example.com^$fakeopt").unwrap().reason, "unknown option");
+    assert_eq!(f("||example.com$").unwrap().reason, "option marker with no options");
+    assert_eq!(f("||example.com^$domain=").unwrap().reason, "option with no value");
+    assert_eq!(f("||x.com^$third-party,").unwrap().reason, "empty option");
+    assert_eq!(f("||example.com^$domain=a.com|").unwrap().reason, "empty entry in option value");
+}
+
+#[test]
+fn test_split_options_agrees_with_the_regex() {
+    use crate::fop_rules::split_options;
+    // `OPTION_PATTERN` is still the sorter's definition of an option list, so
+    // the scan that replaced it here is held to producing the same split. It
+    // agrees on all 609k lines of EasyList and the region lists; these are the
+    // shapes that are rare or absent there.
+    for line in [
+        // Not option markers at all.
+        "export PATH=$PATH:/usr/bin", "  run: echo \"$GITHUB_SHA\"", "some: $value",
+        "let x = format!(\"{}\", $y);", "echo $?", "$", "$$", "a$", "$,",
+        // A value carrying `$`, so the marker is not the last one -- the regex
+        // found this by backtracking, and the scan walks the same candidates.
+        "||x^$removeparam=/^utm$/", "||x^$replace=/(a)b/$1c/", "a$b$c",
+        // Empty values belong to the anchored fallback, not to this split.
+        "$a=", "||x^$domain=",
+        // Ordinary lists.
+        "||x^$third-party", "||x^$domain=a.com|~b.com,important", "||x^$~third-party",
+        "||x^$xmlprune=/a,b/", "||x^$UPPER", "||x^$a_b", "||x^$a-b", "||x^$1",
+        // Whitespace in a value, which neither accepts.
+        "||x^$csp=script-src 'none'", "||x^$a b", "||x^$a=b c", "||x^$ ",
+        // Escaped markers.
+        "x\\$y$third-party",
+    ] {
+        let scanned = split_options(line);
+        let matched = crate::OPTION_PATTERN
+            .captures(line)
+            .map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str()));
+        assert_eq!(scanned, matched, "{:?}", line);
+    }
+}

@@ -246,6 +246,53 @@ fn is_bare_token(text: &str) -> bool {
         && !text.bytes().any(|b| matches!(b.to_ascii_lowercase(), b'a' | b'e' | b'i' | b'o' | b'u'))
 }
 
+/// Split a network rule into its pattern and option list.
+///
+/// Does by hand what `OPTION_PATTERN` did: the regex leads with `.*`, and on a
+/// rule carrying options it cost some 650ns against 15ns for the byte paths --
+/// forty times the rest of the checks put together. An option list is a
+/// `$` followed by `~?[\w-]+` keys with optional `=value`, so recognising one
+/// needs a scan, not a regex.
+#[inline]
+pub(crate) fn split_options(line: &str) -> Option<(&str, &str)> {
+    let bytes = line.as_bytes();
+    // Try each unescaped `$` from the right. The last one is usually the
+    // marker, but a value may contain one -- `$removeparam=/^utm$/` ends in a
+    // regex terminator -- and then the marker is further left. The regex this
+    // replaces found it by backtracking; this walks the same candidates.
+    for (at, _) in bytes
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(i, &b)| b == b'$' && (*i == 0 || bytes[i - 1] != b'\\'))
+    {
+        let (pattern, options) = (&line[..at], &line[at + 1..]);
+        if options.is_empty() {
+            continue;
+        }
+        // Every option must be shaped like one, or this `$` was not the
+        // marker: a shell `$PATH:/usr/bin` has a `:` no option key may carry.
+        let shaped = options.split(',').all(|option| {
+            let option = option.strip_prefix('~').unwrap_or(option);
+            let (key, value) = match option.split_once('=') {
+                Some((k, v)) => (k, Some(v)),
+                None => (option, None),
+            };
+            !key.is_empty()
+                && key
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+                // An empty value is not an option list to the pattern this
+                // replaces, which leaves `$domain=` to the anchored fallback.
+                && value.is_none_or(|v| !v.is_empty() && !v.bytes().any(|b| b.is_ascii_whitespace()))
+        });
+        if shaped {
+            return Some((pattern, options));
+        }
+    }
+    None
+}
+
 /// Why this rule looks wrong, or `None` if it looks fine.
 ///
 /// Ordered cheapest-first: a byte-level reject for comments and for lines
@@ -312,7 +359,7 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
     if bytes.last() == Some(&b'$') && bytes.len() > 1 && bytes[bytes.len() - 2] != b'\\' {
         return Some(RuleProblem::new("option marker with no options", ""));
     }
-    let Some(caps) = crate::OPTION_PATTERN.captures(line) else {
+    let Some((pattern, options)) = split_options(line) else {
         // The pattern rejects a malformed option list and a line that is not a
         // rule alike. Telling them apart is only safe behind an unambiguous
         // filter-rule anchor, where a `$` cannot be a shell variable or a
@@ -344,13 +391,11 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         }
         return None;
     };
-    // The pattern half of a network rule never contains whitespace, but
-    // `OPTION_PATTERN` accepts anything before the `$`, so `some: $value` in a
-    // YAML file would otherwise read as a rule with an unknown option.
-    if caps.get(1)?.as_str().bytes().any(|b| b.is_ascii_whitespace()) {
+    // The pattern half of a network rule never contains whitespace, so
+    // `some: $value` in a YAML file is not a rule with an unknown option.
+    if pattern.bytes().any(|b| b.is_ascii_whitespace()) {
         return None;
     }
-    let options = caps.get(2)?.as_str();
     // Commas inside a `jsonprune=`/`xmlprune=` value are part of the value.
     for option in crate::fop_sort::split_filter_options(options) {
         let option = option.trim();
@@ -377,7 +422,6 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
     }
     // The options are sound; the pattern they hang off may still have lost its
     // anchor. Checked last so a real defect is reported ahead of this advice.
-    let pattern = caps.get(1)?.as_str();
     let reason = unanchored_reason(pattern).or_else(|| {
         is_bare_domain(pattern).then_some("host rule with no || anchor -- matches the name anywhere")
     });
