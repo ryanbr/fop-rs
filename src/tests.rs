@@ -1637,6 +1637,13 @@ fn test_missing_anchor_is_flagged() {
         // `300x250` is real, and `df334sdf` is not, but nothing here can
         // tell them apart, so neither is flagged.
         "df334sdf", "fdsgfgd@!", "300x250",
+        // Real lines from easylist_general_block.txt, which is 973 unanchored
+        // substring patterns against 3 anchored rules -- the shape most at
+        // risk from these checks.
+        "&rb=&uuid=$third-party", "&subaffid=%$subdocument,third-party",
+        "-ad-manager/$~stylesheet", "-ad-sidebar.$image",
+        "-ad.jpg.pagespeed.$image", "-ads-manager/$domain=~wordpress.org",
+        "-ads/assets/$script,domain=~web-ads.org", "-assets/ads.$~script",
         // Those same characters in front of a real pattern. `-ad.com^` keeps
         // its leading boundary on purpose, so it is not advised to anchor.
         "-ad-banner-", "-ads", "_ads", "+ads", "-adserver", "--", "-", "+",
