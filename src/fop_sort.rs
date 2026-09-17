@@ -1169,14 +1169,25 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
         // Longest match at the first `#`, rather than the first separator that
         // happens to appear anywhere: a selector may contain `#?#` inside an
         // attribute value, and splitting there would group the wrong rules.
+        // Every cosmetic separator, longest first. The scan must stop at the
+        // first one it meets rather than skip the ones it cannot merge: an
+        // exception with an ID selector reads as `#@#` + `#ad`, and walking
+        // past the `#@#` matches the `##` those two `#` characters form --
+        // splitting as domains `a.com#@`, separator `##`, and merging the
+        // exception after all.
+        const ALL_SEPARATORS: [&str; 10] = [
+            "#@$?#", "#@%#", "#@$#", "#@?#", "#$?#", "#@#", "#$#", "#%#", "#?#", "##",
+        ];
         const MERGEABLE: [&str; 2] = ["#?#", "##"];
         let split = (!line.starts_with('!') && !line.starts_with('['))
             .then(|| {
                 let mut from = 0;
                 while let Some(hash) = line[from..].find('#') {
                     let at = from + hash;
-                    if let Some(sep) = MERGEABLE.iter().find(|sep| line[at..].starts_with(**sep)) {
-                        return Some((&line[..at], *sep, &line[at + sep.len()..]));
+                    if let Some(sep) = ALL_SEPARATORS.iter().find(|s| line[at..].starts_with(**s)) {
+                        return MERGEABLE
+                            .contains(sep)
+                            .then(|| (&line[..at], *sep, &line[at + sep.len()..]));
                     }
                     from = at + 1;
                 }
@@ -1212,9 +1223,13 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
         // An empty result means the group holds something that must not be
         // folded; put the rules back exactly as they came in.
         if merged_arg.is_empty() {
-            for (offset, arg) in args.iter().enumerate() {
+            // All at `pos`: only the first member of a group advanced `idx`,
+            // so `pos + offset` would collide with positions already given to
+            // later lines and the stable sort would interleave them. Equal
+            // keys keep insertion order, which is the order they arrived in.
+            for arg in &args {
                 order.push((
-                    pos + offset,
+                    pos,
                     format!("{}{}{}:{}({})", domains, separator, base, pseudo, arg),
                 ));
             }

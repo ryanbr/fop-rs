@@ -1547,13 +1547,24 @@ fn test_has_text_merges_across_separators_and_dedups() {
     // by matching its selector text, so folding two of them leaves neither
     // original string in existence and the rules they cancelled are no longer
     // excepted. A hiding rule stands alone, so merging those is safe.
-    for sep in ["#@#", "#@?#"] {
-        let exceptions = vec![
-            format!("a.com{}.x:has-text(A)", sep),
-            format!("a.com{}.x:has-text(B)", sep),
-        ];
-        assert_eq!(c(exceptions.clone()), exceptions, "{}", sep);
+    // An ID selector is the case that matters: `#@#` + `#ad` puts two `#`
+    // together, and a scan that steps over the separator it cannot merge finds
+    // that pair and splits there instead -- merging the exception after all.
+    // `#$#`/`#%#` inject CSS and JavaScript and must not be touched either.
+    for sep in ["#@#", "#@?#", "#$#", "#%#", "#@$#", "#@%#"] {
+        for selector in ["#ad", ".x", "[data-x=\"y\"]"] {
+            let untouched = vec![
+                format!("a.com{}{}:has-text(A)", sep, selector),
+                format!("a.com{}{}:has-text(B)", sep, selector),
+            ];
+            assert_eq!(c(untouched.clone()), untouched, "{} {}", sep, selector);
+        }
     }
+    // A hiding rule with an ID selector still merges.
+    assert_eq!(
+        c(vec!["a.com###ad:has-text(A)".into(), "a.com###ad:has-text(B)".into()]),
+        vec!["a.com###ad:has-text(/A|B/)".to_string()]
+    );
     // ...nor is a hiding rule ever folded together with an exception.
     let mixed = c(vec![
         "a.com##.x:has-text(A)".into(),
@@ -1641,6 +1652,22 @@ fn test_has_text_merge_refuses_what_it_cannot_fold() {
         "a.com##.x:has-text(bar)".to_string(),
     ];
     assert_eq!(c(empty_alt.clone()), empty_alt);
+
+    // A group that is put back must keep its place. Only the first member
+    // advanced the position counter, so offsetting the rest by their index
+    // collided with later lines and the stable sort interleaved them.
+    assert_eq!(
+        c(vec![
+            "a.com##.x:has-text(/foo/i)".into(),
+            "a.com##.x:has-text(bar)".into(),
+            "b.com##.y".into(),
+        ]),
+        vec![
+            "a.com##.x:has-text(/foo/i)".to_string(),
+            "a.com##.x:has-text(bar)".to_string(),
+            "b.com##.y".to_string(),
+        ]
+    );
 
     // Ordinary English text is literal, so an apostrophe is a character rather
     // than an open quote and must not block the merge.
