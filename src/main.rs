@@ -1514,9 +1514,11 @@ fn run_rule_checks(
     }
     if remove_bad_rules && !dry_run {
         // Every flagged line goes, advice included, so what remains is only
-        // what passed. A bare hostname is legal in a plain domain-list file,
-        // so exclude such files with `ignorefiles` if fop is pointed at a
-        // repository holding them.
+        // what passed. Nothing is rewritten in place: a rule the author wrote
+        // is either right or it is not, and a silent correction is harder to
+        // notice than a deletion. A bare hostname is legal in a plain
+        // domain-list file, so exclude such files with `ignorefiles` if fop is
+        // pointed at a repository holding them.
         let advice = problems.iter().filter(|(_, p)| !p.removable).count();
         let targets: Vec<&fop_typos::Addition> = problems.iter().map(|(add, _)| *add).collect();
         match remove_flagged_lines(&targets, base_cmd) {

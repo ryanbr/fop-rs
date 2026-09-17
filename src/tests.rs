@@ -1881,8 +1881,25 @@ fn test_space_in_pattern_only_for_standard_rules() {
         "|http://exa mple.com",
     ] {
         let p = f(broken).expect(broken);
-        assert_eq!(p.reason, "space in the pattern -- a network rule cannot match one");
-        assert!(p.removable, "{} is a defect, not advice", broken);
+        assert_eq!(p.reason, "space in the pattern -- uBO and AdGuard will not match this");
+        // Advice rather than a defect, so it does not fail a CI build:
+        // `filter_tidy` strips these spaces on the sorting pass anyway. It is
+        // still deleted by --remove-bad-rules, which takes everything flagged.
+        assert!(!p.removable, "{} should be advice", broken);
+    }
+    // An anchor has to be followed by rule text. A patch hunk header and a
+    // markdown table row both open with one and are not rules.
+    for not_a_rule in [
+        "@@ -3,6 +3,9 @@ import Foundation",
+        "| Option | Description |",
+        "|| echo fallback",
+        // A regex filter keeps its spaces on purpose.
+        r#"@@/^https?:\/\/[^ ]+\/ads\//$script"#,
+        r#"|/re gex/$script"#,
+        // A `^` mid-string is not a separator, and nothing else here is a rule.
+        r#"grep "^foo bar" file"#,
+    ] {
+        assert!(f(not_a_rule).is_none(), "{:?} flagged as {:?}", not_a_rule, f(not_a_rule).map(|p| p.reason));
     }
     // Everywhere else a space is ordinary and must be left alone. `$csp` is
     // the case that matters: every one of the 41 rules in those lists with a
@@ -1891,6 +1908,16 @@ fn test_space_in_pattern_only_for_standard_rules() {
         "||example.com^$csp=script-src 'none'",
         "$csp=child-src 'none'; frame-src 'self' *",
         "||example.com^$replace=/foo bar/baz/",
+        // Real `$csp=` rules, whose values are full of spaces. These parse as
+        // options, so the pattern half is known and holds none.
+        "$csp=child-src 'none'; frame-src 'self' *; worker-src 'none',domain=fileone.tv",
+        "||thegay.com^$csp=default-src 'self' *.ahcdn.com fonts.gstatic.com https://thegay.com",
+        // Other option values that may carry spaces or awkward punctuation.
+        "||example.com^$permissions=autoplay=()|geolocation=()",
+        "||example.com^$removeheader=set-cookie",
+        r#"||example.com^$hls=/#UPLYNK-SEGMENT:.*\,ad/"#,
+        r#"||example.com^$jsonprune=\$..[?(has @.a)]"#,
+        "*$doc,replace=/popunder//,to=fullxh.com|megaxh.com",
         // Real uBO rules whose `$replace=` rewrite carries HTML, so the option
         // list does not parse and the pattern half is unknowable. Flagging
         // these called three valid uAssets rules defects.
@@ -1919,5 +1946,72 @@ fn test_space_in_pattern_only_for_standard_rules() {
         "  run: echo \"$GITHUB_SHA\"",
     ] {
         assert!(f(ok).is_none(), "{:?} flagged as {:?}", ok, f(ok).map(|p| p.reason));
+    }
+}
+
+/// AdGuard and uBO syntax must survive the addition checks untouched.
+#[test]
+fn test_engine_specific_rules_are_left_alone() {
+    use crate::fop_rules::check_rule as f;
+    let adguard = [
+        "example.com#$#.ad { display: none!important; }",
+        "example.com#$?#.ad:has(.x) { remove: true; }",
+        "example.com#@$#.ad { display: none; }",
+        "example.com#@$?#.ad { remove: true; }",
+        "example.com#%#window.__adg = 1;",
+        "example.com#@%#window.__adg = 1;",
+        "example.com#%#//scriptlet('abort-on-property-read', 'ads')",
+        r#"example.com$$script[tag-content="ad config"]"#,
+        r#"example.com$@$script[tag-content="ad"]"#,
+        "[$path=/page/]example.com##.ad",
+        "[$domain=example.com]##.ad",
+        "||example.com^$removeheader=refresh",
+        "||example.com^$stealth=referrer",
+        "||example.com^$app=org.example.app",
+        "||example.com^$network",
+        "||example.com^$important,third-party",
+        "||example.com^$badfilter",
+        "||example.com^$denyallow=a.com|b.com",
+        "||example.com^$jsonprune=\\$..[?(has @.ads)]",
+        "||example.com^$hls=/#UPLYNK-SEGMENT:.*\\,ad/",
+        "@@||example.com^$genericblock,generichide",
+    ];
+    let ubo = [
+        "example.com##+js(aopr, ads)",
+        "example.com##^script:has-text(adsbygoogle)",
+        "example.com#@#+js(aopr, ads)",
+        "example.com#?#.ad:has-text(Sponsored)",
+        "example.com##.ad:matches-css(display: block)",
+        "example.com##.ad:xpath(//div[@id=\"x\"])",
+        "example.com##.ad:upward(2)",
+        "example.com##.ad:watch-attr(class)",
+        "example.com##.ad:min-text-length(100)",
+        "example.com##.ad:style(display: none !important)",
+        "||example.com^$removeparam=utm_source",
+        "||example.com^$redirect=noopjs",
+        "||example.com^$redirect-rule=noopmp3-0.1s",
+        "||example.com^$csp=script-src 'none'",
+        "||example.com^$1p,strict3p",
+        "||example.com^$doc,ghide",
+        "||example.com^$ehide,shide",
+        "||example.com^$cname",
+        "||example.com^$inline-script,inline-font",
+        "||example.com^$empty,mp4,popunder",
+        "||example.com^$method=get|post",
+        "||example.com^$to=a.com,from=b.com",
+        "||example.com^$ipaddress=1.2.3.4",
+        "||example.com^$header=via:1.1",
+        "||example.com^$urlskip=/^/ -3",
+        "||example.com^$uritransform=/x/y/",
+        "/^https?:\\/\\/ads\\d+\\.example\\.com\\//$script",
+        "!#include filters/other.txt",
+        "!#if env_chromium",
+    ];
+    // Neither engine's own syntax is any of fop's business here: the checks
+    // look for rules that cannot work, and every one of these does.
+    for (engine, set) in [("AdGuard", &adguard[..]), ("uBO", &ubo[..])] {
+        for l in set {
+            assert!(f(l).is_none(), "{} rule flagged as {:?}: {}", engine, f(l).map(|p| p.reason), l);
+        }
     }
 }

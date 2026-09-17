@@ -251,19 +251,32 @@ fn is_bare_token(text: &str) -> bool {
         && !text.bytes().any(|b| matches!(b.to_ascii_lowercase(), b'a' | b'e' | b'i' | b'o' | b'u'))
 }
 
+/// Reason text for a space in a pattern.
+///
+/// Not "cannot match": ABP normalises spaces out of network filters, so such a
+/// rule does work there. uBO and AdGuard do not, and fop's own `filter_tidy`
+/// removes them, which is why this is advice with a repair rather than a
+/// defect -- sorting the file fixes it losslessly.
+const SPACE_REASON: &str = "space in the pattern -- uBO and AdGuard will not match this";
+
 /// Whether `line` carries the syntax of a standard adblock network rule.
 ///
 /// The anchors, or a separator, or an option list -- the marks that say the
 /// author was writing a rule rather than a bare word or a hosts entry.
 #[inline]
 fn is_standard_network_rule(line: &str) -> bool {
-    line.starts_with("||")
-        || line.starts_with('|')
-        || line.starts_with("@@")
-        // A trailing separator, rather than a `^` anywhere: a shell line like
-        // `sed -i "s/^version = .*/…"` carries one mid-string and is not a
-        // rule at all.
-        || line.ends_with('^')
+    // A regex filter keeps its spaces -- `@@/^https?:\/\/[^ ]+\/ads\//` means
+    // what it says -- so it is never judged on them.
+    let body = line.trim_start_matches(['@', '|']);
+    if body.starts_with('/') {
+        return false;
+    }
+    // An anchor has to be followed by something rule-shaped. `@@ -3,6 +3,9 @@`
+    // in a patch and `| Option | Description |` in a table both open with one
+    // and are not rules; a real anchor is never followed by whitespace.
+    let anchored = (line.starts_with('|') || line.starts_with("@@"))
+        && body.starts_with(|c: char| !c.is_whitespace());
+    anchored || line.ends_with('^')
 }
 
 /// Split a network rule into its pattern and option list.
@@ -332,8 +345,9 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // No detail: the line itself is already printed beside the reason.
         // No options, so the whole line is the pattern.
         if line.bytes().any(|b| b.is_ascii_whitespace()) {
-            return is_standard_network_rule(line).then(|| {
-                RuleProblem::new("space in the pattern -- a network rule cannot match one", "")
+            return is_standard_network_rule(line).then(|| RuleProblem {
+                removable: false,
+                    ..RuleProblem::new(SPACE_REASON, "")
             });
         }
         if is_bare_domain(line) {
@@ -410,7 +424,10 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
             // that really does look like a lost anchor.
             let reason = unanchored_reason(pattern);
             if let Some(reason) = reason {
-                return Some(RuleProblem { removable: false, ..RuleProblem::new(reason, "") });
+                return Some(RuleProblem {
+                    removable: false,
+                            ..RuleProblem::new(reason, "")
+                });
             }
         }
         // A rule with no `$` at all has no option list to be malformed.
@@ -431,8 +448,10 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
     // is a defect; anywhere else -- `some: $value` in a YAML file -- it just
     // means this was never a rule.
     if pattern.bytes().any(|b| b.is_ascii_whitespace()) {
-        return is_standard_network_rule(pattern)
-            .then(|| RuleProblem::new("space in the pattern -- a network rule cannot match one", ""));
+        return is_standard_network_rule(pattern).then(|| RuleProblem {
+            removable: false,
+            ..RuleProblem::new(SPACE_REASON, "")
+        });
     }
     // Commas inside a `jsonprune=`/`xmlprune=` value are part of the value.
     for option in crate::fop_sort::split_filter_options(options) {
@@ -462,7 +481,10 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
     // anchor. Checked last so a real defect is reported ahead of this advice.
     let reason = unanchored_reason(pattern);
     if let Some(reason) = reason {
-        return Some(RuleProblem { removable: false, ..RuleProblem::new(reason, "") });
+        return Some(RuleProblem {
+            removable: false,
+            ..RuleProblem::new(reason, "")
+        });
     }
     None
 }
