@@ -1696,13 +1696,51 @@ fn test_has_text_merge_refuses_what_it_cannot_fold() {
     let slash = c(vec!["a.com##.x:has-text(/)".into(), "a.com##.x:has-text(B)".into()]);
     assert_eq!(slash, vec!["a.com##.x:has-text(//|B/)".to_string()]);
 
-    // A regex carrying flags cannot be folded -- its flags would not survive,
-    // and `/foo/i` joined as text becomes a literal search for six characters.
-    let flagged = vec![
+    // One flagged argument sets the flags for the whole group; plain text
+    // joins under them. That does widen the plain text -- `Sponsored` becomes
+    // case-insensitive -- which is what an author writing `/i` beside it
+    // means, and either order gives the same flags.
+    assert_eq!(
+        c(vec![
+            "a.com##.x:has-text(/Protect your privacy/i)".into(),
+            "a.com##.x:has-text(Sponsored)".into(),
+        ]),
+        vec!["a.com##.x:has-text(/Protect your privacy|Sponsored/i)".to_string()]
+    );
+    assert_eq!(
+        c(vec![
+            "a.com##.x:has-text(Sponsored)".into(),
+            "a.com##.x:has-text(/Protect your privacy/i)".into(),
+        ]),
+        vec!["a.com##.x:has-text(/Sponsored|Protect your privacy/i)".to_string()]
+    );
+    // Two different flag sets have no single form to merge into.
+    let mixed_flags = vec![
         "a.com##.x:has-text(/foo/i)".to_string(),
-        "a.com##.x:has-text(bar)".to_string(),
+        "a.com##.x:has-text(/bar/m)".to_string(),
     ];
-    assert_eq!(c(flagged.clone()), flagged);
+    assert_eq!(c(mixed_flags.clone()), mixed_flags);
+    // Agreeing flags merge and keep them: `/a|b/i` means what both meant.
+    assert_eq!(
+        c(vec![
+            "a.com##.x:has-text(/Protect your privacy/i)".into(),
+            "a.com##.x:has-text(/Sponsored/i)".into(),
+        ]),
+        vec!["a.com##.x:has-text(/Protect your privacy|Sponsored/i)".to_string()]
+    );
+    // ...and merging stays idempotent with flags attached.
+    let once = c(vec![
+        "a.com##.x:has-text(/A/i)".into(),
+        "a.com##.x:has-text(/B/i)".into(),
+    ]);
+    assert_eq!(once, vec!["a.com##.x:has-text(/A|B/i)".to_string()]);
+    assert_eq!(c(once.clone()), once);
+    // An empty alternative still stops the whole group, flags or not.
+    let empty_flagged = vec![
+        "a.com##.x:has-text(/foo|/i)".to_string(),
+        "a.com##.x:has-text(/bar/i)".to_string(),
+    ];
+    assert_eq!(c(empty_flagged.clone()), empty_flagged);
 
     // An empty alternative matches everything; dropping it narrows the rule.
     let empty_alt = vec![
@@ -1716,12 +1754,12 @@ fn test_has_text_merge_refuses_what_it_cannot_fold() {
     // collided with later lines and the stable sort interleaved them.
     assert_eq!(
         c(vec![
-            "a.com##.x:has-text(/foo/i)".into(),
+            "a.com##.x:has-text(/foo|/)".into(),
             "a.com##.x:has-text(bar)".into(),
             "b.com##.y".into(),
         ]),
         vec![
-            "a.com##.x:has-text(/foo/i)".to_string(),
+            "a.com##.x:has-text(/foo|/)".to_string(),
             "a.com##.x:has-text(bar)".to_string(),
             "b.com##.y".to_string(),
         ]

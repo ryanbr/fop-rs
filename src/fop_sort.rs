@@ -1010,41 +1010,54 @@ fn is_regex_arg(arg: &str) -> bool {
     arg.len() >= 2 && arg.starts_with('/') && arg.ends_with('/')
 }
 
-/// Whether an argument is a regex fop must not fold into a larger one.
+/// The flags on a regex argument, or `None` if it is not `/pattern/flags`.
 ///
-/// `/foo/i` carries flags that cannot survive being joined with alternatives,
-/// and an empty alternative (`/foo|/`, or `//`) matches every string, so
-/// merging it away silently narrows what the group hides.
+/// `rfind` on `arg[1..]` cannot return past `len - 2`, and the byte it finds
+/// is an ASCII `/`, so the slice below is always in bounds and on a character
+/// boundary.
+#[inline]
+fn regex_flags(arg: &str) -> Option<&str> {
+    if !arg.starts_with('/') || arg.ends_with('/') {
+        return None;
+    }
+    let close = arg[1..].rfind('/')? + 1;
+    let flags = &arg[close + 1..];
+    (!flags.is_empty() && flags.bytes().all(|b| b.is_ascii_alphabetic())).then_some(flags)
+}
+
+/// The body of a regex argument, without its slashes or flags.
+#[inline]
+fn regex_body(arg: &str) -> &str {
+    match regex_flags(arg) {
+        Some(flags) => &arg[1..arg.len() - flags.len() - 1],
+        None => &arg[1..arg.len() - 1],
+    }
+}
+
+/// Whether an argument is one fop must not fold into a larger regex.
+///
+/// An empty alternative -- `/foo|/`, or the empty regex `//` -- matches every
+/// string, so merging it away silently narrows what the group hides. Flags are
+/// handled by the caller instead: a group all carrying the same ones can merge
+/// and keep them, while mixing `/foo/i` with plain text would make the plain
+/// text case-insensitive too.
 #[inline]
 fn is_unmergeable_arg(arg: &str) -> bool {
-    // `/foo/i`: a closing `/` somewhere after the first, with only letters
-    // after it. `rfind` on `arg[1..]` cannot return past `len - 2`, and the
-    // byte it finds is an ASCII `/`, so `close + 1` is always in bounds and on
-    // a character boundary.
-    let flagged = arg.starts_with('/')
-        && !arg.ends_with('/')
-        && arg[1..].rfind('/').is_some_and(|i| {
-            let close = i + 1;
-            !arg[close + 1..].is_empty()
-                && arg[close + 1..].bytes().all(|b| b.is_ascii_alphabetic())
-        });
-    // An empty alternative -- `/foo|/`, or the empty regex `//` -- matches every
-    // string. Dropping it as a duplicate would quietly narrow the rule, so the
-    // group is left alone instead. Detected directly rather than by comparing
-    // against a naive split, which also differs for a grouped `(a|b)c`.
-    let empty_alternative = is_regex_arg(arg)
-        && (arg.len() == 2
-            || top_level_alternatives(&arg[1..arg.len() - 1])
+    let regex = is_regex_arg(arg) || regex_flags(arg).is_some();
+    // Detected directly rather than by comparing against a naive split, which
+    // also differs for a grouped `(a|b)c`.
+    regex
+        && (regex_body(arg).is_empty()
+            || top_level_alternatives(regex_body(arg))
                 .iter()
-                .any(|a| a.is_empty()));
-    flagged || empty_alternative
+                .any(|a| a.is_empty()))
 }
 
 /// Extract the regex content (without slashes) or escape plain text
 #[inline]
 fn normalize_has_text_arg(arg: &str) -> String {
-    if is_regex_arg(arg) {
-        arg[1..arg.len()-1].to_string()
+    if is_regex_arg(arg) || regex_flags(arg).is_some() {
+        regex_body(arg).to_string()
     } else {
         escape_regex_chars(arg)
     }
@@ -1106,6 +1119,22 @@ fn merge_has_text_args(args: &[String]) -> String {
     if args.iter().any(|a| is_unmergeable_arg(a)) {
         return String::new();
     }
+    // One flag set for the group, taken from whichever arguments carry flags.
+    // Plain text and unflagged regexes join under it: folding `/a/i` with `b`
+    // gives `/a|b/i`, which does make `b` case-insensitive -- a wider match
+    // than it had, and the one an author writing `/i` alongside it wants.
+    //
+    // Two different flag sets have no single form to merge into, so `/a/i`
+    // with `/b/m` is left alone.
+    let mut flags = "";
+    for arg in args {
+        if let Some(f) = regex_flags(arg) {
+            if !flags.is_empty() && flags != f {
+                return String::new();
+            }
+            flags = f;
+        }
+    }
     let mut seen: Vec<String> = Vec::with_capacity(args.len());
     for arg in args {
         for alt in top_level_alternatives(&normalize_has_text_arg(arg)) {
@@ -1114,7 +1143,7 @@ fn merge_has_text_args(args: &[String]) -> String {
             }
         }
     }
-    format!("/{}/", seen.join("|"))
+    format!("/{}/{}", seen.join("|"), flags)
 }
 
 /// Split a regex body on its top-level `|`.
