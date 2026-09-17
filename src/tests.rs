@@ -1559,7 +1559,12 @@ fn test_has_text_merges_across_separators_and_dedups() {
     // together, and a scan that steps over the separator it cannot merge finds
     // that pair and splits there instead -- merging the exception after all.
     // `#$#`/`#%#` inject CSS and JavaScript and must not be touched either.
-    for sep in ["#@#", "#@?#", "#$#", "#%#", "#@$#", "#@%#"] {
+    // `#$?#` and `#@$?#` included on purpose: they are the only 4- and 5-byte
+    // separators, reached through the deepest branches of the matcher. If one
+    // of those ever failed to match, the scan would step past it onto the `##`
+    // its trailing `#` forms with the `#ad` selector -- and merge two AdGuard
+    // exceptions.
+    for sep in ["#@#", "#@?#", "#$#", "#%#", "#@$#", "#@%#", "#$?#", "#@$?#"] {
         for selector in ["#ad", ".x", "[data-x=\"y\"]"] {
             let untouched = vec![
                 format!("a.com{}{}:has-text(A)", sep, selector),

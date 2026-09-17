@@ -1146,6 +1146,47 @@ fn top_level_alternatives(body: &str) -> Vec<String> {
     out
 }
 
+/// The cosmetic separator at the start of `rest`, and whether a `:has-text()`
+/// group carrying it may be merged.
+///
+/// A prefix trie on the byte after the `#`, rather than ten strings tried in
+/// longest-first order: `##` is far and away the common case and was last in
+/// such a list, so every hiding rule paid nine failed comparisons. The
+/// ambiguous pairs -- `#@$?#` against `#@$#`, `#$?#` against `#$#` -- are
+/// disjoint branches here, so longest match holds by construction rather than
+/// by the order of a list.
+///
+/// Only `##` and `#?#` are mergeable: an exception cancels a hiding rule by
+/// matching its selector text, so folding two of them would leave neither
+/// original in existence, and `#$#`/`#%#` inject CSS and JavaScript where
+/// `:has-text()` means nothing.
+#[inline]
+pub(crate) fn cosmetic_separator(rest: &str) -> Option<(&'static str, bool)> {
+    let b = rest.as_bytes();
+    match b.get(1)? {
+        b'#' => Some(("##", true)),
+        b'?' => (b.get(2) == Some(&b'#')).then_some(("#?#", true)),
+        b'$' => match b.get(2) {
+            Some(b'?') if b.get(3) == Some(&b'#') => Some(("#$?#", false)),
+            Some(b'#') => Some(("#$#", false)),
+            _ => None,
+        },
+        b'%' => (b.get(2) == Some(&b'#')).then_some(("#%#", false)),
+        b'@' => match b.get(2) {
+            Some(b'#') => Some(("#@#", false)),
+            Some(b'?') if b.get(3) == Some(&b'#') => Some(("#@?#", false)),
+            Some(b'%') if b.get(3) == Some(&b'#') => Some(("#@%#", false)),
+            Some(b'$') => match b.get(3) {
+                Some(b'#') => Some(("#@$#", false)),
+                Some(b'?') if b.get(4) == Some(&b'#') => Some(("#@$?#", false)),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Combine element rules with same domain and base selector but different :has-text() args
 pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
     let capacity = lines.len();
@@ -1166,28 +1207,23 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
         // `#$#`/`#%#` inject CSS and JavaScript, where :has-text() means
         // nothing, and are skipped for that reason instead.
         //
-        // Longest match at the first `#`, rather than the first separator that
-        // happens to appear anywhere: a selector may contain `#?#` inside an
+        // Split at the first `#` that begins a separator, not at the first
+        // separator appearing anywhere: a selector may carry `#?#` inside an
         // attribute value, and splitting there would group the wrong rules.
-        // Every cosmetic separator, longest first. The scan must stop at the
-        // first one it meets rather than skip the ones it cannot merge: an
-        // exception with an ID selector reads as `#@#` + `#ad`, and walking
-        // past the `#@#` matches the `##` those two `#` characters form --
-        // splitting as domains `a.com#@`, separator `##`, and merging the
-        // exception after all.
-        const ALL_SEPARATORS: [&str; 10] = [
-            "#@$?#", "#@%#", "#@$#", "#@?#", "#$?#", "#@#", "#$#", "#%#", "#?#", "##",
-        ];
-        const MERGEABLE: [&str; 2] = ["#?#", "##"];
+        //
+        // The scan stops at whatever separator it meets, mergeable or not.
+        // Stepping over one it cannot merge would find the `##` formed by that
+        // separator's trailing `#` and an ID selector's leading `#` -- reading
+        // `a.com#@##ad` as domains `a.com#@`, separator `##`, and merging two
+        // exceptions after all.
         let split = (!line.starts_with('!') && !line.starts_with('['))
             .then(|| {
                 let mut from = 0;
                 while let Some(hash) = line[from..].find('#') {
                     let at = from + hash;
-                    if let Some(sep) = ALL_SEPARATORS.iter().find(|s| line[at..].starts_with(**s)) {
-                        return MERGEABLE
-                            .contains(sep)
-                            .then(|| (&line[..at], *sep, &line[at + sep.len()..]));
+                    if let Some((sep, mergeable)) = cosmetic_separator(&line[at..]) {
+                        return mergeable
+                            .then(|| (&line[..at], sep, &line[at + sep.len()..]));
                     }
                     from = at + 1;
                 }

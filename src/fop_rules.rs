@@ -30,11 +30,6 @@ impl<'a> RuleProblem<'a> {
     }
 }
 
-/// The cosmetic separators, longest first so `#@?#` wins over `#@#`.
-const SEPARATORS: [&str; 10] = [
-    "#@$?#", "#@%#", "#@$#", "#@?#", "#$?#", "#@#", "#$#", "#%#", "#?#", "##",
-];
-
 /// Split a rule at its cosmetic separator, if it has one.
 ///
 /// A `#` inside a network rule's path is not a separator, so the separator
@@ -44,10 +39,10 @@ fn split_cosmetic(line: &str) -> Option<(&str, &str, &str)> {
     let mut from = 0;
     while let Some(hash) = line[from..].find('#') {
         let at = from + hash;
-        for sep in SEPARATORS {
-            if line[at..].starts_with(sep) {
-                return Some((&line[..at], sep, &line[at + sep.len()..]));
-            }
+        // Shares the sorter's matcher rather than keeping a second list of the
+        // same ten separators: one of them is enough to keep in step.
+        if let Some((sep, _)) = crate::fop_sort::cosmetic_separator(&line[at..]) {
+            return Some((&line[..at], sep, &line[at + sep.len()..]));
         }
         from = at + 1;
     }
