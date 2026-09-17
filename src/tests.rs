@@ -1606,7 +1606,11 @@ fn test_missing_anchor_is_flagged() {
     // anywhere -- `rbush.shop^` also blocks `lampedburbush.shop`.
     // A dotless token is the same mistake without even a domain in it. The
     // form does not occur once in 609k lines of real lists.
-    for garbage in ["fdfdgfgdgfd^", "ffgdfgdfgd^", "wxyzzzq^", "kjhgfdsz^"] {
+    // With or without the `^`, and with options hanging off it.
+    for garbage in [
+        "fdfdgfgdgfd^", "ffgdfgdfgd^", "wxyzzzq^", "kjhgfdsz^",
+        "fdgfgdfgd", "kjhgfdsz", "fdgfgdfgd$third-party",
+    ] {
         let p = f(garbage).expect(garbage);
         // Its own wording: there is no host here, so "did you mean ||host^"
         // would be guessing at an intent the rule does not show.
@@ -1619,6 +1623,12 @@ fn test_missing_anchor_is_flagged() {
     for ok in [
         "doubleclick^", "prebid^", "sponsored^", "adsbygoogle^", "300x250^",
         "click^", "adserv^", "_ads^", "-ads^", "a^", "cdn^",
+        // The same words without a `^` are patterns too.
+        "doubleclick", "sponsored", "prebid", "adserver", "banner",
+        // Digits or punctuation put a token outside what this can judge:
+        // `300x250` is real, and `df334sdf` is not, but nothing here can
+        // tell them apart, so neither is flagged.
+        "df334sdf", "fdsgfgd@!", "300x250",
         // ...as is anything the author anchored or gave a path.
         "||adserv^", "/ads^", "adserv^somepath", ".adserv^", "|adserv^",
     ] {

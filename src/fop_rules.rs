@@ -204,7 +204,12 @@ fn unanchored_reason(line: &str) -> Option<&'static str> {
     if line.starts_with(['|', '@', '/', '.', '-', '*']) {
         return None;
     }
-    let (host, rest) = line.split_once('^')?;
+    let Some((host, rest)) = line.split_once('^') else {
+        // No `^` at all. A hostname here is the bare-domain case, which has
+        // its own check and better advice, so only the mash is ours.
+        return is_bare_token(line)
+            .then_some("unanchored pattern with no domain -- matches this text anywhere");
+    };
     // `example.com^somepath` is not a host rule and does not match the name
     // anywhere, so the advice would misdescribe it.
     if !rest.is_empty() && rest != "|" {
