@@ -1893,10 +1893,17 @@ fn test_space_in_pattern_only_for_standard_rules() {
         "||example.com^$replace=/foo bar/baz/",
         // A hosts entry, which fop is given in localhost mode.
         "127.0.0.1 example.com",
-        // Cosmetic selectors are full of spaces.
+        // Cosmetic selectors are full of spaces, and carry `^=` attribute
+        // operators that must not read as separators.
         "example.com##div > span",
         "example.com##.a:has-text(Buy now)",
         "example.com#%#window.x = 1;",
+        r#"mylocation.org##.info a[href^="https://go.expressvpn.com/c/"]"#,
+        r#"example.com##div > span a[href^="/ads"]"#,
+        r#"example.com#@#.info a[href^="https://x.com/"]"#,
+        r#"example.com#?#.a:has-text(Buy now) > .b"#,
+        r#"example.com#$#.ad { display: none !important; }"#,
+        r#"example.com##[data-x="a b c"]"#,
         // Not rule-shaped, so not ours to judge.
         "++ dfsdsfdsf",
         "! a comment with spaces",
