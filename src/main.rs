@@ -1298,6 +1298,7 @@ fn diff_path_is_filter_list(
     file_extensions: &[String],
     ignore_files: &[String],
     ignore_dirs: &[String],
+    ignore_all_but: &[String],
     disable_ignored: bool,
 ) -> bool {
     let path = Path::new(file);
@@ -1309,6 +1310,9 @@ fn diff_path_is_filter_list(
     file_extensions.iter().any(|ext| ext == extension)
         && (disable_ignored || !IGNORE_FILES.contains(&filename))
         && !should_ignore_file(filename, ignore_files)
+        // The sorter restricts itself to these; the diff must not reach past
+        // the files fop was actually asked to touch.
+        && (ignore_all_but.is_empty() || ignore_all_but.iter().any(|f| filename.contains(f)))
 }
 
 /// Check if directory path matches any ignore pattern
@@ -1449,33 +1453,43 @@ fn ci_git_cmd(git_binary: Option<&str>, location: &Path) -> Vec<String> {
 fn run_rule_checks(
     base_cmd: &[String],
     remove_bad_rules: bool,
+    dry_run: bool,
     no_color: bool,
     file_extensions: &[String],
     ignore_files: &[String],
     ignore_dirs: &[String],
+    ignore_all_but: &[String],
     disable_ignored: bool,
     interactive: bool,
 ) -> bool {
     // Filter lists only -- the diff also carries workflows, scripts and
     // source, where a `$` is not an option marker and --remove-bad-rules would
     // delete a working line.
-    let gather = || -> Vec<fop_typos::Addition> {
-        fop_git::get_added_lines(base_cmd)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|a| {
-                diff_path_is_filter_list(
-                    &a.file,
-                    file_extensions,
-                    ignore_files,
-                    ignore_dirs,
-                    disable_ignored,
-                )
-            })
-            .collect()
+    let gather = || -> Option<Vec<fop_typos::Addition>> {
+        Some(
+            fop_git::get_added_lines(base_cmd)?
+                .into_iter()
+                .filter(|a| {
+                    diff_path_is_filter_list(
+                        &a.file,
+                        file_extensions,
+                        ignore_files,
+                        ignore_dirs,
+                        ignore_all_but,
+                        disable_ignored,
+                    )
+                })
+                .collect(),
+        )
     };
 
-    let additions = gather();
+    // A failed diff is not an empty one. Saying nothing here would report a
+    // clean bill of health for a check that never ran, so it stops a commit
+    // and is merely announced when there is no commit to stop.
+    let Some(additions) = gather() else {
+        eprintln!("Warning: could not read the diff; the rule checks did not run.");
+        return !interactive;
+    };
     let problems = fop_rules::check_additions(&additions);
     if problems.is_empty() {
         return true;
@@ -1483,6 +1497,10 @@ fn run_rule_checks(
     fop_rules::report_addition_problems(&problems, no_color);
     println!("\nFound {} questionable rule(s) in added lines.", problems.len());
 
+    if remove_bad_rules && dry_run {
+        println!("Dry run: the flagged lines were left in place.");
+        return true;
+    }
     if remove_bad_rules {
         // Every flagged line goes, advice included, so what remains is only
         // what passed. A bare hostname is legal in a plain domain-list file,
@@ -1507,10 +1525,19 @@ fn run_rule_checks(
             }
         }
         // Re-read the diff: `commit -a` will pick up the working tree as it
-        // now stands, so anything still flagged would be committed.
-        let left = fop_rules::check_additions(&gather()).len();
+        // now stands, so anything still flagged would be committed. A diff
+        // that cannot be read is not a clean one.
+        let Some(after) = gather() else {
+            eprintln!("Warning: could not re-read the diff after removing lines.");
+            return !interactive;
+        };
+        let left = fop_rules::check_additions(&after).len();
         if left > 0 {
-            eprintln!("{} rule(s) could not be removed; stopping rather than committing them.", left);
+            if interactive {
+                eprintln!("{} rule(s) could not be removed; stopping rather than committing them.", left);
+            } else {
+                eprintln!("{} rule(s) could not be removed.", left);
+            }
             return false;
         }
         return true;
@@ -1668,9 +1695,14 @@ fn process_location(
         match check_repo_changes(&base_cmd, repo) {
             Some(diff) => (Some(base_cmd), diff),
             None => {
-                eprintln!(
-                    "The repository command was unable to run; FOP will not attempt to use repository tools."
-                );
+                // In sort-only mode the repository is consulted purely for the
+                // rule checks, which report their own skip -- saying it twice
+                // for one condition helps nobody.
+                if !no_commit {
+                    eprintln!(
+                        "The repository command was unable to run; FOP will not attempt to use repository tools."
+                    );
+                }
                 (None, false)
             }
         }
@@ -1839,6 +1871,32 @@ fn process_location(
         }
     }
 
+    // Check newly added rules before the timestamp and checksum passes: those
+    // hash the file body, and removing a line afterwards leaves the checksum
+    // describing content that is no longer there.
+    let mut rules_ok = true;
+    if check_rules_on_add {
+        match base_cmd.as_ref().filter(|_| git_available()) {
+            Some(base_cmd) => {
+                rules_ok = run_rule_checks(
+                    base_cmd,
+                    remove_bad_rules,
+                    sort_config.dry_run,
+                    no_color,
+                    file_extensions,
+                    ignore_files,
+                    ignore_dirs,
+                    ignore_all_but,
+                    disable_ignored,
+                    !no_commit,
+                );
+            }
+            None => eprintln!(
+                "Warning: --check-rules-on-add needs a git repository; skipping the rule checks."
+            ),
+        }
+    }
+
     // Add timestamps to specified files (after sorting, before checksum)
     if !add_timestamp.is_empty() {
         for entry in &entries {
@@ -1936,28 +1994,6 @@ fn process_location(
     }
 
     // Offer to commit changes (skip if no_commit mode)
-    // Sort-only: no commit to gate, but the checks still work off the diff, so
-    // run them as a report rather than silently ignoring the flag.
-    if no_commit && check_rules_on_add {
-        match base_cmd.as_ref().filter(|_| git_available()) {
-            Some(base_cmd) => {
-                run_rule_checks(
-                    base_cmd,
-                    remove_bad_rules,
-                    no_color,
-                    file_extensions,
-                    ignore_files,
-                    ignore_dirs,
-                    disable_ignored,
-                    false,
-                );
-            }
-            None => eprintln!(
-                "Warning: --check-rules-on-add needs a git repository; skipping the rule checks."
-            ),
-        }
-    }
-
     if !no_commit {
         if let (Some(repo), Some(base_cmd)) = (repository, base_cmd) {
             if !git_available() {
@@ -1967,7 +2003,12 @@ fn process_location(
 
             // Check for typos in added lines
             // Get added lines once for both typo and banned domain checks
-            let additions = if fix_typos_on_add || check_rules_on_add || banned_domains.as_ref().is_some_and(|b| !b.is_empty()) {
+            // Fetched here, after the rule checks have already removed what
+            // they were going to: a snapshot taken before that would name
+            // lines no longer on disk, and the banned-domain scan below would
+            // abort the commit over one. `check_rules_on_add` is not in this
+            // condition -- run_rule_checks reads its own diff.
+            let additions = if fix_typos_on_add || banned_domains.as_ref().is_some_and(|b| !b.is_empty()) {
                 get_added_lines(&base_cmd)
             } else {
                 None
@@ -1995,19 +2036,7 @@ fn process_location(
                 }
             }
 
-            // Check newly added lines for rules that cannot work
-            if check_rules_on_add
-                && !run_rule_checks(
-                    &base_cmd,
-                    remove_bad_rules,
-                    no_color,
-                    file_extensions,
-                    ignore_files,
-                    ignore_dirs,
-                    disable_ignored,
-                    true,
-                )
-            {
+            if !rules_ok {
                 return Ok(());
             }
 
@@ -2351,6 +2380,7 @@ fn main() {
                     &args.file_extensions,
                     &args.ignore_files,
                     &args.ignore_dirs,
+                    &args.ignore_all_but,
                     args.disable_ignored,
                 )
             })
