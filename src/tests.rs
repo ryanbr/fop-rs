@@ -1815,3 +1815,31 @@ fn test_split_options_agrees_with_the_regex() {
         assert_eq!(scanned, matched, "{:?}", line);
     }
 }
+
+#[test]
+fn test_parse_added_lines_handles_rules_starting_with_plus() {
+    use crate::fop_git::parse_added_lines;
+    // A rule beginning with `+` reaches the diff as `+++...`, which looks like
+    // the `+++ b/file` header unless the space is required. Getting that wrong
+    // dropped the rule *and* stopped the line counter, so every later finding
+    // named a line one too low and failed the check that guards removal.
+    let diff = "--- a/easylist/l.txt\n\
+                +++ b/easylist/l.txt\n\
+                @@ -1,0 +2,4 @@\n\
+                +++sdfsdffsdfds\n\
+                ++sdsdffsdfds\n\
+                +--sdfdsfdfsdfs\n\
+                +-sfdgdfsfds\n";
+    let added = parse_added_lines(diff);
+    let got: Vec<(usize, &str)> = added.iter().map(|a| (a.line_num, a.content.as_str())).collect();
+    assert_eq!(
+        got,
+        vec![
+            (2, "++sdfsdffsdfds"),
+            (3, "+sdsdffsdfds"),
+            (4, "--sdfdsfdfsdfs"),
+            (5, "-sfdgdfsfds"),
+        ]
+    );
+    assert!(added.iter().all(|a| a.file == "easylist/l.txt"));
+}

@@ -1058,7 +1058,7 @@ pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addi
 }
 
 /// Parse `git diff -U0` output into the lines it adds.
-fn parse_added_lines(diff: &str) -> Vec<crate::fop_typos::Addition> {
+pub(crate) fn parse_added_lines(diff: &str) -> Vec<crate::fop_typos::Addition> {
     use crate::fop_typos::Addition;
 
     let mut added = Vec::new();
@@ -1085,8 +1085,15 @@ fn parse_added_lines(diff: &str) -> Vec<crate::fop_typos::Addition> {
                     line_num = rest[..end].parse().unwrap_or(0);
                 }
             }
-        } else if line.starts_with('+') && !line.starts_with("+++") {
-            let content = line[1..].to_string();
+        } else if let Some(content) = line.strip_prefix('+') {
+            // One `+` is the diff's marker; the rest belongs to the rule. A
+            // rule that itself starts with `+` therefore appears as `+++...`
+            // and must not be mistaken for the `+++ b/file` header above,
+            // which the branch that handles it requires a space after. Testing
+            // for `+++` here instead skipped such a rule *and* left the line
+            // counter behind, so every later finding named the wrong line and
+            // failed the content check that guards removal.
+            let content = content.to_string();
             if !content.is_empty() {
                 added.push(Addition {
                     file: current_file.clone(),
