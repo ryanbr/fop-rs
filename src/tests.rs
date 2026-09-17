@@ -1456,7 +1456,13 @@ fn test_bare_domain_is_flagged_but_never_removed() {
     // `domain.com^` is no longer in this list: it carries filter syntax but is
     // still missing its anchor, so it is reported as such by its own check.
     assert!(f("domain.com^").unwrap().reason.contains("no || anchor"));
-    assert!(f("domain.com$third-party").unwrap().reason.contains("no || anchor"));
+    // ...but with options and no separator it is a substring pattern, which is
+    // how whole files are written -- easyprivacy_general_emailtrackers.txt
+    // holds 319 of them and not one anchored rule.
+    assert!(f("domain.com$third-party").is_none());
+    assert!(f("img.promio-connect.com$image").is_none());
+    // A separator with no anchor still reads as a lost `||`.
+    assert!(f("domain.com^$third-party").unwrap().reason.contains("no || anchor"));
     // Anything else carrying filter syntax is the author being explicit.
     for ok in [
         "||domain.com^", "|http://domain.com", "domain.com/path",

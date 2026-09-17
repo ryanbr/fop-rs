@@ -375,10 +375,14 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // as `$csp=script-src 'none'`. The pattern half is still worth judging,
         // or an unanchored host escapes the check purely by its options.
         if let Some((pattern, _)) = line.rsplit_once('$') {
-            let reason = unanchored_reason(pattern).or_else(|| {
-                is_bare_domain(pattern)
-                    .then_some("host rule with no || anchor -- matches the name anywhere")
-            });
+            // No `is_bare_domain` fallback here. A hostname with options and
+            // no separator is a substring pattern, which whole files are
+            // written in -- easyprivacy_general_emailtrackers.txt holds 319 of
+            // them and not one anchored rule -- so advising an anchor there
+            // would be wrong, and deleting it worse. `unanchored_reason` only
+            // names a host when the pattern carries a `^`, which is the case
+            // that really does look like a lost anchor.
+            let reason = unanchored_reason(pattern);
             if let Some(reason) = reason {
                 return Some(RuleProblem { removable: false, ..RuleProblem::new(reason, "") });
             }
@@ -427,9 +431,7 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
     }
     // The options are sound; the pattern they hang off may still have lost its
     // anchor. Checked last so a real defect is reported ahead of this advice.
-    let reason = unanchored_reason(pattern).or_else(|| {
-        is_bare_domain(pattern).then_some("host rule with no || anchor -- matches the name anywhere")
-    });
+    let reason = unanchored_reason(pattern);
     if let Some(reason) = reason {
         return Some(RuleProblem { removable: false, ..RuleProblem::new(reason, "") });
     }
