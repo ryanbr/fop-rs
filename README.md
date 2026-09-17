@@ -107,7 +107,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--fix-typos` | Fix cosmetic rule typos in all files during sort |
 | `--fix-typos-on-add` | Check cosmetic rule typos in git additions before commit |
 | `--check-rules-on-add` | Check git additions for rules that cannot work (empty selector, unbalanced brackets, malformed domain list, unknown or empty option, bare hostname, missing `||` anchor), and prompt before committing; with `--ci` it audits the committed diff and exits 1 on a defect |
-| `--remove-bad-rules` | Delete those lines instead of prompting (implies `--check-rules-on-add`) |
+| `--remove-bad-rules` | Delete every flagged line instead of prompting, leaving only rules that passed (implies `--check-rules-on-add`) |
 | `--ignore-line-minimum` | Keep rules shorter than 3 characters instead of dropping them as malformed |
 | `--auto-fix` | Auto-fix typos without prompting (use with --fix-typos-on-add) |
 | `--only-sort-changed` | Only process files changed according to git |

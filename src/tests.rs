@@ -1447,9 +1447,11 @@ fn test_bare_domain_is_flagged_but_never_removed() {
     for bare in ["domain.com", "anotherdomain.co.nz", "sub.example.org", "xn--80ak6aa92e.com", "a-b.io"] {
         let p = f(bare).expect(bare);
         assert_eq!(p.reason, "bare domain, did you mean ||host^ ?");
-        // Legal syntax, and correct in a plain domain-list file, so advice
-        // only -- --remove-bad-rules must leave it alone.
-        assert!(!p.removable, "{} must not be auto-removed", bare);
+        // `removable` now only labels the report -- --remove-bad-rules takes
+        // every flagged line, so what is left to commit is what passed. The
+        // distinction still drives the CI exit code: advice does not fail a
+        // build.
+        assert!(!p.removable, "{} should be reported as advice", bare);
     }
     // `domain.com^` is no longer in this list: it carries filter syntax but is
     // still missing its anchor, so it is reported as such by its own check.
@@ -1610,8 +1612,9 @@ fn test_missing_anchor_is_flagged() {
     ] {
         let p = f(missing).expect(missing);
         assert!(p.reason.contains("no || anchor"), "{}: {}", missing, p.reason);
-        // Advice: the fix is to add `||`, not to delete the author's rule.
-        assert!(!p.removable, "{} must not be auto-removed", missing);
+        // Reported as advice, which keeps it out of the CI exit code while
+        // still being removed by --remove-bad-rules.
+        assert!(!p.removable, "{} should be reported as advice", missing);
     }
     // An author who chose their matching is left alone.
     for ok in [

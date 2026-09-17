@@ -1906,19 +1906,24 @@ fn process_location(
                     if !problems.is_empty() {
                         fop_rules::report_addition_problems(&problems, no_color);
                         println!("\nFound {} questionable rule(s) in added lines.", problems.len());
-                        if remove_bad_rules && problems.iter().any(|(_, p)| p.removable) {
-                            // Advice is never deleted -- only outright defects.
-                            let removable: Vec<&fop_typos::Addition> = problems
-                                .iter()
-                                .filter(|(_, p)| p.removable)
-                                .map(|(add, _)| *add)
-                                .collect();
-                            match remove_flagged_lines(&removable, &base_cmd) {
+                        if remove_bad_rules {
+                            // Every flagged line goes, advice included, so what
+                            // remains to commit is only what passed. A bare
+                            // hostname is legal in a plain domain-list file, so
+                            // exclude such files with `ignorefiles` if fop is
+                            // pointed at a repository holding them.
+                            let advice = problems.iter().filter(|(_, p)| !p.removable).count();
+                            let targets: Vec<&fop_typos::Addition> =
+                                problems.iter().map(|(add, _)| *add).collect();
+                            match remove_flagged_lines(&targets, &base_cmd) {
                                 Ok(n) => {
                                     println!("Removed {} line(s). Re-stage before committing.", n);
-                                    let kept = problems.len() - removable.len();
-                                    if kept > 0 {
-                                        println!("{} left in place as advice rather than a defect.", kept);
+                                    if advice > 0 {
+                                        println!(
+                                            "{} of those were advice rather than a defect -- \
+                                             check they were not deliberate.",
+                                            advice
+                                        );
                                     }
                                 }
                                 Err(e) => eprintln!("Could not remove flagged lines: {}", e),
