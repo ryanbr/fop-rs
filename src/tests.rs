@@ -1610,6 +1610,8 @@ fn test_missing_anchor_is_flagged() {
     for garbage in [
         "fdfdgfgdgfd^", "ffgdfgdfgd^", "wxyzzzq^", "kjhgfdsz^",
         "fdgfgdfgd", "kjhgfdsz", "fdgfgdfgd$third-party",
+        // A leading boundary character is not a disguise: judge what follows.
+        "+dsfsdffdsfds", "-dffgdfdfs", "_dffgdfdfs", "-fdfdgfgdgfd^",
     ] {
         let p = f(garbage).expect(garbage);
         // Its own wording: there is no host here, so "did you mean ||host^"
@@ -1629,6 +1631,10 @@ fn test_missing_anchor_is_flagged() {
         // `300x250` is real, and `df334sdf` is not, but nothing here can
         // tell them apart, so neither is flagged.
         "df334sdf", "fdsgfgd@!", "300x250",
+        // Those same characters in front of a real pattern. `-ad.com^` keeps
+        // its leading boundary on purpose, so it is not advised to anchor.
+        "-ad-banner-", "-ads", "_ads", "+ads", "-adserver", "--", "-", "+",
+        "-ad.com^", "_ad.com^", "+ad.com^",
         // ...as is anything the author anchored or gave a path.
         "||adserv^", "/ads^", "adserv^somepath", ".adserv^", "|adserv^",
     ] {

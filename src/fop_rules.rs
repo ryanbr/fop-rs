@@ -201,13 +201,18 @@ fn looks_like_hostname(line: &str) -> bool {
 fn unanchored_reason(line: &str) -> Option<&'static str> {
     // An anchor, a scheme, a wildcard or a leading dot all mean the author
     // chose the matching they wanted.
-    if line.starts_with(['|', '@', '/', '.', '-', '*']) {
+    if line.starts_with(['|', '@', '/', '.', '*']) {
         return None;
     }
+    // `-` `+` `_` are boundary characters rather than syntax, so mash can wear
+    // one as a disguise. They are stripped for the mash test only: `-ad.com^`
+    // keeps its boundary deliberately, and advising `||ad.com^` for it would
+    // throw that away.
+    let mash = |text: &str| is_bare_token(text.trim_start_matches(['-', '+', '_']));
     let Some((host, rest)) = line.split_once('^') else {
         // No `^` at all. A hostname here is the bare-domain case, which has
         // its own check and better advice, so only the mash is ours.
-        return is_bare_token(line)
+        return mash(line)
             .then_some("unanchored pattern with no domain -- matches this text anywhere");
     };
     // `example.com^somepath` is not a host rule and does not match the name
@@ -218,7 +223,7 @@ fn unanchored_reason(line: &str) -> Option<&'static str> {
     if looks_like_hostname(host) {
         // A real hostname, so the anchored form is the obvious intent.
         Some("host rule with no || anchor -- matches the name anywhere")
-    } else if is_bare_token(host) {
+    } else if mash(host) {
         // No domain at all: naming what it is beats guessing what was meant.
         Some("unanchored pattern with no domain -- matches this text anywhere")
     } else {
