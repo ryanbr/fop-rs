@@ -1156,16 +1156,18 @@ fn top_level_alternatives(body: &str) -> Vec<String> {
 /// disjoint branches here, so longest match holds by construction rather than
 /// by the order of a list.
 ///
-/// Only `##` and `#?#` are mergeable: an exception cancels a hiding rule by
-/// matching its selector text, so folding two of them would leave neither
-/// original in existence, and `#$#`/`#%#` inject CSS and JavaScript where
-/// `:has-text()` means nothing.
+/// Only `##` is mergeable. An exception cancels a hiding rule by matching its
+/// selector text, so folding two of them would leave neither original in
+/// existence; `#$#`/`#%#` inject CSS and JavaScript, where `:has-text()` means
+/// nothing; and `#?#` is left out because merging rewrites
+/// `:-abp-contains(text)` into `:-abp-contains(/regex/)`, which assumes the
+/// engine reading that separator accepts a regex there.
 #[inline]
 pub(crate) fn cosmetic_separator(rest: &str) -> Option<(&'static str, bool)> {
     let b = rest.as_bytes();
     match b.get(1)? {
         b'#' => Some(("##", true)),
-        b'?' => (b.get(2) == Some(&b'#')).then_some(("#?#", true)),
+        b'?' => (b.get(2) == Some(&b'#')).then_some(("#?#", false)),
         b'$' => match b.get(2) {
             Some(b'?') if b.get(3) == Some(&b'#') => Some(("#$?#", false)),
             Some(b'#') => Some(("#$#", false)),

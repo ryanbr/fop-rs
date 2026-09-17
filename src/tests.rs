@@ -1534,15 +1534,13 @@ fn test_has_text_merges_across_separators_and_dedups() {
     use crate::fop_sort::combine_has_text_rules as c;
     // The case this was written for: a part-merged group, where one rule is
     // already the regex and the others are the plain texts it covers.
-    for sep in ["##", "#?#"] {
-        let base = format!(r#"bol.com{}[data-bltgi*="ProductList_"]"#, sep);
-        let got = c(vec![
-            format!("{}:has-text(/Gesponsord|Sponsorisé/)", base),
-            format!("{}:has-text(Sponsorisé)", base),
-            format!("{}:has-text(Gesponsord)", base),
-        ]);
-        assert_eq!(got, vec![format!("{}:has-text(/Gesponsord|Sponsorisé/)", base)], "{}", sep);
-    }
+    let base = r#"bol.com##[data-bltgi*="ProductList_"]"#;
+    let got = c(vec![
+        format!("{}:has-text(/Gesponsord|Sponsorisé/)", base),
+        format!("{}:has-text(Sponsorisé)", base),
+        format!("{}:has-text(Gesponsord)", base),
+    ]);
+    assert_eq!(got, vec![format!("{}:has-text(/Gesponsord|Sponsorisé/)", base)]);
     // Merging is idempotent now: running it again must not grow the regex.
     let once = c(vec![
         "a.com##.x:has-text(A)".into(),
@@ -1551,10 +1549,13 @@ fn test_has_text_merges_across_separators_and_dedups() {
     assert_eq!(once, vec!["a.com##.x:has-text(/A|B/)".to_string()]);
     assert_eq!(c(once.clone()), once);
 
-    // Exceptions are never merged at all. An exception cancels a hiding rule
-    // by matching its selector text, so folding two of them leaves neither
-    // original string in existence and the rules they cancelled are no longer
-    // excepted. A hiding rule stands alone, so merging those is safe.
+    // Only `##` merges. An exception cancels a hiding rule by matching its
+    // selector text, so folding two of them leaves neither original string in
+    // existence and the rules they cancelled are no longer excepted. `#?#` is
+    // out for a different reason: merging rewrites `:-abp-contains(text)` into
+    // `:-abp-contains(/regex/)`, which assumes whatever reads that separator
+    // takes a regex there. A hiding rule stands alone, so merging those is
+    // safe.
     // An ID selector is the case that matters: `#@#` + `#ad` puts two `#`
     // together, and a scan that steps over the separator it cannot merge finds
     // that pair and splits there instead -- merging the exception after all.
@@ -1564,7 +1565,7 @@ fn test_has_text_merges_across_separators_and_dedups() {
     // of those ever failed to match, the scan would step past it onto the `##`
     // its trailing `#` forms with the `#ad` selector -- and merge two AdGuard
     // exceptions.
-    for sep in ["#@#", "#@?#", "#$#", "#%#", "#@$#", "#@%#", "#$?#", "#@$?#"] {
+    for sep in ["#@#", "#@?#", "#$#", "#%#", "#@$#", "#@%#", "#$?#", "#@$?#", "#?#"] {
         for selector in ["#ad", ".x", "[data-x=\"y\"]"] {
             let untouched = vec![
                 format!("a.com{}{}:has-text(A)", sep, selector),
