@@ -1526,7 +1526,7 @@ fn test_has_text_merges_across_separators_and_dedups() {
     use crate::fop_sort::combine_has_text_rules as c;
     // The case this was written for: a part-merged group, where one rule is
     // already the regex and the others are the plain texts it covers.
-    for sep in ["##", "#@#", "#?#", "#@?#"] {
+    for sep in ["##", "#?#"] {
         let base = format!(r#"bol.com{}[data-bltgi*="ProductList_"]"#, sep);
         let got = c(vec![
             format!("{}:has-text(/Gesponsord|Sponsorisé/)", base),
@@ -1543,7 +1543,18 @@ fn test_has_text_merges_across_separators_and_dedups() {
     assert_eq!(once, vec!["a.com##.x:has-text(/A|B/)".to_string()]);
     assert_eq!(c(once.clone()), once);
 
-    // A hiding rule and an exception are never folded together.
+    // Exceptions are never merged at all. An exception cancels a hiding rule
+    // by matching its selector text, so folding two of them leaves neither
+    // original string in existence and the rules they cancelled are no longer
+    // excepted. A hiding rule stands alone, so merging those is safe.
+    for sep in ["#@#", "#@?#"] {
+        let exceptions = vec![
+            format!("a.com{}.x:has-text(A)", sep),
+            format!("a.com{}.x:has-text(B)", sep),
+        ];
+        assert_eq!(c(exceptions.clone()), exceptions, "{}", sep);
+    }
+    // ...nor is a hiding rule ever folded together with an exception.
     let mixed = c(vec![
         "a.com##.x:has-text(A)".into(),
         "a.com#@#.x:has-text(B)".into(),

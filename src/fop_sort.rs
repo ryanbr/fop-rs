@@ -1157,14 +1157,19 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
     let mut idx = 0;
     
     for line in lines {
+        // Hiding rules only. An exception cancels a hiding rule by matching
+        // its selector *text*, so folding `#@#…:has-text(A)` and `…(B)` into
+        // `…:has-text(/A|B/)` leaves neither original string in existence and
+        // the hiding rules they cancelled are no longer excepted. A hiding
+        // rule stands alone, so nothing has to match its text.
+        //
         // `#$#`/`#%#` inject CSS and JavaScript, where :has-text() means
-        // nothing; the rest carry selectors and merge alike. Each separator
-        // groups separately -- a hiding rule and an exception must never be
-        // folded together.
+        // nothing, and are skipped for that reason instead.
+        //
         // Longest match at the first `#`, rather than the first separator that
         // happens to appear anywhere: a selector may contain `#?#` inside an
         // attribute value, and splitting there would group the wrong rules.
-        const MERGEABLE: [&str; 4] = ["#@?#", "#@#", "#?#", "##"];
+        const MERGEABLE: [&str; 2] = ["#?#", "##"];
         let split = (!line.starts_with('!') && !line.starts_with('['))
             .then(|| {
                 let mut from = 0;
