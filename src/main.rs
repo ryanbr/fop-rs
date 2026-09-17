@@ -500,6 +500,10 @@ impl Args {
             ignore_line_minimum: parse_bool(&config, "ignore-line-minimum", false),
             fix_typos_on_add: parse_bool(&config, "fix-typos-on-add", false),
             check_rules_on_add: parse_bool(&config, "check-rules-on-add", false),
+            // `check_rules_on_add` is forced on below when this is set: the
+            // CLI arm couples them deliberately, and leaving the config path
+            // uncoupled makes `remove-bad-rules = true` alone silently do
+            // nothing -- the exact trap that coupling avoids.
             remove_bad_rules: parse_bool(&config, "remove-bad-rules", false),
             direct_push_users: config.get("direct-push-users")
                 .map(|s| s.split(',').map(|u| u.trim().to_lowercase()).collect())
@@ -773,6 +777,11 @@ impl Args {
         }
         if args.no_commit && args.git_message.is_some() {
             eprintln!("Warning: --no-commit and --git-message are incompatible");
+        }
+
+        // Removing implies checking, however the flag arrived.
+        if args.remove_bad_rules {
+            args.check_rules_on_add = true;
         }
 
         (args, config_path_str)
@@ -1497,11 +1506,13 @@ fn run_rule_checks(
     fop_rules::report_addition_problems(&problems, no_color);
     println!("\nFound {} questionable rule(s) in added lines.", problems.len());
 
+    // A dry run writes nothing, so the lines stay -- but that is a reason to
+    // fall through to the prompt, not to report the rules as dealt with. An
+    // early `true` here let `--output --remove-bad-rules` commit them.
     if remove_bad_rules && dry_run {
         println!("Dry run: the flagged lines were left in place.");
-        return true;
     }
-    if remove_bad_rules {
+    if remove_bad_rules && !dry_run {
         // Every flagged line goes, advice included, so what remains is only
         // what passed. A bare hostname is legal in a plain domain-list file,
         // so exclude such files with `ignorefiles` if fop is pointed at a
@@ -1892,7 +1903,7 @@ fn process_location(
                 );
             }
             None => eprintln!(
-                "Warning: --check-rules-on-add needs a git repository; skipping the rule checks."
+                "Warning: --check-rules-on-add needs a working git; skipping the rule checks."
             ),
         }
     }
@@ -2001,6 +2012,13 @@ fn process_location(
                 return Ok(());
             }
 
+            // Before anything else that can ask a question: a run already
+            // stopped by the rule checks must not go on to prompt about typos
+            // and then return silently having committed nothing.
+            if !rules_ok {
+                return Ok(());
+            }
+
             // Check for typos in added lines
             // Get added lines once for both typo and banned domain checks
             // Fetched here, after the rule checks have already removed what
@@ -2034,10 +2052,6 @@ fn process_location(
                         }
                     }
                 }
-            }
-
-            if !rules_ok {
-                return Ok(());
             }
 
            // Check for banned domains in added lines

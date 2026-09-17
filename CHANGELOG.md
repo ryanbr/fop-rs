@@ -5,7 +5,8 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 ## [Unreleased]
 
 - Run the addition checks before the timestamp and checksum passes. Those hash the file body, so removing a line afterwards left the checksum describing content that was no longer there — and with the removal now followed by a commit, that invalid checksum would have been published.
-- Leave the flagged lines in place under `--output-diff`, `--output-changed` and `--benchmark`: those ask for a report, and the sorter already writes nothing in that mode.
+- Leave the flagged lines in place under `--output`, `--output-diff` and `--benchmark`: those ask for a report, and the sorter already writes nothing in that mode. The run still stops at the prompt, so a dry run cannot commit the rules it declined to remove.
+- Make `remove-bad-rules` in `.fopconfig` imply `check-rules-on-add`, as the command-line flag already did. On its own it left the checks off and so did nothing at all.
 - Restrict the checks to the files `--ignore-all-but` selects, so a run told to touch one file cannot rewrite every list in the repository's diff.
 - Treat a diff that cannot be read as a failure rather than as "nothing was added", both before and after removing lines. The earlier code turned it into an empty list, which would have reported a clean bill of health for a check that never ran and could have committed the flagged lines.
 - Run the addition checks in sort-only mode (`--no-commit`, `--just-sort`) as well. They were inside the commit flow, so the flags were accepted and silently did nothing; repository detection, which the commit flow also gated, now happens whenever the checks are on. Without a commit to gate there is no prompt — findings are reported, and `--remove-bad-rules` still removes them.
