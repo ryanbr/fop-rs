@@ -1823,13 +1823,16 @@ fn test_parse_added_lines_handles_rules_starting_with_plus() {
     // the `+++ b/file` header unless the space is required. Getting that wrong
     // dropped the rule *and* stopped the line counter, so every later finding
     // named a line one too low and failed the check that guards removal.
-    let diff = "--- a/easylist/l.txt\n\
+    let diff = "diff --git a/easylist/l.txt b/easylist/l.txt\n\
+                --- a/easylist/l.txt\n\
                 +++ b/easylist/l.txt\n\
-                @@ -1,0 +2,4 @@\n\
+                @@ -1,0 +2,6 @@\n\
                 +++sdfsdffsdfds\n\
                 ++sdsdffsdfds\n\
                 +--sdfdsfdfsdfs\n\
-                +-sfdgdfsfds\n";
+                +-sfdgdfsfds\n\
+                +\n\
+                +++ b/evil.txt\n";
     let added = parse_added_lines(diff);
     let got: Vec<(usize, &str)> = added.iter().map(|a| (a.line_num, a.content.as_str())).collect();
     assert_eq!(
@@ -1839,7 +1842,27 @@ fn test_parse_added_lines_handles_rules_starting_with_plus() {
             (3, "+sdsdffsdfds"),
             (4, "--sdfdsfdfsdfs"),
             (5, "-sfdgdfsfds"),
+            // line 6 is the added blank line, dropped as empty content but it
+            // must still advance the counter, or everything after it shifts
+            (7, "++ b/evil.txt"),
         ]
     );
+    // A rule reading `++ b/evil.txt` arrives as `+++ b/evil.txt`. Inside a
+    // hunk that is content, not a header -- taking it as one repointed every
+    // later addition at a file the commit never touched.
     assert!(added.iter().all(|a| a.file == "easylist/l.txt"));
+}
+
+#[test]
+fn test_parse_added_lines_refuses_combined_diffs() {
+    use crate::fop_git::parse_added_lines;
+    // A merge in progress makes git emit two status columns and `@@@` hunk
+    // headers. Nothing here parses those, so the line numbers and content
+    // would both be wrong; reporting nothing is the honest answer.
+    let diff = "diff --cc l.txt\n\
+                index 111,222..333\n\
+                @@@ -1,2 -1,2 +1,4 @@@\n\
+                ++both.com^\n\
+                 +one.com^\n";
+    assert!(parse_added_lines(diff).is_empty());
 }

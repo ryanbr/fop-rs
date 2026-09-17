@@ -639,9 +639,15 @@ fn is_large_change(diff: &str) -> bool {
     let changed_lines = diff
         .lines()
         .filter(|line| {
-            (line.starts_with('+') || line.starts_with('-'))
-                && !line.starts_with("+++")
-                && !line.starts_with("---")
+            // `+++`/`---` are headers only in the header block, but a diff
+            // shown here always carries exactly one pair per file, so counting
+            // by prefix is off by at most that pair -- and a rule beginning
+            // with `+` would otherwise not count toward the threshold at all.
+            if line.starts_with("+++ ") || line.starts_with("--- ") {
+                false
+            } else {
+                line.starts_with('+') || line.starts_with('-')
+            }
         })
         .count();
 
@@ -1064,9 +1070,25 @@ pub(crate) fn parse_added_lines(diff: &str) -> Vec<crate::fop_typos::Addition> {
     let mut added = Vec::new();
     let mut current_file = String::new();
     let mut line_num: usize = 0;
+    // A `+++ ` line is only a header before the first hunk of a file. Inside a
+    // hunk it is content: a rule whose own text is `++ b/evil.txt` arrives as
+    // `+++ b/evil.txt`, and reading that as a header dropped the rule, left
+    // the line counter behind, and silently repointed every later addition at
+    // a file the commit never touched.
+    let mut in_hunk = false;
 
     for line in diff.lines() {
-        if let Some(rest) = line.strip_prefix("+++ ") {
+        if line.starts_with("diff --git ") || line.starts_with("diff --cc ") {
+            in_hunk = false;
+            // Combined diffs -- a merge in progress -- use two status columns
+            // and `@@@` hunk headers, which nothing here parses. Better to
+            // report nothing than to report wrong lines.
+            if line.starts_with("diff --cc ") {
+                return Vec::new();
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("+++ ").filter(|_| !in_hunk) {
             // core.quotepath renders unusual names as `"b/na\303\257ve.txt"`.
             // Unquoting octal escapes is not worth it here, but the name must
             // still change, or every addition in the hunk is attributed to the
@@ -1078,6 +1100,7 @@ pub(crate) fn parse_added_lines(diff: &str) -> Vec<crate::fop_typos::Addition> {
                 .unwrap_or(rest)
                 .to_string();
         } else if line.starts_with("@@ ") {
+            in_hunk = true;
             // Parse line number from @@ -x,y +n,m @@
             if let Some(plus_pos) = line.find(" +") {
                 let rest = &line[plus_pos + 2..];

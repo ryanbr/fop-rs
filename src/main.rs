@@ -2433,7 +2433,6 @@ fn main() {
 
     if let Some(banned) = args.ci.then_some(()).and(banned_domains.as_ref()) {
         let mut found: Vec<(String, String)> = Vec::new();
-        let mut current_file = String::new();
 
         let base_cmd = match locations.first() {
             Some(location) => ci_git_cmd(args.git_binary.as_deref(), location),
@@ -2450,22 +2449,21 @@ fn main() {
             }
         };
 
-        if let Ok(output) = std::process::Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
-            .args(["diff", base.as_str(), "--unified=0"])
-            .output()
-        {
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                if let Some(file) = line.strip_prefix("+++ b/") {
-                    current_file = file.to_string();
-                    continue;
-                }
-                if current_file.is_empty() || args.ignore_files.iter().any(|f| current_file.ends_with(f)) { continue; }
-                if line.starts_with('+') && !line.starts_with("+++") {
-                    if let Some(domain) = fop_sort::check_banned_domain(&line[1..], banned) {
-                        found.push((domain, line[1..].to_string()));
-                    }
-                }
+        // Shares the diff reader rather than keeping a second one. The copy
+        // that used to live here had the bugs the shared parser has since had
+        // fixed: no `--no-color`, so a colourised diff made the audit pass
+        // having read nothing; `+++` treated as a header, so a rule beginning
+        // with `+` escaped the check; and no handling for a quoted path.
+        let Some(additions) = fop_git::get_added_lines_against(&base_cmd, Some(&base)) else {
+            eprintln!("CI audit: could not read the diff against {}.", base);
+            std::process::exit(1);
+        };
+        for add in &additions {
+            if should_ignore_file(&add.file, &args.ignore_files) {
+                continue;
+            }
+            if let Some(domain) = fop_sort::check_banned_domain(&add.content, banned) {
+                found.push((domain, add.content.clone()));
             }
         }
 
