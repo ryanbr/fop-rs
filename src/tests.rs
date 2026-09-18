@@ -2191,11 +2191,31 @@ fn test_regex_group_colon_is_not_a_pseudo_class() {
     assert_eq!(tidy("div:HOVER"), "a.com#?#div:hover");
     assert_eq!(tidy(".mix:HOVER"), "a.com#?#.mix:hover");
     assert_eq!(tidy("li:NTH-CHILD(2)"), "a.com#?#li:nth-child(2)");
-    // Both in one selector: the group keeps its case, the pseudo-class does not.
+    // A selector carrying `:contains(` is extended syntax and is preserved
+    // whole, so the trailing pseudo-class keeps its case too. That is the same
+    // treatment `:has-text(` has always had.
     assert_eq!(
         tidy("div:contains(/^(?:ABC)/):HOVER"),
-        "a.com#?#div:contains(/^(?:ABC)/):hover"
+        "a.com#?#div:contains(/^(?:ABC)/):HOVER"
     );
+}
+
+#[test]
+fn test_contains_argument_is_left_alone() {
+    use crate::fop_sort::element_tidy;
+    let tidy = |sel: &str| element_tidy("a.com", "#?#", sel);
+    // `+` inside a `:contains()` argument is a regex quantifier or literal
+    // text, not a sibling combinator. Padding it with spaces changed what
+    // these AdGuard rules matched.
+    for kept in [
+        r".kevinsingle-content > p:contains(/^ +$/)",
+        r".v-list-item:first-child:contains(/^ad\s+$/)",
+        "div[class][aria-expanded=\"false\"]:contains(Reklama 18+.)",
+        // And a bare `:` in the argument is not a pseudo-class.
+        "div:contains(/foo:BAR/)",
+    ] {
+        assert_eq!(tidy(kept), format!("a.com#?#{}", kept), "argument was rewritten");
+    }
 }
 
 #[test]

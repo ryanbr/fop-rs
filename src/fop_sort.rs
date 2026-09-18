@@ -858,6 +858,12 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
                 || selector.contains(":min-text-length(")
                 || selector.contains(":-abp-has(")
                 || selector.contains(":-abp-contains(")
+                // AdGuard/ABP's own name for :has-text(). Its argument is
+                // literal text or a regex, so a `:` in it is not a
+                // pseudo-class: `:contains(/foo:BAR/)` was being lowercased to
+                // /foo:bar/. fop_rules already classifies it this way.
+                || selector.contains(":contains(")
+                || selector.contains(":matches-attr(")
                 || selector.contains(":-abp-properties(")
                 || selector.contains(":others(")
             ))
