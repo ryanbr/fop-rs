@@ -760,6 +760,20 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     }
 }
 
+/// Whether the `:` at `colon` opens a regex group rather than a pseudo-class.
+///
+/// `(?:` is non-capturing and `(?i:` / `(?-is:` set inline flags, so the `:` is
+/// preceded by `?` and any flag letters. A CSS pseudo-class never is: walking
+/// back over flag letters from `.mix:HOVER` lands on `.`, not `?`.
+#[inline]
+fn opens_regex_group(bytes: &[u8], colon: usize) -> bool {
+    let mut i = colon;
+    while i > 0 && matches!(bytes[i - 1], b'i' | b'm' | b's' | b'x' | b'u' | b'U' | b'R' | b'-') {
+        i -= 1;
+    }
+    i > 0 && bytes[i - 1] == b'?'
+}
+
 /// Sort domains and clean element hiding rules
 pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     let selector = selector.trim();
@@ -970,24 +984,35 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
         selector = selector.replacen(&old, &new, 1);
     }
 
-    // Make pseudo classes lowercase
-    let pseudo_caps: Vec<String> = PSEUDO_PATTERN
-        .captures_iter(&selector)
-        .map(|caps| caps[1].to_string())
-        .collect();
-
-    for pseudo_class in pseudo_caps {
-        if selector_only_strings.contains(&pseudo_class)
-            || !selector_without_strings.contains(&pseudo_class)
-        {
-            continue;
+    // Make pseudo classes lowercase.
+    //
+    // By byte range rather than `replacen`, so a name that occurs more than
+    // once is lowercased where it was found instead of at its first occurrence.
+    if !UNICODE_SELECTOR.is_match(&selector_without_strings) {
+        let mut edits: Vec<(usize, usize)> = Vec::new();
+        for caps in PSEUDO_PATTERN.captures_iter(&selector) {
+            let m = caps.get(1).expect("PSEUDO_PATTERN has one group");
+            // A `:` that opens a regex group is not a pseudo-class. It turns up
+            // inside `:contains(/.../)` arguments: AdGuard's BaseFilter carries
+            // `:contains(/^(?:Reklama$|Dzieki reklamom korzystasz)/)`, and
+            // lowercasing the group's first alternative to `reklama` silently
+            // changed which text the rule matched.
+            if opens_regex_group(selector.as_bytes(), m.start()) {
+                continue;
+            }
+            let name = m.as_str();
+            if selector_only_strings.contains(name)
+                || !selector_without_strings.contains(name)
+            {
+                continue;
+            }
+            edits.push((m.start(), m.end()));
         }
-
-        if UNICODE_SELECTOR.is_match(&selector_without_strings) {
-            break;
+        // Applied back to front so an earlier edit cannot move a later range.
+        for (start, end) in edits.into_iter().rev() {
+            let lowered = selector[start..end].to_ascii_lowercase();
+            selector.replace_range(start..end, &lowered);
         }
-
-        selector = selector.replacen(&pseudo_class, &pseudo_class.to_ascii_lowercase(), 1);
     }
 
     // Remove markers and return complete rule

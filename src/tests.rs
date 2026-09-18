@@ -2170,3 +2170,30 @@ fn test_addheader_keeps_its_spaces() {
     // checked against that list rather than skipped.
     assert!(crate::fop_rules::check_rule("||a.com^$addheader=response:x:y").is_none());
 }
+
+#[test]
+fn test_regex_group_colon_is_not_a_pseudo_class() {
+    use crate::fop_sort::element_tidy;
+    let tidy = |sel: &str| element_tidy("a.com", "#?#", sel);
+    // `(?:` and `(?i:` open regex groups, so the `:` is not a pseudo-class.
+    // AdGuard's BaseFilter carries this rule, and lowercasing the group's
+    // first alternative changed which text it matched.
+    for kept in [
+        "div:contains(/^(?:Reklama$|Dzieki)/)",
+        "div:contains(/^(?i:ABC)/)",
+        "div:contains(/^(?-is:ABC)/)",
+        "div:contains(/(?:ABC$|DEF)/)",
+    ] {
+        assert_eq!(tidy(kept), format!("a.com#?#{}", kept), "case was changed");
+    }
+    // Real pseudo-classes are still lowercased, including when the walk back
+    // over flag letters passes through a class name made of them.
+    assert_eq!(tidy("div:HOVER"), "a.com#?#div:hover");
+    assert_eq!(tidy(".mix:HOVER"), "a.com#?#.mix:hover");
+    assert_eq!(tidy("li:NTH-CHILD(2)"), "a.com#?#li:nth-child(2)");
+    // Both in one selector: the group keeps its case, the pseudo-class does not.
+    assert_eq!(
+        tidy("div:contains(/^(?:ABC)/):HOVER"),
+        "a.com#?#div:contains(/^(?:ABC)/):hover"
+    );
+}
