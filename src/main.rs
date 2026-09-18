@@ -1257,6 +1257,12 @@ pub(crate) fn suggest_option(unknown: &str) -> Option<&'static str> {
 /// forms, rather than walking a chain of `starts_with` per option.
 #[inline]
 pub(crate) fn is_known_option(stripped: &str) -> bool {
+    // AdGuard's noop modifier is a run of underscores of any length, used to
+    // keep a long rule readable. There is nothing to look up, so it is
+    // recognised by shape rather than by listing every length.
+    if !stripped.is_empty() && stripped.bytes().all(|b| b == b'_') {
+        return true;
+    }
     KNOWN_OPTIONS.contains(stripped)
         || EXTRA_KNOWN_OPTIONS.contains(&stripped)
         || stripped

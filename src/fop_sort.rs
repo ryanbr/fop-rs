@@ -686,6 +686,15 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                         let name = opt[..eq_pos].to_ascii_lowercase().replace('_', "-");
                         let value = &opt[eq_pos..]; // Keep value as-is (preserve case and underscores)
                         format!("{}{}", name, value)
+                    } else if !opt.is_empty() && opt.bytes().all(|b| b == b'_') {
+                        // AdGuard's noop modifier is a run of underscores and
+                        // nothing else, used to keep a long rule readable:
+                        // `$script,third-party,denyallow=...,_____,domain=...`.
+                        // The `_` -> `-` normalisation exists for option names
+                        // like `redirect_rule`; applied here it produced
+                        // `-----`, which is not an option at all. All 27 in
+                        // AdguardFilters were being rewritten that way.
+                        opt.to_string()
                     } else {
                         opt.to_ascii_lowercase().replace('_', "-")
                     }

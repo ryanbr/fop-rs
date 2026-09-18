@@ -2238,3 +2238,44 @@ fn test_escaped_colon_is_not_a_pseudo_class() {
     // One of each in the same selector.
     assert_eq!(tidy(r"#esc\:Keep:HOVER"), r"a.com###esc\:Keep:hover");
 }
+
+#[test]
+fn test_adguard_noop_modifier_survives() {
+    use crate::fop_sort::filter_tidy;
+    use crate::fop_rules::check_rule;
+    // AdGuard's noop modifier is a run of underscores, used to keep a long
+    // rule readable. The `_` -> `-` normalisation meant for option names like
+    // `redirect_rule` was turning it into `-----`, which is not an option.
+    for rule in [
+        "*$script,third-party,denyallow=cdn.example.com,_____,domain=site.example",
+        "||example.com^$script,__,domain=site.example",
+        "||example.com^$_,third-party",
+    ] {
+        let tidied = filter_tidy(rule, false);
+        let noop: String = rule
+            .rsplit(['$', ','])
+            .find(|t| !t.is_empty() && t.bytes().all(|b| b == b'_'))
+            .expect("test rule carries a noop")
+            .to_string();
+        assert!(
+            tidied.split(['$', ',']).any(|t| t == noop),
+            "noop {:?} lost: {} -> {}", noop, rule, tidied
+        );
+        assert!(check_rule(rule).is_none(), "flagged: {}", rule);
+    }
+    // The normalisation it exists for still happens.
+    assert!(filter_tidy("||example.com^$redirect_rule=noopjs", false).contains("redirect-rule="));
+}
+
+#[test]
+fn test_matches_attr_is_extended() {
+    use crate::fop_sort::element_tidy;
+    // uBO's :matches-attr() takes literal/regex arguments, like the rest of
+    // the matches-* family already in the extended list.
+    for sel in [
+        r#"div:matches-attr("/^data-.{4}$/"="/^v[45]{1}$/")"#,
+        "div[class]:matches-attr(data-X=Y)",
+    ] {
+        assert_eq!(element_tidy("a.com", "##", sel), format!("a.com##{}", sel));
+    }
+}
