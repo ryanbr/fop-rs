@@ -988,7 +988,7 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
     //
     // By byte range rather than `replacen`, so a name that occurs more than
     // once is lowercased where it was found instead of at its first occurrence.
-    if !UNICODE_SELECTOR.is_match(&selector_without_strings) {
+    {
         let mut edits: Vec<(usize, usize)> = Vec::new();
         for caps in PSEUDO_PATTERN.captures_iter(&selector) {
             let m = caps.get(1).expect("PSEUDO_PATTERN has one group");
@@ -1007,6 +1007,12 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
                 continue;
             }
             edits.push((m.start(), m.end()));
+        }
+        // Checked only once a candidate has survived the guards, and only if
+        // there is one: it is a regex over the whole selector, and running it
+        // on every element rule would cost more than the lowercasing saves.
+        if !edits.is_empty() && UNICODE_SELECTOR.is_match(&selector_without_strings) {
+            edits.clear();
         }
         // Applied back to front so an earlier edit cannot move a later range.
         for (start, end) in edits.into_iter().rev() {
