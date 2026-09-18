@@ -2059,3 +2059,14 @@ fn test_engine_specific_rules_are_left_alone() {
         }
     }
 }
+
+#[test]
+fn test_requestheader_is_known() {
+    use crate::fop_rules::check_rule as f;
+    // Live in uAssets filters-2026.txt. Unknown options are a defect, so this
+    // was a rule --remove-bad-rules would have deleted and CI would have
+    // failed on -- the same shape as the inline-font/beacon gap before it.
+    let rule = "||workers.dev/index.js$script,3p,requestheader=Cookie:*doubleclick.net*";
+    assert!(f(rule).is_none(), "{:?}", f(rule).map(|p| p.reason));
+    assert!(crate::is_known_option("requestheader=Cookie:*x*"));
+}

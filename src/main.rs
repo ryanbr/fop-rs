@@ -1176,9 +1176,9 @@ pub(crate) static KNOWN_OPTION_PREFIXES: LazyLock<HashSet<&'static str>> = LazyL
         "addheader", "app", "cookie", "csp", "denyallow", "domain", "from",
         "header", "hls", "ipaddress", "jsonprune", "method", "permissions",
         "reason", "redirect", "redirect-rule", "referrerpolicy", "removeheader",
-        "removeparam", "replace", "responseheader", "rewrite", "sitekey",
-        "stealth", "tag", "to", "uritransform", "urlskip", "urltransform",
-        "xmlprune",
+        "removeparam", "replace", "requestheader", "responseheader", "rewrite",
+        "sitekey", "stealth", "tag", "to", "uritransform", "urlskip",
+        "urltransform", "xmlprune",
     ]
     .into_iter()
     .collect()
