@@ -621,11 +621,17 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
 
     // Remove errant spaces from network filters only
     // Skip: element rules, regex patterns, and options with legitimate spaces
-    let has_space_options = ["$csp=", ",csp=", "$replace=", ",replace=",
-                             "$urlskip=", ",urlskip=", "$removeparam=", ",removeparam=",
-                             "$jsonprune=", ",jsonprune=",
-                             "$xmlprune=", ",xmlprune="]
-        .iter().any(|s| filter_in.contains(s));
+    // Header values carry spaces as a matter of course --
+    // `content-type:text/html; charset=utf-8` -- as do `permissions=` policies,
+    // so stripping whitespace from a rule bearing one changes what it matches.
+    let has_space_options = ["csp=", "replace=", "urlskip=", "removeparam=",
+                             "jsonprune=", "xmlprune=", "header=", "responseheader=",
+                             "requestheader=", "permissions="]
+        .iter()
+        .any(|o| {
+            // Only as an option, not as text inside a pattern.
+            filter_in.contains(&format!("${}", o)) || filter_in.contains(&format!(",{}", o))
+        });
     let filter_in: Cow<str> = if !(is_element_rule || has_space_options || filter_in.starts_with('/') && filter_in.ends_with('/')) {
         if filter_in.contains(' ') || filter_in.contains('\t') {
             Cow::Owned(filter_in.split_whitespace().collect::<String>())

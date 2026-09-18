@@ -4,6 +4,8 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Keep the spaces in a `$header=`, `$responseheader=`, `$requestheader=` or `$permissions=` value. `filter_tidy` strips whitespace from network rules, which is right for `|| x .com ^` and wrong for `content-type:text/html; charset=utf-8` — the rule was silently rewritten into something that matches differently. `$csp=` and the others already on that list are unaffected.
+- Do not suggest an option as the correction for itself. A bare `$requestheader` is wrong because it needs a value, and "did you mean requestheader?" says nothing.
 - Recognise `$requestheader=`. It is live in uAssets `filters-2026.txt` and an unknown option counts as a defect, so the rule was one `--remove-bad-rules` would delete and `--ci` would fail on.
 - Treat a space in a pattern as advice rather than a defect. `filter_tidy` already strips such spaces on the sorting pass, so fop repairs the rule losslessly — failing CI over it, or deleting it, was wrong. The wording no longer claims the rule cannot match: ABP normalises spaces out of network filters, so it does match there.
 - Require an anchor to be followed by rule text, and never judge a regex filter on its spaces. `@@ -3,6 +3,9 @@` in a patch, `| Option | Description |` in a table, and `@@/^https?:\/\/[^ ]+\/ads\//$script` were all read as rules with a space in the pattern.

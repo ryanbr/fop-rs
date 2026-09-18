@@ -1236,6 +1236,12 @@ pub(crate) fn suggest_option(unknown: &str) -> Option<&'static str> {
         .chain(KNOWN_OPTION_PREFIXES.iter())
         .chain(EXTRA_KNOWN_OPTIONS.iter())
     {
+        // A candidate equal to what was typed is no suggestion: a bare
+        // `$requestheader` is wrong because it needs a value, and "did you
+        // mean requestheader?" says nothing.
+        if *candidate == unknown {
+            continue;
+        }
         if let Some(d) = edit_distance_within(unknown, candidate, max) {
             if best.is_none_or(|(bd, bn)| (d, *candidate) < (bd, bn)) {
                 best = Some((d, candidate));

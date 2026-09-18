@@ -2070,3 +2070,26 @@ fn test_requestheader_is_known() {
     assert!(f(rule).is_none(), "{:?}", f(rule).map(|p| p.reason));
     assert!(crate::is_known_option("requestheader=Cookie:*x*"));
 }
+
+#[test]
+fn test_header_option_values_keep_their_spaces() {
+    use crate::fop_sort::filter_tidy;
+    // `filter_tidy` strips whitespace from network rules, which is right for
+    // `|| x .com ^` and wrong for a header value: `content-type:text/html;
+    // charset=utf-8` means something different without its space.
+    for rule in [
+        "||x.com^$header=content-type:text/html; charset=utf-8",
+        "||x.com^$responseheader=set-cookie: a",
+        "||x.com^$requestheader=Cookie: a",
+        "||x.com^$permissions=autoplay=() geolocation=()",
+        "||x.com^$csp=script-src 'none'",
+    ] {
+        assert!(filter_tidy(rule, false).contains(' '), "space stripped from {}", rule);
+    }
+    // An ordinary rule still has its errant spaces taken out.
+    assert_eq!(filter_tidy("|| x .com ^$script", false), "||x.com^$script");
+    // The rule from uAssets that prompted this keeps both wildcards and its
+    // colon through a tidy.
+    let live = "||workers.dev/index.js$script,3p,requestheader=Cookie:*doubleclick.net*";
+    assert!(filter_tidy(live, false).contains("requestheader=Cookie:*doubleclick.net*"));
+}
