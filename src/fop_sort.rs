@@ -624,9 +624,12 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Header values carry spaces as a matter of course --
     // `content-type:text/html; charset=utf-8` -- as do `permissions=` policies,
     // so stripping whitespace from a rule bearing one changes what it matches.
+    // `addheader=` sets a whole header value, cookie attributes included:
+    // `$addheader=response:set-cookie:x=c; path=/; max-age=21600`. It is not
+    // covered by `header=`, which only matches `$header=`/`,header=`.
     let has_space_options = ["csp=", "replace=", "urlskip=", "removeparam=",
                              "jsonprune=", "xmlprune=", "header=", "responseheader=",
-                             "requestheader=", "permissions="]
+                             "requestheader=", "permissions=", "addheader="]
         .iter()
         .any(|o| {
             // Only as an option, not as text inside a pattern.

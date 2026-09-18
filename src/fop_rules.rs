@@ -185,6 +185,11 @@ fn looks_like_hostname(line: &str) -> bool {
         && !FILE_SUFFIXES.iter().any(|ext| ext.eq_ignore_ascii_case(last))
 }
 
+/// A real hostname that lost its `||`.
+const NO_ANCHOR_HOST: &str = "host rule with no || anchor -- matches the name anywhere";
+/// A dotless token that is not a domain at all.
+const NO_ANCHOR_MASH: &str = "unanchored pattern with no domain -- matches this text anywhere";
+
 /// Whether `line` is a hostname rule that forgot its `||` anchor.
 ///
 /// `rbush.shop^` is legal and matches that text anywhere in a URL, so it also
@@ -207,8 +212,7 @@ fn unanchored_reason(line: &str) -> Option<&'static str> {
     let Some((host, rest)) = line.split_once('^') else {
         // No `^` at all. A hostname here is the bare-domain case, which has
         // its own check and better advice, so only the mash is ours.
-        return mash(line)
-            .then_some("unanchored pattern with no domain -- matches this text anywhere");
+        return mash(line).then_some(NO_ANCHOR_MASH);
     };
     // `example.com^somepath` is not a host rule and does not match the name
     // anywhere, so the advice would misdescribe it.
@@ -217,10 +221,10 @@ fn unanchored_reason(line: &str) -> Option<&'static str> {
     }
     if looks_like_hostname(host) {
         // A real hostname, so the anchored form is the obvious intent.
-        Some("host rule with no || anchor -- matches the name anywhere")
+        Some(NO_ANCHOR_HOST)
     } else if mash(host) {
         // No domain at all: naming what it is beats guessing what was meant.
-        Some("unanchored pattern with no domain -- matches this text anywhere")
+        Some(NO_ANCHOR_MASH)
     } else {
         None
     }
@@ -362,6 +366,22 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // neither is a CSS selector, so brackets and combinators mean nothing
         // there and a lone apostrophe in a comment is not an unbalanced quote.
         let is_script = matches!(sep, "#%#" | "#@%#") || selector.starts_with("//");
+        // `#$#` is two unrelated things. AdGuard uses it to inject CSS
+        // (`##.ad { display: none !important; }`), which is selector-shaped and
+        // worth balancing; ABP uses it to invoke a snippet
+        // (`#$#hide-if-contains 'x' p[id]`), whose arguments are regex literals
+        // and quoted strings where a bracket is data, not syntax. The injection
+        // opens on a CSS selector and carries a ` {` declaration block; a
+        // snippet opens on its name and never does. Testing the opening rather
+        // than a trailing `}` keeps a truncated injection (`.ad { color: red`)
+        // catchable, and testing ` {` rather than any `{` keeps a snippet whose
+        // argument holds one -- pluto.tv's regex quantifier `{1,2}` -- from
+        // reading as CSS. Without this, four valid rules in ABP's
+        // anti-circumvention list were flagged "unbalanced brackets" (`\(`
+        // inside a regex, `[^>]` inside an XPath) and deleted.
+        let is_snippet = matches!(sep, "#$#" | "#@$#")
+            && !selector.starts_with(['.', '#', '[', '*', ':'])
+            && !selector.contains(" {");
         if selector.is_empty() {
             return Some(RuleProblem::new("separator with no selector", sep));
         }
@@ -371,16 +391,16 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // Every literal-argument construct contains a `(`, and a selector with
         // no `(` cannot be unbalanced in one either -- so one byte search gates
         // both the six substring scans and the balance walk.
-        let has_paren = !is_script && selector.as_bytes().contains(&b'(');
+        let has_paren = !is_script && !is_snippet && selector.as_bytes().contains(&b'(');
         let literal_args =
             has_paren && LITERAL_ARG_CONSTRUCTS.iter().any(|c| selector.contains(c));
-        if !is_script && !literal_args && !brackets_balance(selector) {
+        if !is_script && !is_snippet && !literal_args && !brackets_balance(selector) {
             return Some(RuleProblem::new("unbalanced brackets in selector", selector));
         }
         // A selector cannot open on a combinator. `+js(...)` is a scriptlet
         // injection, not a sibling combinator, so it is exempt.
         let first = selector.as_bytes()[0];
-        if !is_script && (first == b'>' || (first == b'+' && !selector.starts_with("+js("))) {
+        if !is_script && !is_snippet && (first == b'>' || (first == b'+' && !selector.starts_with("+js("))) {
             return Some(RuleProblem::new("selector starts with a combinator", selector));
         }
         return None;
@@ -407,22 +427,12 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         // HTML. Without a parse there is no way to say where the pattern ends,
         // and guessing flagged three valid rules in uAssets as defects.
         // `OPTION_PATTERN` rejects any option whose value holds a space, such
-        // as `$csp=script-src 'none'`. The pattern half is still worth judging,
-        // or an unanchored host escapes the check purely by its options.
+        // as `$csp=script-src 'none'`. The pattern half is still worth judging
+        // for mash -- see the note at the end of this function for why only
+        // that half.
         if let Some((pattern, _)) = line.rsplit_once('$') {
-            // No `is_bare_domain` fallback here. A hostname with options and
-            // no separator is a substring pattern, which whole files are
-            // written in -- easyprivacy_general_emailtrackers.txt holds 319 of
-            // them and not one anchored rule -- so advising an anchor there
-            // would be wrong, and deleting it worse. `unanchored_reason` only
-            // names a host when the pattern carries a `^`, which is the case
-            // that really does look like a lost anchor.
-            let reason = unanchored_reason(pattern);
-            if let Some(reason) = reason {
-                return Some(RuleProblem {
-                    removable: false,
-                            ..RuleProblem::new(reason, "")
-                });
+            if let Some(reason) = unanchored_mash(pattern) {
+                return Some(RuleProblem { removable: false, ..RuleProblem::new(reason, "") });
             }
         }
         // A rule with no `$` at all has no option list to be malformed.
@@ -472,16 +482,29 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
             });
         }
     }
-    // The options are sound; the pattern they hang off may still have lost its
-    // anchor. Checked last so a real defect is reported ahead of this advice.
-    let reason = unanchored_reason(pattern);
-    if let Some(reason) = reason {
-        return Some(RuleProblem {
-            removable: false,
-            ..RuleProblem::new(reason, "")
-        });
+    // The pattern may still be mash, but a *hostname* here is left alone. The
+    // host check used to run on this path too, on the grounds that an
+    // unanchored host should not escape by its options -- but the opposite is
+    // true: `$csp=` and `$redirect-rule=` are not written by accident, and the
+    // author who wrote one chose the matching as well. ABP's own
+    // anti-circumvention list publishes 13 such rules
+    // (`billboard.com^$csp=script-src-attr \'none\'` and friends) and uAssets
+    // another in `host-cdn.net^$image,redirect-rule=32x32.png,...`; all were
+    // flagged, and since `--remove-bad-rules` deletes advice along with
+    // defects, all were deleted. The bare forms this was meant to catch --
+    // `example.com^`, `exa mple.com^` -- carry no options and are still caught
+    // where the whole line is the pattern. Mash stays flagged either way: a
+    // dotless, vowel-less token is not a deliberate choice in any list.
+    if let Some(reason) = unanchored_mash(pattern) {
+        return Some(RuleProblem { removable: false, ..RuleProblem::new(reason, "") });
     }
     None
+}
+
+/// `unanchored_reason` restricted to the mash case, for rules carrying options.
+#[inline]
+fn unanchored_mash(pattern: &str) -> Option<&'static str> {
+    unanchored_reason(pattern).filter(|&r| r == NO_ANCHOR_MASH)
 }
 
 /// Check added lines for bad rules.

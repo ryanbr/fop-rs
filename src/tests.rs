@@ -1461,8 +1461,9 @@ fn test_bare_domain_is_flagged_but_never_removed() {
     // holds 319 of them and not one anchored rule.
     assert!(f("domain.com$third-party").is_none());
     assert!(f("img.promio-connect.com$image").is_none());
-    // A separator with no anchor still reads as a lost `||`.
-    assert!(f("domain.com^$third-party").unwrap().reason.contains("no || anchor"));
+    // ...and with a separator *and* options it is left alone too: writing an
+    // option is a deliberate act, and --remove-bad-rules deletes advice.
+    assert!(f("domain.com^$third-party").is_none());
     // Anything else carrying filter syntax is the author being explicit.
     for ok in [
         "||domain.com^", "|http://domain.com", "domain.com/path",
@@ -1622,6 +1623,7 @@ fn test_missing_anchor_is_flagged() {
     for garbage in [
         "fdfdgfgdgfd^", "ffgdfgdfgd^", "wxyzzzq^", "kjhgfdsz^",
         "fdgfgdfgd", "kjhgfdsz", "fdgfgdfgd$third-party",
+        // Options do not excuse mash, though they do excuse a real hostname.
         // A leading boundary character is not a disguise: judge what follows.
         "+dsfsdffdsfds", "-dffgdfdfs", "_dffgdfdfs", "-fdfdgfgdgfd^",
     ] {
@@ -1661,7 +1663,6 @@ fn test_missing_anchor_is_flagged() {
     }
     for missing in [
         "rbush.shop^",
-        "rbush.shop^$third-party",
         "arketing.indianadunes.com^",
         "sub.example.co.nz^",
     ] {
@@ -1790,10 +1791,15 @@ fn test_missing_anchor_only_for_host_rules() {
     assert!(f("example.com^*/ads").is_none());
     assert!(f("example.com^").is_some());
     assert!(f("example.com^|").is_some());
-    // An option value holding a space fails OPTION_PATTERN, which used to skip
-    // the pattern half entirely.
-    assert!(f("example.com^$csp=script-src 'none'").is_some());
+    // Options mean the author chose the matching, so the host is left alone
+    // whether or not the option value parses. ABP's anti-circumvention list
+    // publishes 13 of these and --remove-bad-rules was deleting them.
+    assert!(f("example.com^$csp=script-src 'none'").is_none());
     assert!(f("||example.com^$csp=script-src 'none'").is_none());
+    assert!(f("billboard.com^$csp=script-src-attr 'none'").is_none());
+    assert!(f("host-cdn.net^$image,redirect-rule=32x32.png,domain=maxstream.video").is_none());
+    // Mash is not a choice, so options do not excuse it.
+    assert!(f("fdfdgfgdgfd^$third-party").is_some());
 }
 
 #[test]
@@ -2117,4 +2123,40 @@ fn test_localhost_entries_keep_their_space() {
     // domain -- which is how a whole hosts file came to be deleted by
     // --remove-bad-rules.
     assert!(crate::fop_rules::check_rule("0.0.0.0keep.com").is_some());
+}
+
+#[test]
+fn test_abp_snippet_body_is_not_a_selector() {
+    use crate::fop_rules::check_rule as f;
+    // `#$#` snippet arguments carry regex literals and quoted strings whose
+    // brackets are data. All three are published in ABP's anti-circumvention
+    // list and were being deleted as "unbalanced brackets in selector".
+    for snippet in [
+        r"kaliscan.*#$#abort-current-inline-script document.createElement /l\\.parentNode\\.insertBefore\\(s/;",
+        r#"tvnz.co.nz#$#replace-fetch-response /"adType":"ssai"/ "adType":"none"; replace-fetch-response /"aopUrl":"[^"]*"/ '"aopUrl":""'"#,
+        r#"pluto.tv#$#replace-xhr-response /<Period[^>]*?id="[0-9a-fA-F]+-[0-9]+"[^>]*>.+?<[/]Period>/ '' 'urn:mpeg:dash'"#,
+        "testpages.eyeo.com#$#hide-if-contains 'filter not applied' p[id]",
+        "example.com#@$#abort-on-property-read window.open",
+    ] {
+        assert!(f(snippet).is_none(), "{:?} flagged as {:?}", snippet, f(snippet).map(|p| p.reason));
+    }
+    // A snippet argument may hold a brace of its own -- a regex quantifier --
+    // without becoming CSS.
+    assert!(f(r#"pluto.tv#$#replace-xhr-response /duration="PT[0-9]{1,2}[.][^"]*"/ '' 'x'"#).is_none());
+    // AdGuard's `#$#` is CSS injection, not a snippet: it opens on a selector
+    // and carries a declaration block, so it is still balance-checked --
+    // including when the block was left unclosed.
+    assert!(f("example.com#$#.ad { display: none !important; }").is_none());
+    assert!(f("example.com#$#.ad[foo=\"bar { display: none !important; }").is_some());
+    assert!(f("example.com#$#.ad { color: red").is_some());
+    assert!(f("example.com#$#div { color: red").is_some());
+}
+
+#[test]
+fn test_addheader_keeps_its_spaces() {
+    use crate::fop_sort::filter_tidy;
+    // Cookie attributes are space-separated; stripping them rewrites the
+    // header the rule sets.
+    let rule = "||crazyshit.com^$addheader=response:set-cookie:__trx1_p=c; path=/; max-age=21600";
+    assert_eq!(filter_tidy(rule, false), rule, "addheader value was rewritten");
 }
