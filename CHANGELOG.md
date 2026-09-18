@@ -4,6 +4,7 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Stop `--localhost` mode mangling hosts entries. The space between IP and host is the syntax, and `filter_tidy` strips whitespace from anything that is not an element rule — so `0.0.0.0 keep.com` was written back as `0.0.0.0keep.com`, breaking every hosts file fop sorted in that mode, 5.5.0 included. Such a line is now passed through as written. With `--remove-bad-rules` the consequence was worse: the mangled line reads as a bare domain, so the checks flagged it and the whole file was emptied.
 - Keep the spaces in a `$header=`, `$responseheader=`, `$requestheader=` or `$permissions=` value. `filter_tidy` strips whitespace from network rules, which is right for `|| x .com ^` and wrong for `content-type:text/html; charset=utf-8` — the rule was silently rewritten into something that matches differently. `$csp=` and the others already on that list are unaffected.
 - Do not suggest an option as the correction for itself. A bare `$requestheader` is wrong because it needs a value, and "did you mean requestheader?" says nothing.
 - Recognise `$requestheader=`. It is live in uAssets `filters-2026.txt` and an unknown option counts as a defect, so the rule was one `--remove-bad-rules` would delete and `--ci` would fail on.

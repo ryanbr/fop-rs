@@ -2093,3 +2093,28 @@ fn test_header_option_values_keep_their_spaces() {
     let live = "||workers.dev/index.js$script,3p,requestheader=Cookie:*doubleclick.net*";
     assert!(filter_tidy(live, false).contains("requestheader=Cookie:*doubleclick.net*"));
 }
+
+#[test]
+fn test_localhost_entries_keep_their_space() {
+    use crate::fop_sort::is_localhost_entry;
+    // The space between IP and host is the syntax of a hosts entry, and
+    // `filter_tidy` strips whitespace from anything that is not an element
+    // rule -- which turned `0.0.0.0 keep.com` into `0.0.0.0keep.com` and broke
+    // every hosts file fop sorted in localhost mode, in v5.5.0 too. Such a
+    // line is now passed through as written.
+    for entry in [
+        "0.0.0.0 keep.com",
+        "127.0.0.1 tracker.net",
+        "0.0.0.0\ttabbed.com",
+        "0.0.0.0 sub.example.co.nz",
+    ] {
+        assert!(is_localhost_entry(entry), "{}", entry);
+        // ...and the checks have nothing to say about one either, mangled or
+        // not: an IP and a host separated by whitespace is not a rule shape.
+        assert!(crate::fop_rules::check_rule(entry).is_none(), "{}", entry);
+    }
+    // The mangled form is what the checks used to see, and it reads as a bare
+    // domain -- which is how a whole hosts file came to be deleted by
+    // --remove-bad-rules.
+    assert!(crate::fop_rules::check_rule("0.0.0.0keep.com").is_some());
+}

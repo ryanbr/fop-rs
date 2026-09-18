@@ -1727,10 +1727,19 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Validate localhost entries when in localhost mode
-        if config.localhost && !is_localhost_entry(line) {
-            write_warning(&format!("Removed invalid localhost entry: {}", line));
+        if config.localhost {
+            if !is_localhost_entry(line) {
+                write_warning(&format!("Removed invalid localhost entry: {}", line));
+                continue;
+            }
+            // A hosts entry is `IP<space>host`, and the space is the syntax --
+            // `filter_tidy` strips whitespace from anything that is not an
+            // element rule, which turned `0.0.0.0 keep.com` into
+            // `0.0.0.0keep.com` and broke every hosts file fop sorted in this
+            // mode. There is nothing in such a line for the tidier to do, so
+            // it is kept as written.
+            section.push(line.to_string());
             continue;
-
         }
 
         if let Some(reason) = malformed_rule_reason(line, config.ignore_line_minimum) {
