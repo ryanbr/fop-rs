@@ -2159,4 +2159,14 @@ fn test_addheader_keeps_its_spaces() {
     // header the rule sets.
     let rule = "||crazyshit.com^$addheader=response:set-cookie:__trx1_p=c; path=/; max-age=21600";
     assert_eq!(filter_tidy(rule, false), rule, "addheader value was rewritten");
+    // ...and the checker must not read those spaces as a defect, or
+    // --remove-bad-rules deletes the rule filter_tidy just left alone.
+    assert!(crate::fop_rules::check_rule(rule).is_none());
+    // Recognised via KNOWN_OPTION_PREFIXES, which matches on the key of a
+    // `key=value` option -- the bare name is not a valid option on its own.
+    assert!(crate::is_known_option("addheader=response:set-cookie:x=c"));
+    assert!(crate::is_known_option("removeheader=refresh"));
+    // A value with no space takes the parsed path, where the option name is
+    // checked against that list rather than skipped.
+    assert!(crate::fop_rules::check_rule("||a.com^$addheader=response:x:y").is_none());
 }
