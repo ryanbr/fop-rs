@@ -1378,6 +1378,43 @@ fn current_branch_name(base_cmd: &[String]) -> Option<String> {
     if name.is_empty() { None } else { Some(name) }
 }
 
+/// Whether the working tree holds an unresolved merge.
+///
+/// `git pull --rebase --autostash` exits 0 even when popping the stash
+/// conflicts -- it reports "Applying autostash resulted in conflicts. Your
+/// changes are safe in the stash" and leaves markers in the files. The exit
+/// status cannot be used to detect that; unmerged index entries can.
+fn has_unmerged_paths(base_cmd: &[String]) -> bool {
+    Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["ls-files", "--unmerged"])
+        .output()
+        .is_ok_and(|o| o.status.success() && !o.stdout.is_empty())
+}
+
+/// Explain an unresolved merge and how to get back to a clean tree.
+fn report_unresolved_merge(base_cmd: &[String]) {
+    eprintln!(
+        "\nThe pull before committing left an unresolved merge, so nothing was \
+         committed -- committing now would have put conflict markers in the list \
+         and pushed them."
+    );
+    eprintln!("  Resolve it:");
+    eprintln!("    git status                     # see the conflicted files");
+    eprintln!("    <edit files to resolve>");
+    eprintln!("    git add <files>");
+    eprintln!("  Or discard the pulled-in changes and keep yours:");
+    eprintln!("    git checkout --theirs . && git add -A");
+    if Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["stash", "list"])
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("autostash"))
+    {
+        eprintln!("  Your own changes are also in the stash:  git stash list");
+    }
+}
+
 /// Attempt rebase and retry push after initial push failure
 #[inline]
 fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, comment: Option<&str>, no_color: bool, is_masked: bool, commit_url_template: Option<&str>) {
@@ -1422,6 +1459,14 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
             eprintln!("    git pull --rebase --autostash");
             eprintln!("    git push");
         }
+        return;
+    }
+
+    // Same trap as the pre-commit pull: the rebase above exits 0 with the
+    // stash pop conflicted. Pushing now would publish whatever the rebase
+    // produced and report success.
+    if has_unmerged_paths(base_cmd) {
+        report_unresolved_merge(base_cmd);
         return;
     }
 
@@ -1557,6 +1602,14 @@ pub fn commit_changes(
             .arg("--autostash")
             .output();
 
+        // `commit -a` below stages everything in the tree. If the pull left a
+        // conflict, that is the markers -- committed and then pushed, with
+        // "Commit successful" printed over the top of it.
+        if has_unmerged_paths(base_cmd) {
+            report_unresolved_merge(base_cmd);
+            return Ok(());
+        }
+
         let masked = effective_mask
             .map(|lvl| mask_urls_in_message_ext(message, lvl, commit_mask_bare, commit_mask_exempt_hosts))
             .unwrap_or(std::borrow::Cow::Borrowed(message.as_str()));
@@ -1663,6 +1716,11 @@ pub fn commit_changes(
                 .args(repo.pull)
                 .arg("--autostash")
                 .output();
+
+            if has_unmerged_paths(base_cmd) {
+                report_unresolved_merge(base_cmd);
+                return Ok(());
+            }
 
             // Apply URL masking after validation, before commit/display
             let masked_comment = effective_mask
