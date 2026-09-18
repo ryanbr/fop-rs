@@ -18,6 +18,39 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// each without improving throughput -- see the pool setup in `main`.
 const MAX_WORKERS: usize = 8;
 
+/// Resolve the worker count from the explicit setting, the environment and the
+/// machine, in that order.
+///
+/// Shared so `--show-config` reports the pool that will actually be built
+/// rather than re-deriving it and disagreeing.
+fn resolve_workers(explicit: Option<usize>) -> (usize, &'static str) {
+    if let Some(n) = explicit {
+        return (n, "set");
+    }
+    // Only claim the variable as the source when its value was actually usable:
+    // an empty or malformed one falls through to the machine, and saying
+    // otherwise sends someone looking at an environment that had no effect.
+    let from_env = std::env::var("RAYON_NUM_THREADS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&n| n >= 1)
+        .map(|n| n.min(MAX_THREADS));
+    if let Some(n) = from_env {
+        return (n, "RAYON_NUM_THREADS");
+    }
+    let auto = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(MAX_WORKERS);
+    (auto, "auto")
+}
+
+/// Ceiling on an explicit `--threads`/`RAYON_NUM_THREADS`. The cap above is a
+/// default, not a limit -- asking for more is legitimate, and oversubscribing a
+/// core is a normal thing to want. This only stops a typo (`--threads=1000000`)
+/// from trying to spawn a thread per digit.
+const MAX_THREADS: usize = 1024;
+
 mod fop_git;
 mod fop_checksum;
 mod fop_sort;
@@ -218,6 +251,8 @@ struct Args {
     only_sort_changed: bool,
     /// Auto rebase and retry if push fails
     rebase_on_fail: bool,
+    /// Worker threads for the rayon pool. None means size it automatically.
+    threads: Option<usize>,
     /// Mask URLs in commit messages: 1=`[.]`, 2=`(.)`, 3=` ` (space)
     commit_mask: Option<u8>,
     /// If non-empty, only apply commit_mask when current git user.name is in this list (lowercased).
@@ -517,6 +552,12 @@ impl Args {
             output_changed: false,
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
             rebase_on_fail: parse_bool(&config, "rebase-on-fail", true),
+            // Anything not a whole number >= 1 is ignored rather than fatal:
+            // a malformed config line should not stop a sort.
+            threads: config
+                .get("threads")
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .filter(|&n| n >= 1),
             commit_mask: config.get("commit-mask")
                 .and_then(|s| s.trim().parse::<u8>().ok()),
             // `parse_list` already trims and drops empty entries — important
@@ -584,6 +625,20 @@ impl Args {
                 "--only-sort-changed" => args.only_sort_changed = true,
                 "--rebase-on-fail" => args.rebase_on_fail = true,
                 "--no-rebase-on-fail" => args.rebase_on_fail = false,
+                _ if arg.starts_with("--threads=") => {
+                    let val = arg.trim_start_matches("--threads=").trim();
+                    match val.parse::<usize>() {
+                        Ok(n) if n >= 1 => args.threads = Some(n.min(MAX_THREADS)),
+                        Ok(_) => {
+                            eprintln!("Error: --threads must be at least 1 (got '{}')", val);
+                            std::process::exit(2);
+                        }
+                        Err(_) => {
+                            eprintln!("Error: --threads must be a whole number (got '{}')", val);
+                            std::process::exit(2);
+                        }
+                    }
+                }
                 _ if arg.starts_with("--commit-mask=") => {
                     let val = arg.trim_start_matches("--commit-mask=");
                     match val.parse::<u8>() {
@@ -840,6 +895,7 @@ impl Args {
         println!("        --remove-bad-rules    Delete those lines instead of reporting them");
         println!("        --ignore-line-minimum  Keep rules under 3 chars instead of dropping them");
         println!("        --auto-fix           Auto-fix typos without prompting");
+        println!("        --threads=N         Worker threads (default: cores, capped at 8; overrides RAYON_NUM_THREADS)");
         println!("    -q, --quiet                Suppress most output (for CI)");
         println!("        --limited-quiet        Suppress directory listing only");
         println!("        --check-file=FILE      Process a single file");
@@ -892,6 +948,8 @@ impl Args {
         println!("  no-commit       = {}", self.no_commit);
         println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  rebase-on-fail  = {}", self.rebase_on_fail);
+        let (workers, source) = resolve_workers(self.threads);
+        println!("  threads         = {} ({})", workers, source);
         println!("  commit-mask     = {}", match self.commit_mask {
             Some(2) => "2 ((.))",
             Some(3) => "3 (space)",
@@ -2278,16 +2336,12 @@ fn main() {
     // testing that it is *set* would hand an empty or malformed value the
     // uncapped behaviour this cap exists to avoid -- and `RAYON_NUM_THREADS:
     // ${{ inputs.threads }}` with the input unset is a common CI shape.
-    let workers = std::env::var("RAYON_NUM_THREADS")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|&n| n >= 1)
-        .unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(4)
-                .min(MAX_WORKERS)
-        });
+    //
+    // `--threads` (or `threads` in .fopconfig) wins over RAYON_NUM_THREADS:
+    // both name the same pool, and fop's own setting is the more specific of
+    // the two. Either overrides the cap -- it is a default for the workload fop
+    // is usually pointed at, not a limit on what may be asked for.
+    let (workers, _) = resolve_workers(args.threads);
     // A failure here leaves the global pool uninitialised, and the first
     // par_iter then lazily builds rayon's own uncapped pool -- the memory
     // profile silently reverts. Say so rather than leave a mystery.

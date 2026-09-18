@@ -2279,3 +2279,20 @@ fn test_matches_attr_is_extended() {
         assert_eq!(element_tidy("a.com", "##", sel), format!("a.com##{}", sel));
     }
 }
+
+#[test]
+fn test_resolve_workers_precedence() {
+    use crate::{resolve_workers, MAX_THREADS, MAX_WORKERS};
+    // An explicit setting wins outright, and reports itself as the source.
+    assert_eq!(resolve_workers(Some(2)), (2, "set"));
+    assert_eq!(resolve_workers(Some(64)), (64, "set"));
+    // With nothing set, the machine decides, held to the default cap.
+    let (n, source) = resolve_workers(None);
+    assert!(n >= 1 && n <= MAX_WORKERS, "auto gave {}", n);
+    // The environment is only credited when it was actually usable; this test
+    // does not set it, so the source here is whatever the environment running
+    // the suite provides.
+    assert!(source == "auto" || source == "RAYON_NUM_THREADS");
+    // The ceiling is a guard against a typo, not a limit on what may be asked.
+    assert!(MAX_THREADS > MAX_WORKERS);
+}

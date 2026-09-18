@@ -12,7 +12,7 @@ A Rust port of the EasyList FOP tool for sorting and cleaning ad-blocking filter
 - **Git integration**: Commit changes directly to repositories (can be disabled)
 - **easylist_adservers.txt validation**: Ensures rules start with `|` or `/`
 - **:has-text() merging**: Combines rules with same base selector into single regex
-- **Parallel processing**: Processes files in parallel via Rayon, using up to 8 worker threads. Past that, extra workers cost memory without improving throughput; set `RAYON_NUM_THREADS` to override
+- **Parallel processing**: Processes files in parallel via Rayon, using up to 8 worker threads. Past that, extra workers mostly buy memory rather than speed; set `--threads=N` (or `RAYON_NUM_THREADS`) to override
 
 ## Extended Syntax Support
 
@@ -115,6 +115,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--auto-banned-remove` | Auto-remove banned domains and commit |
 | `--ci` | CI mode - exit with error code on failures (banned domains) |
 | `--rebase-on-fail` | Auto `git pull --rebase --autostash` and retry when a push fails. **On by default** |
+| `--threads=N` | Worker threads for the parallel pool. Defaults to the core count capped at 8; overrides `RAYON_NUM_THREADS`. |
 | `--no-rebase-on-fail` | Don't auto-rebase; print the suggested `git pull --rebase` command and stop |
 | `--commit-mask=N` | Mask URLs in commit messages (1=`[.]`, 2=`(.)`, 3=space, 4=preserve subdomain dot, 5=Unicode lookalike `․`) |
 | `--no-commit-mask` | Disable URL masking even when `.fopconfig` sets `commit-mask` (`--commit-mask=0` cannot: 0 falls through to level 1) |
@@ -234,6 +235,7 @@ ci = false
 # reapplies your stashed changes and can leave conflicts to resolve. Set false
 # to be told the command to run instead of having it run for you.
 rebase-on-fail = true
+threads = 8                 # Worker threads; omit to size from the core count
 
 # Mask URLs in commit messages: 1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike
 # github.com, gitlab.com, and codeberg.org (and subdomains) are always exempt so PR/issue links stay clickable.
