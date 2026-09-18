@@ -1392,8 +1392,13 @@ fn has_unmerged_paths(base_cmd: &[String]) -> bool {
         .is_ok_and(|o| o.status.success() && !o.stdout.is_empty())
 }
 
-/// Explain an unresolved merge and how to get back to a clean tree.
-fn report_unresolved_merge(base_cmd: &[String]) {
+/// Explain an unresolved merge and how to get back to a clean tree, then stop.
+///
+/// Exits non-zero rather than returning: the author's changes were not
+/// committed, and a script that cannot tell that from success will report a
+/// clean run and move on -- which is how a conflict went unnoticed long enough
+/// to lose rules from a list.
+fn report_unresolved_merge(base_cmd: &[String]) -> ! {
     eprintln!(
         "\nThe pull before committing left an unresolved merge, so nothing was \
          committed -- committing now would have put conflict markers in the list \
@@ -1413,6 +1418,7 @@ fn report_unresolved_merge(base_cmd: &[String]) {
     {
         eprintln!("  Your own changes are also in the stash:  git stash list");
     }
+    std::process::exit(1);
 }
 
 /// Attempt rebase and retry push after initial push failure
@@ -1467,7 +1473,6 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
     // produced and report success.
     if has_unmerged_paths(base_cmd) {
         report_unresolved_merge(base_cmd);
-        return;
     }
 
     let Ok(retry) = Command::new(&base_cmd[0])
@@ -1607,7 +1612,6 @@ pub fn commit_changes(
         // "Commit successful" printed over the top of it.
         if has_unmerged_paths(base_cmd) {
             report_unresolved_merge(base_cmd);
-            return Ok(());
         }
 
         let masked = effective_mask
@@ -1719,7 +1723,6 @@ pub fn commit_changes(
 
             if has_unmerged_paths(base_cmd) {
                 report_unresolved_merge(base_cmd);
-                return Ok(());
             }
 
             // Apply URL masking after validation, before commit/display
