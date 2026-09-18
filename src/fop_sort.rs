@@ -584,6 +584,30 @@ fn restore_cleared_wildcard(original: &str, tidied: String) -> String {
     }
 }
 
+/// Whether the rule carries an option whose value may legitimately hold spaces.
+///
+/// Header values carry them as a matter of course --
+/// `content-type:text/html; charset=utf-8` -- as do `permissions=` policies and
+/// `addheader=` cookie attributes, so stripping whitespace from a rule bearing
+/// one changes what it matches.
+///
+/// Matched by scanning for the name and testing the byte before it, rather than
+/// by building `"$name"` and `",name"` to search for: that allocated two
+/// Strings per name, twenty-two per rule, to test for one byte.
+fn carries_space_valued_option(filter_in: &str) -> bool {
+    const SPACE_VALUED: [&str; 11] = [
+        "csp=", "replace=", "urlskip=", "removeparam=", "jsonprune=", "xmlprune=",
+        "header=", "responseheader=", "requestheader=", "permissions=", "addheader=",
+    ];
+    let bytes = filter_in.as_bytes();
+    SPACE_VALUED.iter().any(|name| {
+        filter_in
+            .match_indices(name)
+            // Only as an option, not as text inside a pattern.
+            .any(|(at, _)| at > 0 && matches!(bytes[at - 1], b'$' | b','))
+    })
+}
+
 /// Sort and clean filter options.
 pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Skip filters with regex values in options (contain =/.../ patterns)
@@ -624,19 +648,16 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Header values carry spaces as a matter of course --
     // `content-type:text/html; charset=utf-8` -- as do `permissions=` policies,
     // so stripping whitespace from a rule bearing one changes what it matches.
-    // `addheader=` sets a whole header value, cookie attributes included:
-    // `$addheader=response:set-cookie:x=c; path=/; max-age=21600`. It is not
-    // covered by `header=`, which only matches `$header=`/`,header=`.
-    let has_space_options = ["csp=", "replace=", "urlskip=", "removeparam=",
-                             "jsonprune=", "xmlprune=", "header=", "responseheader=",
-                             "requestheader=", "permissions=", "addheader="]
-        .iter()
-        .any(|o| {
-            // Only as an option, not as text inside a pattern.
-            filter_in.contains(&format!("${}", o)) || filter_in.contains(&format!(",{}", o))
-        });
-    let filter_in: Cow<str> = if !(is_element_rule || has_space_options || filter_in.starts_with('/') && filter_in.ends_with('/')) {
-        if filter_in.contains(' ') || filter_in.contains('\t') {
+    // Ordered cheapest test first. Whether the rule carries an option whose
+    // value may hold spaces only matters if it holds whitespace at all, and
+    // almost none do -- so the scan below runs on a handful of rules rather
+    // than on every one.
+    let has_whitespace = filter_in.bytes().any(|b| b == b' ' || b == b'\t');
+    let filter_in: Cow<str> = if has_whitespace {
+        if !is_element_rule
+            && !(filter_in.starts_with('/') && filter_in.ends_with('/'))
+            && !carries_space_valued_option(filter_in)
+        {
             Cow::Owned(filter_in.split_whitespace().collect::<String>())
         } else {
             Cow::Borrowed(filter_in)
@@ -798,6 +819,33 @@ fn not_a_pseudo_class(bytes: &[u8], colon: usize) -> bool {
     i > 0 && bytes[i - 1] == b'?'
 }
 
+/// Pseudo-classes whose argument is not a selector.
+///
+/// `:contains(` is AdGuard and ABP's name for `:has-text(`; leaving it out let
+/// selector tidying rewrite its argument, padding a regex `+` into ` + `.
+const EXTENDED_PSEUDO: [&str; 20] = [
+    ":style(",
+    ":has-text(",
+    ":has(",
+    ":remove(",
+    ":remove-attr(",
+    ":remove-class(",
+    ":matches-path(",
+    ":matches-css(",
+    ":matches-media(",
+    ":matches-prop(",
+    ":upward(",
+    ":xpath(",
+    ":watch-attr(",
+    ":min-text-length(",
+    ":-abp-has(",
+    ":-abp-contains(",
+    ":contains(",
+    ":matches-attr(",
+    ":-abp-properties(",
+    ":others(",
+];
+
 /// Sort domains and clean element hiding rules
 pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
     let selector = selector.trim();
@@ -850,32 +898,13 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
             || selector.starts_with("^")
             || selector.starts_with("//scriptlet(")
             || selector.contains(" {")
-            || (selector.contains(':') && (
-                selector.contains(":style(")
-                || selector.contains(":has-text(")
-                || selector.contains(":has(")
-                || selector.contains(":remove(")
-                || selector.contains(":remove-attr(")
-                || selector.contains(":remove-class(")
-                || selector.contains(":matches-path(")
-                || selector.contains(":matches-css(")
-                || selector.contains(":matches-media(")
-                || selector.contains(":matches-prop(")
-                || selector.contains(":upward(")
-                || selector.contains(":xpath(")
-                || selector.contains(":watch-attr(")
-                || selector.contains(":min-text-length(")
-                || selector.contains(":-abp-has(")
-                || selector.contains(":-abp-contains(")
-                // AdGuard/ABP's own name for :has-text(). Its argument is
-                // literal text or a regex, so a `:` in it is not a
-                // pseudo-class: `:contains(/foo:BAR/)` was being lowercased to
-                // /foo:bar/. fop_rules already classifies it this way.
-                || selector.contains(":contains(")
-                || selector.contains(":matches-attr(")
-                || selector.contains(":-abp-properties(")
-                || selector.contains(":others(")
-            ))
+            // These take literal text, a regex or a declaration as their
+            // argument, not a selector, so nothing inside may be tidied.
+            // `fop_rules::LITERAL_ARG_CONSTRUCTS` is the same idea for the
+            // addition checks. Gated on a `:` so the usual selector, which has
+            // none, costs one byte scan rather than 20 substring searches.
+            || (selector.contains(':')
+                && EXTENDED_PSEUDO.iter().any(|p| selector.contains(p)))
     };
 
     if is_extended {
