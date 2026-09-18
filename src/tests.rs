@@ -2197,3 +2197,24 @@ fn test_regex_group_colon_is_not_a_pseudo_class() {
         "a.com#?#div:contains(/^(?:ABC)/):hover"
     );
 }
+
+#[test]
+fn test_escaped_colon_is_not_a_pseudo_class() {
+    use crate::fop_sort::element_tidy;
+    let tidy = |sel: &str| element_tidy("a.com", "##", sel);
+    // `\:` is a literal colon in an id, and ids are case-sensitive. AdGuard's
+    // ChineseFilter carries `###js\:cookies\:barInitWrapper`, which fop was
+    // rewriting to `barinitwrapper` -- a different id.
+    for kept in [
+        r"#js\:cookies\:barInitWrapper",
+        r"#id\:KeepCase",
+        r".cls\:KeepCase",
+    ] {
+        assert_eq!(tidy(kept), format!("a.com##{}", kept), "case was changed");
+    }
+    // An even run of backslashes escapes the backslash, not the colon, so what
+    // follows really is a pseudo-class.
+    assert_eq!(tidy(r"div\\:HOVER"), r"a.com##div\\:hover");
+    // One of each in the same selector.
+    assert_eq!(tidy(r"#esc\:Keep:HOVER"), r"a.com###esc\:Keep:hover");
+}

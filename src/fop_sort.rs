@@ -760,13 +760,28 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     }
 }
 
-/// Whether the `:` at `colon` opens a regex group rather than a pseudo-class.
+/// Whether the `:` at `colon` is something other than a pseudo-class, and so
+/// must keep its case.
 ///
-/// `(?:` is non-capturing and `(?i:` / `(?-is:` set inline flags, so the `:` is
-/// preceded by `?` and any flag letters. A CSS pseudo-class never is: walking
-/// back over flag letters from `.mix:HOVER` lands on `.`, not `?`.
+/// Two ways that happens:
+///
+/// * It is escaped. `#js\:cookies\:barInitWrapper` is one id containing literal
+///   colons, and ids are case-sensitive. An even run of backslashes is itself
+///   escaped and leaves the colon live, so the run is counted.
+/// * It opens a regex group -- `(?:` non-capturing, `(?i:` / `(?-is:` inline
+///   flags -- inside a `:contains(/.../)` argument. A pseudo-class never has a
+///   `?` there: walking back over flag letters from `.mix:HOVER` lands on `.`.
 #[inline]
-fn opens_regex_group(bytes: &[u8], colon: usize) -> bool {
+fn not_a_pseudo_class(bytes: &[u8], colon: usize) -> bool {
+    let mut i = colon;
+    let mut backslashes = 0;
+    while i > 0 && bytes[i - 1] == b'\\' {
+        backslashes += 1;
+        i -= 1;
+    }
+    if backslashes % 2 == 1 {
+        return true;
+    }
     let mut i = colon;
     while i > 0 && matches!(bytes[i - 1], b'i' | b'm' | b's' | b'x' | b'u' | b'U' | b'R' | b'-') {
         i -= 1;
@@ -992,12 +1007,12 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
         let mut edits: Vec<(usize, usize)> = Vec::new();
         for caps in PSEUDO_PATTERN.captures_iter(&selector) {
             let m = caps.get(1).expect("PSEUDO_PATTERN has one group");
-            // A `:` that opens a regex group is not a pseudo-class. It turns up
-            // inside `:contains(/.../)` arguments: AdGuard's BaseFilter carries
-            // `:contains(/^(?:Reklama$|Dzieki reklamom korzystasz)/)`, and
-            // lowercasing the group's first alternative to `reklama` silently
-            // changed which text the rule matched.
-            if opens_regex_group(selector.as_bytes(), m.start()) {
+            // Not every `:` introduces a pseudo-class. AdGuard's filters carry
+            // both cases: `:contains(/^(?:Reklama$|...)/)`, where lowercasing
+            // the group's first alternative changed which text the rule
+            // matched, and `###js\:cookies\:barInitWrapper`, where it changed
+            // the id being hidden.
+            if not_a_pseudo_class(selector.as_bytes(), m.start()) {
                 continue;
             }
             let name = m.as_str();
