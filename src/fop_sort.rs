@@ -79,8 +79,11 @@ fn convert_trusted_scriptlet(line: &str) -> Option<String> {
             let args_start = js_pos + 4;
             let args_end = line.rfind(')')?;
             let args = &line[args_start..args_end];
-            let parts: Vec<&str> = args.splitn(3, ',').map(|s| s.trim()).collect();
-            if parts.len() >= 3 && parts[0] == trusted {
+            // Exactly name, cookie and value, split where uBO splits: a value
+            // followed by further arguments, or holding a `\,`, is not one
+            // is_safe_scriptlet_value can vouch for.
+            let parts: Vec<&str> = split_unescaped_commas(args).into_iter().map(str::trim).collect();
+            if parts.len() == 3 && parts[0] == trusted {
                 let value = parts[2].trim();
                 if is_safe_scriptlet_value(value) {
                     let converted = format!("{}+js({}, {}, {}){}", &line[..js_pos], non_trusted, parts[1], value, &line[args_end + 1..]);
@@ -521,6 +524,10 @@ fn find_option_separator(filter: &str) -> Option<usize> {
 /// halves into `$camera=(),permissions=sync-xhr=()\` -- a dangling backslash
 /// and a broken rule on every sort -- and the rule checker judged `camera=()`
 /// as an option of its own, called it unknown, and deleted the line.
+///
+/// Backslashes are counted, as uBO's argument parser counts them: an odd run
+/// escapes the comma, an even one is escaped backslashes before a real
+/// separator, so `a\\,b` is two parts (`a\\` and `b`).
 #[inline]
 pub(crate) fn split_unescaped_commas(s: &str) -> Vec<&str> {
     let bytes = s.as_bytes();
@@ -528,7 +535,7 @@ pub(crate) fn split_unescaped_commas(s: &str) -> Vec<&str> {
     let mut start = 0;
     for (i, &b) in bytes.iter().enumerate() {
         // `,` is ASCII, so every split point is a char boundary.
-        if b == b',' && (i == 0 || bytes[i - 1] != b'\\') {
+        if b == b',' && bytes[..i].iter().rev().take_while(|&&c| c == b'\\').count() % 2 == 0 {
             parts.push(&s[start..i]);
             start = i + 1;
         }
@@ -951,11 +958,20 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
     };
 
     if is_extended {
-        // Normalize scriptlet spacing (only simple args without quotes)
-        if selector.starts_with("+js(") && !selector.contains('"') && !selector.contains('\'') {
+        // Normalize scriptlet spacing (only simple args without quotes: uBO
+        // accepts ", ' and ` around an argument, and a quoted one may hold a
+        // comma).
+        // Split only where uBO does: `\,` is a comma inside an argument, so
+        // `necessary\,preferences` is one cookie value. Splitting on every
+        // comma put a space after the escaped one, which changed the value.
+        if selector.starts_with("+js(") && !selector.contains(['"', '\'', '`']) {
             if let Some(start) = selector.find('(') {
                 if let Some(end) = selector.rfind(')') {
-                    let args = selector[start + 1..end].split(',').map(|a| a.trim()).collect::<Vec<_>>().join(", ");
+                    let args = split_unescaped_commas(&selector[start + 1..end])
+                        .into_iter()
+                        .map(str::trim)
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     return format!("{}{}{}{}", domains, separator, &selector[..start + 1], args) + &selector[end..];
                 }
             }

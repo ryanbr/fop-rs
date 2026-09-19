@@ -263,7 +263,7 @@ group (`(?:`) is never lowercased.
 
 | Syntax | Source | Lists | FOP |
 |--------|--------|-------|-----|
-| `##+js(name, args)` | uBO | U | One space after each comma: `+js(set,a,1)` becomes `+js(set, a, 1)`. An empty argument `,,` becomes `, ,`, which uBO reads the same because it trims arguments. |
+| `##+js(name, args)` | uBO | U | One space after each comma that separates arguments: `+js(set,a,1)` becomes `+js(set, a, 1)`. An escaped comma (`\,`) is part of an argument and is left alone. An empty argument `,,` becomes `, ,`, which uBO reads the same because it trims arguments. Rules containing quotes are left as written. |
 | `#%#//scriptlet('name', 'args')` | AdGuard | A | Left as written |
 | `#%#` raw JavaScript | AdGuard | A | Left as written |
 | `#$#snippet args; snippet args` | ABP | E | Left as written. Brackets inside a snippet's arguments are data, not selector syntax. |

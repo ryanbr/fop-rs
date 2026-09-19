@@ -2398,6 +2398,13 @@ fn test_literal_arg_constructs_cover_text_matching_pseudos() {
 fn test_escaped_comma_survives_sorting() {
     use crate::fop_sort::split_unescaped_commas;
     assert_eq!(split_unescaped_commas("a,b\\,c,d"), vec!["a", "b\\,c", "d"]);
+    // Backslashes are counted, as uBO counts them: an even run is escaped
+    // backslashes before a real separator, an odd run escapes the comma
+    assert_eq!(split_unescaped_commas(r"a\\,b"), vec![r"a\\", "b"]);
+    assert_eq!(split_unescaped_commas(r"a\\\,b"), vec![r"a\\\,b"]);
+    assert_eq!(split_unescaped_commas(r"a\\\\,b"), vec![r"a\\\\", "b"]);
+    assert_eq!(split_unescaped_commas(r"\,a"), vec![r"\,a"]);
+    assert_eq!(split_unescaped_commas(",a,"), vec!["", "a", ""]);
     assert_eq!(split_unescaped_commas("a"), vec!["a"]);
     assert_eq!(split_unescaped_commas(""), vec![""]);
     // The sorter split this in two, reordered the halves and left a dangling
@@ -3404,6 +3411,78 @@ fn test_sort_keeps_adguard_hint_targets() {
         "!+ PLATFORM(ios)", "||a.com^$third-party,xmlhttprequest", "||0.com^",
         "!+ PLATFORM(ios)", "z.com##.v", "a.com##.v",
     ]);
+}
+
+#[test]
+fn test_scriptlet_escaped_comma_kept() {
+    // `\,` is a comma inside a uBO scriptlet argument. The spacing fix split
+    // on every comma (since 825e1cf, v4.3.2), so an escaped one gained a
+    // space and the argument changed: a cookie value, several regexes and
+    // needles. Every such rule in the uBO snapshots, each already spaced as
+    // fop writes it, so each must come back unchanged.
+    let chars = vec!["!".to_string()];
+    let mut config = test_sort_config(&chars);
+    for scriptlet in [
+        r"+js(nostif, ()\,a\,b);, 5000)",
+        r"+js(aeld, /^load[A-Za-z]{12\,}/)",
+        r"+js(nostif, )](this\,..., 3000-6000)",
+        r"+js(rpnt, script, /adv_pre_src.*\,/)",
+        r"+js(trusted-set-cookie, Cookie, accept_cookies\,\,, , , reload, 1)",
+        r"+js(rpnt, script, /data: \[.*\]\,/, data: []\,, condition, ads_num)",
+        r"+js(nostif, /^\s*function\s*\(\s*\)\s*{\s*[a-zA-Z]{1\,2}\s*\(.{1\,10}$/)",
+        r"+js(m3u-prune, /\,ad\n.+?(?=#UPLYNK-SEGMENT)/gm, /uplynk\.com\/.*?\.m3u8/)",
+        r"+js(nostif, /function\(\)\s*\{\s*var .{70\,300}\s*\)\s*\}\s*$/, 4000-6000)",
+        r"+js(trusted-set-local-storage-item, cookieConsent, necessary\,preferences)",
+        r"+js(m3u-prune, /#EXT-X-DISCONTINUITY.{1\,100}#EXT-X-DISCONTINUITY/gm, mixed.m3u8)",
+        r"+js(trusted-set-attr, ins.adsbygoogle.nitro-side\,ins.adsbygoogle.nitro-banner, data-ad-status, filled)",
+        r"+js(trusted-click-element, .kw-ads-pagination-button:first-child\,.kw-ads-pagination-button:first-child, , 1000)",
+        r"+js(no-xhr-if, /\/api\/stats\/atr\?.+?&rt=\d+\.\d+.+?&volume=\d+&cbr=.+?&fexp=v1%[-%0-9C]{300\,}&.+?&muted=\d(&vis=3)?&docid=/ method:POST)",
+        r"+js(rpnt, script, /  function [a-zA-Z]{1\,2}\([a-zA-Z]{1\,2}\,[a-zA-Z]{1\,2}\).*?\(\)\{return [a-zA-Z]{1\,2}\;\}\;return [a-zA-Z]{1\,2}\(\)\;\}/)",
+        // An escaped comma followed by a space is still one argument
+        r"+js(trusted-click-element, #CybotCookiebotDialogBodyLevelButtonStatisticsInline\, #CybotCookiebotDialogBodyLevelButtonMarketingInline\, #CybotCookiebotDialogBodyLevelButtonLevelOptinAllowallSelection)",
+    ] {
+        let rule = format!("example.com##{}", scriptlet);
+        assert_eq!(crate::fop_sort::tidy_rule(&rule, &config), rule);
+    }
+
+    // Spacing is still normalised at the commas that separate arguments
+    for (rule, expected) in [
+        (r"example.com##+js(set,a\,b ,1)", r"example.com##+js(set, a\,b, 1)"),
+        (r"example.com##+js(set ,a\,b,  1)", r"example.com##+js(set, a\,b, 1)"),
+        // `\\,` is an escaped backslash, then a real separator
+        (r"example.com##+js(set,a\\,b)", r"example.com##+js(set, a\\, b)"),
+        // An empty argument stays one
+        (r"example.com##+js(set,,1)", r"example.com##+js(set, , 1)"),
+    ] {
+        assert_eq!(crate::fop_sort::tidy_rule(rule, &config), expected);
+    }
+
+    // A quoted argument may hold a comma, so rules with any of uBO's three
+    // quote characters are left as written
+    for rule in [
+        r#"example.com##+js(set,a,"x,y")"#,
+        "example.com##+js(set,a,'x,y')",
+        "example.com##+js(set,a,`x,y`)",
+    ] {
+        assert_eq!(crate::fop_sort::tidy_rule(rule, &config), rule);
+    }
+
+    // --convert-trusted splits the same way: `a\, true` is one argument, the
+    // cookie's name, with no value to vouch for; and a value followed by
+    // further arguments is not a lone safe value
+    config.convert_trusted = true;
+    for rule in [r"example.com##+js(trusted-set-cookie, a\, true)", "example.com##+js(trusted-set-cookie, a, 1, x)"] {
+        assert_eq!(crate::fop_sort::tidy_rule(rule, &config), rule);
+    }
+    assert_eq!(
+        crate::fop_sort::tidy_rule("example.com##+js(trusted-set-cookie, a, true)", &config),
+        "example.com##+js(set-cookie, a, true)"
+    );
+    // An escaped backslash does not hide a separator
+    assert_eq!(
+        crate::fop_sort::tidy_rule(r"example.com##+js(trusted-set-cookie, a\\, true)", &config),
+        r"example.com##+js(set-cookie, a\\, true)"
+    );
 }
 
 #[test]
