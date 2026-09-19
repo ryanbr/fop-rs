@@ -1487,7 +1487,7 @@ pub(crate) fn convert_selectors(rule: &str, abp: bool, adguard: bool) -> String 
 }
 
 /// Combine filters with identical rules but different domains
-fn combine_filters(
+pub(crate) fn combine_filters(
     mut uncombined: Vec<String>,
     domain_pattern: &Regex,
     separator: &str,

@@ -2911,3 +2911,156 @@ fn test_file_at_head_classification() {
     assert!(matches!(file_at_head(&broken, "a.txt"), AtHead::Unknown));
 }
 
+// =============================================================================
+// combine_filters: current behaviour, pinned
+// =============================================================================
+//
+// These record what combine_filters does today -- quirks included -- so that
+// any rewrite (it is O(n^2) in the size of a merge group) must reproduce it or
+// change these deliberately. Expected values were taken from the current code,
+// not written from a description of what it ought to do.
+
+fn pinned(xs: &[&str]) -> Vec<String> {
+    xs.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn test_combine_filters_cosmetic_pinned() {
+    use crate::fop_sort::combine_filters;
+    let el = &*crate::ELEMENT_DOMAIN_PATTERN;
+    for (name, input, expected) in [
+        ("two", pinned(&["b.com##.ad", "a.com##.ad"]), pinned(&["a.com,b.com##.ad"])),
+        ("chain", pinned(&["c.com##.ad", "a.com##.ad", "b.com##.ad"]), pinned(&["a.com,b.com,c.com##.ad"])),
+        ("dedup", pinned(&["a.com,b.com##.ad", "b.com,c.com##.ad"]), pinned(&["a.com,b.com,c.com##.ad"])),
+        ("different selector", pinned(&["a.com##.ad", "b.com##.banner"]), pinned(&["a.com##.ad", "b.com##.banner"])),
+        // Only adjacent rules merge; the caller sorts them together first.
+        ("not adjacent", pinned(&["a.com##.ad", "b.com##.banner", "c.com##.ad"]), pinned(&["a.com##.ad", "b.com##.banner", "c.com##.ad"])),
+        ("both exclusions", pinned(&["~a.com##.ad", "~b.com##.ad"]), pinned(&["~a.com,~b.com##.ad"])),
+        // Exclusions-only never merges with a list that includes.
+        ("include vs exclude", pinned(&["a.com##.ad", "~b.com##.ad"]), pinned(&["a.com##.ad", "~b.com##.ad"])),
+        // ...but the test is "only exclusions", so a list holding one of each
+        // counts as including, and merges with a plain list.
+        ("mixed within one", pinned(&["a.com,~x.a.com##.ad", "b.com##.ad"]), pinned(&["a.com,b.com,~x.a.com##.ad"])),
+        // A generic rule has no domains to merge, on either side.
+        ("generic first", pinned(&["##.ad", "a.com##.ad"]), pinned(&["##.ad", "a.com##.ad"])),
+        ("generic last", pinned(&["a.com##.ad", "##.ad"]), pinned(&["a.com##.ad", "##.ad"])),
+        // Ordered by base domain, the excluded form after the included one.
+        ("tilde order", pinned(&["b.com,~a.com##.ad", "a.com##.ad"]), pinned(&["a.com,~a.com,b.com##.ad"])),
+        ("exception", pinned(&["b.com#@#.ad", "a.com#@#.ad"]), pinned(&["a.com,b.com#@#.ad"])),
+        ("extended", pinned(&["b.com#?#div:has(> .ad)", "a.com#?#div:has(> .ad)"]), pinned(&["a.com,b.com#?#div:has(> .ad)"])),
+        ("different separator", pinned(&["a.com##.ad", "b.com#@#.ad"]), pinned(&["a.com##.ad", "b.com#@#.ad"])),
+        // Case-sensitive ordering: the sort lowercases cosmetic domains before
+        // this point, but the function itself does not.
+        ("case", pinned(&["B.com##.ad", "a.com##.ad"]), pinned(&["B.com,a.com##.ad"])),
+        ("single", pinned(&["a.com##.ad"]), pinned(&["a.com##.ad"])),
+        ("empty", pinned(&[]), pinned(&[])),
+    ] {
+        assert_eq!(combine_filters(input, el, ","), expected, "cosmetic case: {}", name);
+    }
+}
+
+#[test]
+fn test_combine_filters_network_pinned() {
+    use crate::fop_sort::combine_filters;
+    let net = &*crate::FILTER_DOMAIN_PATTERN;
+    for (name, input, expected) in [
+        ("two", pinned(&["||x^$script,domain=b.com", "||x^$script,domain=a.com"]), pinned(&["||x^$script,domain=a.com|b.com"])),
+        ("different options", pinned(&["||x^$script,domain=a.com", "||x^$image,domain=b.com"]), pinned(&["||x^$script,domain=a.com", "||x^$image,domain=b.com"])),
+        ("domain first", pinned(&["||x^$domain=b.com,script", "||x^$domain=a.com,script"]), pinned(&["||x^$domain=a.com|b.com,script"])),
+        ("both exclusions", pinned(&["||x^$domain=~b.com", "||x^$domain=~a.com"]), pinned(&["||x^$domain=~a.com|~b.com"])),
+        ("include vs exclude", pinned(&["||x^$domain=a.com", "||x^$domain=~b.com"]), pinned(&["||x^$domain=a.com", "||x^$domain=~b.com"])),
+        // `$` in the replacement is escaped, so a pattern holding one survives.
+        ("dollar in pattern", pinned(&["/ads\\$x/$domain=b.com", "/ads\\$x/$domain=a.com"]), pinned(&["/ads\\$x/$domain=a.com|b.com"])),
+        ("no domain option", pinned(&["||x^$script", "||x^$script,domain=a.com"]), pinned(&["||x^$script", "||x^$script,domain=a.com"])),
+        ("chain with a list", pinned(&["||x^$domain=c.com", "||x^$domain=a.com|b.com", "||x^$domain=d.com"]), pinned(&["||x^$domain=a.com|b.com|c.com|d.com"])),
+    ] {
+        assert_eq!(combine_filters(input, net, "|"), expected, "network case: {}", name);
+    }
+}
+
+#[test]
+fn test_combine_filters_records_each_pairwise_step() {
+    // Every merge step is recorded for the PR description, pairwise: merging
+    // three rules records two steps, the second holding the first's result.
+    // A linear rewrite would naturally record one; this pins two.
+    use crate::fop_sort::{combine_filters, SORT_CHANGES, TRACK_CHANGES};
+    TRACK_CHANGES.store(true, std::sync::atomic::Ordering::Relaxed);
+    let el = &*crate::ELEMENT_DOMAIN_PATTERN;
+    // Marker domains, since the record is shared with every other test.
+    let ours = |rules: &[String]| rules.iter().any(|r| r.ends_with("pin7.test##.step"));
+    let out = combine_filters(pinned(&["c.pin7.test##.step", "a.pin7.test##.step", "b.pin7.test##.step"]), el, ",");
+    assert_eq!(out, pinned(&["a.pin7.test,b.pin7.test,c.pin7.test##.step"]));
+    let steps: Vec<(Vec<String>, String)> = SORT_CHANGES
+        .lock()
+        .unwrap()
+        .domains_combined
+        .iter()
+        .filter(|(originals, _)| ours(originals))
+        .cloned()
+        .collect();
+    assert_eq!(
+        steps,
+        vec![
+            (pinned(&["c.pin7.test##.step", "a.pin7.test##.step"]), "a.pin7.test,c.pin7.test##.step".to_string()),
+            (pinned(&["a.pin7.test,c.pin7.test##.step", "b.pin7.test##.step"]), "a.pin7.test,b.pin7.test,c.pin7.test##.step".to_string()),
+        ]
+    );
+
+    // A large group: one line, and one recorded step per merge.
+    let group: Vec<String> = (0..50).map(|i| format!("d{:02}.pin8.test##.big", 49 - i)).collect();
+    let out = combine_filters(group, el, ",");
+    let domains: Vec<String> = (0..50).map(|i| format!("d{:02}.pin8.test", i)).collect();
+    assert_eq!(out, vec![format!("{}##.big", domains.join(","))]);
+    let recorded = SORT_CHANGES
+        .lock()
+        .unwrap()
+        .domains_combined
+        .iter()
+        .filter(|(originals, _)| originals.iter().any(|r| r.ends_with("pin8.test##.big")))
+        .count();
+    assert_eq!(recorded, 49);
+}
+
+#[test]
+fn test_combine_filters_through_the_sort() {
+    // The same, end to end through fop_sort, which sorts rules together
+    // before merging. A rewrite may move logic between the two, so both are
+    // pinned.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-combine-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let sort = |name: &str, lines: &[&str]| -> Vec<String> {
+        let file = dir.join(name);
+        std::fs::write(&file, format!("! Title: pin\n{}\n", lines.join("\n"))).unwrap();
+        crate::fop_sort::fop_sort(&file, &config).unwrap();
+        std::fs::read_to_string(&file).unwrap().lines().skip(1).map(String::from).collect()
+    };
+    assert_eq!(
+        sort("cosmetic.txt", &[
+            "c.com##.ad", "a.com##.banner", "b.com##.ad", "~x.com##.ad", "##.ad",
+            "z.com#@#.ad", "y.com#@#.ad", "x.com##div:has-text(A)", "x.com##div:has-text(B)",
+        ]),
+        pinned(&["b.com,c.com##.ad", "~x.com##.ad", "##.ad", "y.com,z.com#@#.ad", "a.com##.banner", "x.com##div:has-text(/A|B/)"])
+    );
+    assert_eq!(
+        sort("network.txt", &["||t.com^$script,domain=b.com", "||t.com^$script,domain=a.com", "||t.com^$image,domain=c.com"]),
+        pinned(&["||t.com^$image,domain=c.com", "||t.com^$script,domain=a.com|b.com"])
+    );
+    // A section takes one mode from its make-up (fop_sort's
+    // `element_lines > filter_lines`), and only that mode's rules merge.
+    // Mostly cosmetic: the network rules are carried along, never merged.
+    assert_eq!(
+        sort("mixed.txt", &["c.com##.ad", "b.com##.ad", "a.com##.x", "||t.com^$script,domain=b.com", "||t.com^$script,domain=a.com"]),
+        pinned(&["b.com,c.com##.ad", "a.com##.x", "||t.com^$script,domain=a.com", "||t.com^$script,domain=b.com"])
+    );
+    // A tie is not `>`, so it goes the other way: network mode, where the
+    // network rules merge and the cosmetic ones do not.
+    assert_eq!(
+        sort("tie.txt", &["c.com##.ad", "b.com##.ad", "||t.com^$script,domain=b.com", "||t.com^$script,domain=a.com"]),
+        pinned(&["b.com##.ad", "c.com##.ad", "||t.com^$script,domain=a.com|b.com"])
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
