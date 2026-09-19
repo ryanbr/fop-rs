@@ -94,6 +94,84 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Whether the working directory is the home directory, where `./.fopconfig`
+/// is the user's own `~/.fopconfig`.
+fn cwd_is_home() -> bool {
+    let canonical = |p: PathBuf| fs::canonicalize(p).ok();
+    match (std::env::current_dir().ok().and_then(canonical), home_dir().and_then(canonical)) {
+        (Some(cwd), Some(home)) => cwd == home,
+        _ => false,
+    }
+}
+
+/// A relative path that stays inside the working directory: no `..` or root
+/// in its text, and -- since a folder along the way could be a symlink out of
+/// the tree -- a parent directory that resolves inside it. The file itself is
+/// guarded where it is written (`create_file_no_follow`).
+fn stays_in_tree(path: &Path) -> bool {
+    std::env::current_dir().is_ok_and(|cwd| stays_in_tree_of(path, &cwd))
+}
+
+/// `stays_in_tree`, resolved against `base` rather than the working directory.
+fn stays_in_tree_of(path: &Path, base: &Path) -> bool {
+    let lexical = path.is_relative()
+        && path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir));
+    if !lexical {
+        return false;
+    }
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    match (fs::canonicalize(base.join(parent)), fs::canonicalize(base)) {
+        (Ok(dir), Ok(base)) => dir.starts_with(base),
+        _ => false,
+    }
+}
+
+/// Limit what a `.fopconfig` in the working directory may do. It travels with
+/// the repository, so it may be someone else's -- a checked-out pull request
+/// can add one -- and it could otherwise name the program FOP runs as git, or
+/// aim a write at any file. It keeps every sorting choice. `from_config` holds
+/// what that file set; a value the command line replaced is not judged, and
+/// `--config-file` and `~/.fopconfig` are the user's own and never come here.
+/// An `Err` is fatal: output-diff also means "change nothing", and dropping it
+/// would sort and rewrite the files instead.
+fn restrict_repo_config(
+    git_binary: &mut Option<String>,
+    warning_output: &mut Option<PathBuf>,
+    output_diff: &Option<PathBuf>,
+    from_config: (Option<String>, Option<PathBuf>, Option<PathBuf>),
+) -> Result<(), String> {
+    let (config_git_binary, config_warning_output, config_output_diff) = from_config;
+    if config_git_binary.is_some() && *git_binary == config_git_binary {
+        eprintln!(
+            "Warning: ignoring git-binary in ./.fopconfig: a repository's own config may not \
+             choose the program FOP runs. Use --git-binary or ~/.fopconfig."
+        );
+        *git_binary = None;
+    }
+    if let Some(path) = config_warning_output.filter(|p| !stays_in_tree(p)) {
+        if warning_output.as_deref() == Some(path.as_path()) {
+            eprintln!(
+                "Warning: ignoring warning-output = {} in ./.fopconfig: a repository's own config \
+                 may only name a file inside this directory. Warnings go to stderr.",
+                path.display()
+            );
+            *warning_output = None;
+        }
+    }
+    if let Some(path) = config_output_diff.filter(|p| !stays_in_tree(p)) {
+        if output_diff.as_deref() == Some(path.as_path()) {
+            return Err(format!(
+                "output-diff = {} in ./.fopconfig points outside this directory. A repository's \
+                 own config may only name a file inside it; pass --output-diff to choose.",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Get current git user name
 fn get_git_username() -> Option<String> {
     std::process::Command::new("git")
@@ -194,14 +272,8 @@ pub(crate) fn flush_warnings() {
         std::mem::take(&mut *buffer)
     };
     
-    use std::fs::OpenOptions;
     use std::io::{BufWriter, Write};
-    if let Ok(file) = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)
-    {
+    if let Ok(file) = fop_sort::create_file_no_follow(&path) {
         let mut writer = BufWriter::new(file);
         for msg in warnings {
             let _ = write!(writer, "{}\n", msg);
@@ -665,6 +737,13 @@ impl Args {
             file_overrides,
         };
 
+        // What a repository's own .fopconfig chose, to be judged once the
+        // command line has had its say (see restrict_repo_config)
+        let repo_config = (config_file.is_none()
+            && found_config_path.as_deref() == Some(Path::new(".fopconfig"))
+            && !cwd_is_home())
+            .then(|| (args.git_binary.clone(), args.warning_output.clone(), args.output_diff.clone()));
+
         // Command line args override config
         for arg in argv {
             match arg.as_str() {
@@ -923,6 +1002,13 @@ impl Args {
         // Removing implies checking, however the flag arrived.
         if args.remove_bad_rules {
             args.check_rules_on_add = true;
+        }
+
+        if let Some(from_config) = repo_config {
+            if let Err(e) = restrict_repo_config(&mut args.git_binary, &mut args.warning_output, &args.output_diff, from_config) {
+                eprintln!("Error: {}", e);
+                std::process::exit(2);
+            }
         }
 
         (args, config_path_str)
@@ -1524,9 +1610,32 @@ fn entry_is_dir(entry: &DirEntry) -> bool {
 }
 
 #[inline]
-fn entry_is_file(entry: &DirEntry) -> bool {
+fn entry_is_file(entry: &DirEntry, root: &Path) -> bool {
     let ft = entry.file_type();
-    ft.is_file() || (ft.is_symlink() && entry.path().is_file())
+    ft.is_file() || (ft.is_symlink() && link_in_tree(entry.path(), root))
+}
+
+/// Whether the symlink at `path` resolves to a file inside `root` (canonical).
+/// A list that links out of the tree would have FOP read a file from elsewhere
+/// and write its contents into the repository, where a commit publishes them;
+/// links between lists in the same tree are fine.
+fn link_in_tree(path: &Path, root: &Path) -> bool {
+    fs::canonicalize(path).is_ok_and(|target| target.starts_with(root) && target.is_file())
+}
+
+/// Whether `path` is a list FOP may read and rewrite under `root` (canonical):
+/// a regular file, or a symlink that stays in the tree.
+fn list_file_in_tree(path: &Path, root: &Path) -> bool {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => link_in_tree(path, root),
+        Ok(meta) => meta.is_file(),
+        Err(_) => false,
+    }
+}
+
+/// `path` canonicalised, for comparing link targets against.
+fn canonical_root(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Check if a file should use localhost mode
@@ -1885,6 +1994,7 @@ fn remove_flagged_lines(
     let root = fop_git::repo_root(base_cmd).ok_or_else(|| {
         io::Error::new(io::ErrorKind::NotFound, "could not resolve the repository root")
     })?;
+    let tree = canonical_root(&root);
     let mut by_file: HashMap<&str, Vec<(usize, &str)>> = HashMap::new();
     for add in targets {
         by_file
@@ -1897,6 +2007,10 @@ fn remove_flagged_lines(
     for (file, mut targets) in by_file {
         targets.sort_unstable_by_key(|&(line_num, _)| std::cmp::Reverse(line_num));
         let path = root.join(file);
+        if !list_file_in_tree(&path, &tree) {
+            eprintln!("Skipped {}: not a file inside the repository", file);
+            continue;
+        }
         // One unreadable file must not abandon the rest, nor discard the count
         // of what was already rewritten.
         let content = match fs::read_to_string(&path) {
@@ -2059,6 +2173,7 @@ fn process_location(
     }
 
     // Collect text files to process
+    let root = canonical_root(location);
     let txt_files: Vec<_> = entries
         .iter()
         .filter(|entry| {
@@ -2068,11 +2183,21 @@ fn process_location(
             }
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            file_extensions.iter().any(|ext| ext == extension)
+            let wanted = file_extensions.iter().any(|ext| ext == extension)
                 && (disable_ignored || !IGNORE_FILES.contains(&filename))
                 && !should_ignore_file(filename, ignore_files)
                 && (ignore_all_but.is_empty()
-                    || ignore_all_but.iter().any(|f| filename.contains(f)))
+                    || ignore_all_but.iter().any(|f| filename.contains(f)));
+            // Checked last, so only a file that would have been sorted warns
+            if wanted && entry.file_type().is_symlink() && !link_in_tree(path, &root) {
+                write_warning(&format!(
+                    "Skipped {}: a symlink to something outside {}",
+                    path.display(),
+                    location.display()
+                ));
+                return false;
+            }
+            wanted
         })
         .collect();
 
@@ -2187,7 +2312,7 @@ fn process_location(
                 if output_diff_individual {
                     // Individual mode: write .diff file alongside source
                     let diff_path = entry.path().with_extension("diff");
-                    if let Err(e) = fs::write(&diff_path, &diff) {
+                    if let Err(e) = fop_sort::write_file_no_follow(&diff_path, diff.as_bytes()) {
                         eprintln!("Error writing diff file {}: {}", diff_path.display(), e);
                     } else if !quiet {
                         println!("Diff written to: {}", diff_path.display());
@@ -2226,10 +2351,11 @@ fn process_location(
         }
     }
 
-    // Delete backup and temp files (sequential, usually few files)
+    // Delete backup and temp files (sequential, usually few files). A symlink
+    // is removed as a link, never followed, so a planted one goes too.
     for entry in &entries {
         let path = entry.path();
-        if entry_is_file(entry) {
+        if entry.file_type().is_file() || entry.file_type().is_symlink() {
             let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if extension == "orig" || extension == "temp" {
                 let _ = fs::remove_file(path);
@@ -2243,7 +2369,7 @@ fn process_location(
     // to leave the files as they were.
     if !sort_config.dry_run && !add_timestamp.is_empty() {
         for entry in &entries {
-            if entry_is_file(entry) {
+            if entry_is_file(entry, &root) {
                 let path = entry.path();
                 let filename = path.file_name()
                     .and_then(|n| n.to_str())
@@ -2263,7 +2389,7 @@ fn process_location(
     // Add checksums to specified files (after sorting, before commit)
     if !sort_config.dry_run && !add_checksum.is_empty() {
         for entry in &entries {
-            if entry_is_file(entry) {
+            if entry_is_file(entry, &root) {
                 let path = entry.path();
                 let filename = path.file_name()
                     .and_then(|n| n.to_str())
@@ -2294,7 +2420,7 @@ fn process_location(
     // Validate and fix checksums (after sorting, before commit)
     if !sort_config.dry_run && !validate_checksum_and_fix.is_empty() {
         for entry in &entries {
-            if entry_is_file(entry) {
+            if entry_is_file(entry, &root) {
                 let path = entry.path();
                 let filename = path.file_name()
                     .and_then(|n| n.to_str())
@@ -2673,10 +2799,15 @@ fn main() {
 
     // Set warning output path
     if let Some(ref path) = args.warning_output {
-        *WARNING_OUTPUT.lock().unwrap() = Some(path.clone());
-        WARNING_TO_FILE.store(true, std::sync::atomic::Ordering::Relaxed);
-        // Clear existing file
-        let _ = std::fs::write(path, "");
+        // Clear existing file -- never through a symlink, which would aim the
+        // warnings at a file elsewhere. Refused, they go to stderr instead.
+        match fop_sort::write_file_no_follow(path, b"") {
+            Ok(()) => {
+                *WARNING_OUTPUT.lock().unwrap() = Some(path.clone());
+                WARNING_TO_FILE.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            Err(e) => eprintln!("Warning: not writing warnings to {}: {}; using stderr", path.display(), e),
+        }
     }
     
     // Load banned domain list if specified
@@ -2897,6 +3028,7 @@ fn main() {
         let files_with_typos = AtomicUsize::new(0);
 
         for location in &locations {
+            let typo_root = canonical_root(location);
             let entries: Vec<_> = WalkDir::new(location)
                 .into_iter()
                 .filter_entry(|e| {
@@ -2907,7 +3039,7 @@ fn main() {
                 })
                 .filter_map(|e| e.ok())
                 .filter(|e| {
-                    if !e.path().is_file() {
+                    if !list_file_in_tree(e.path(), &typo_root) {
                         return false;
                     }
                     let ext = e
@@ -3024,7 +3156,7 @@ fn main() {
                 Ok(Some(diff)) => {
                     if args.output_diff_individual {
                         let diff_path = file_path.with_extension("diff");
-                        if let Err(e) = fs::write(&diff_path, &diff) {
+                        if let Err(e) = fop_sort::write_file_no_follow(&diff_path, diff.as_bytes()) {
                             eprintln!("Error writing diff file: {}", e);
                         } else if !args.quiet {
                             println!("Diff written to: {}", diff_path.display());
@@ -3104,7 +3236,7 @@ fn main() {
         // Write diff if requested
         if let Some(ref diff_path) = &args.output_diff {
             let diffs = diff_output.lock().unwrap();
-            if let Err(e) = fs::write(diff_path, diffs.join("\n")) {
+            if let Err(e) = fop_sort::write_file_no_follow(diff_path, diffs.join("\n").as_bytes()) {
                 eprintln!("Error writing diff file: {}", e);
             }
         }
@@ -3124,6 +3256,7 @@ fn main() {
         let mut lines = 0usize;
         let mut bytes = 0u64;
         for location in &locations {
+            let root = canonical_root(location);
             for entry in WalkDir::new(location)
                 .into_iter()
                 .filter_entry(|e| {
@@ -3134,7 +3267,7 @@ fn main() {
                 })
                 .filter_map(|e| e.ok())
             {
-                if !entry_is_file(&entry) { continue; }
+                if !entry_is_file(&entry, &root) { continue; }
                 let path = entry.path();
                 let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -3243,7 +3376,7 @@ fn main() {
     // Write collected diffs if --output-diff specified
     if let Some(ref diff_path) = &args.output_diff {
         let diffs = diff_output.lock().unwrap();
-        if let Err(e) = fs::write(diff_path, diffs.join("\n")) {
+        if let Err(e) = fop_sort::write_file_no_follow(diff_path, diffs.join("\n").as_bytes()) {
             eprintln!("Error writing diff file: {}", e);
         } else if !args.quiet && !diffs.is_empty() {
             println!("Diff written to: {}", diff_path.display());

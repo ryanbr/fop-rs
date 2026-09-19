@@ -3603,6 +3603,131 @@ fn test_pull_and_push_rebases_onto_a_clean_change() {
 }
 
 #[test]
+fn test_repo_config_may_not_run_or_write_outside() {
+    // A .fopconfig in the working directory may be a pull request's: it may
+    // not choose the program run as git, nor aim a write outside the tree.
+    use crate::{restrict_repo_config, stays_in_tree_of};
+    use std::path::{Path, PathBuf};
+    let base = std::env::temp_dir().join(format!("fop-test-tree-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let tree = base.join("repo");
+    std::fs::create_dir_all(tree.join("logs")).unwrap();
+    std::fs::create_dir_all(base.join("elsewhere")).unwrap();
+    for inside in ["warn.txt", "logs/warn.txt", "./warn.txt"] {
+        assert!(stays_in_tree_of(Path::new(inside), &tree), "{}", inside);
+    }
+    for outside in ["/etc/passwd", "../warn.txt", "logs/../../x", "missing/warn.txt"] {
+        assert!(!stays_in_tree_of(Path::new(outside), &tree), "{}", outside);
+    }
+    // A folder along the way that is a symlink out of the tree: the text
+    // looks relative, but the file would land elsewhere
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(base.join("elsewhere"), tree.join("out")).unwrap();
+        assert!(!stays_in_tree_of(Path::new("out/planted.txt"), &tree));
+    }
+    let _ = std::fs::remove_dir_all(&base);
+
+    // Set by the repository's config: git-binary and an absolute
+    // warning-output dropped, a relative warning-output kept
+    let (mut bin, mut warn) = (Some("./evil.sh".to_string()), Some(PathBuf::from("/home/u/.bashrc")));
+    let from_config = (bin.clone(), warn.clone(), None);
+    assert!(restrict_repo_config(&mut bin, &mut warn, &None, from_config).is_ok());
+    assert_eq!((bin, warn), (None, None));
+    let mut warn = Some(PathBuf::from("warn.txt"));
+    let from_config = (None, warn.clone(), None);
+    assert!(restrict_repo_config(&mut None, &mut warn, &None, from_config).is_ok());
+    assert_eq!(warn, Some(PathBuf::from("warn.txt")));
+
+    // Replaced on the command line: the user's choice, not judged
+    let (mut bin, mut warn) = (Some("/usr/bin/git".to_string()), Some(PathBuf::from("/tmp/w.txt")));
+    let from_config = (Some("./evil.sh".to_string()), Some(PathBuf::from("/home/u/.bashrc")), None);
+    assert!(restrict_repo_config(&mut bin, &mut warn, &None, from_config).is_ok());
+    assert_eq!((bin.as_deref(), warn.as_deref()), (Some("/usr/bin/git"), Some(std::path::Path::new("/tmp/w.txt"))));
+
+    // output-diff outside the tree is fatal rather than dropped, since
+    // dropping it would sort instead of only reporting; unless replaced
+    let outside = Some(PathBuf::from("/home/u/.bashrc"));
+    assert!(restrict_repo_config(&mut None, &mut None, &outside, (None, None, outside.clone())).is_err());
+    let cli = Some(PathBuf::from("out.diff"));
+    assert!(restrict_repo_config(&mut None, &mut None, &cli, (None, None, outside)).is_ok());
+}
+
+#[cfg(unix)]
+#[test]
+fn test_no_write_through_symlinks() {
+    // Every file FOP creates beside a list has a predictable name, so a
+    // repository could plant a symlink there aimed at a file elsewhere.
+    use crate::fop_sort::{create_file_no_follow, write_file_no_follow};
+    let dir = std::env::temp_dir().join(format!("fop-test-nofollow-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let victim = dir.join("victim.txt");
+    std::fs::write(&victim, "precious").unwrap();
+
+    let planted = dir.join("list.temp");
+    std::os::unix::fs::symlink(&victim, &planted).unwrap();
+    assert!(create_file_no_follow(&planted).is_err());
+    assert!(write_file_no_follow(&planted, b"sorted").is_err());
+    // A dangling link is refused too, rather than creating its target
+    let dangling = dir.join("list.backup");
+    std::os::unix::fs::symlink(dir.join("nowhere.txt"), &dangling).unwrap();
+    assert!(write_file_no_follow(&dangling, b"sorted").is_err());
+    assert!(!dir.join("nowhere.txt").exists());
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious");
+
+    // A stale regular file is replaced; a new one created; a directory refused
+    let stale = dir.join("old.temp");
+    std::fs::write(&stale, "stale and longer").unwrap();
+    write_file_no_follow(&stale, b"new").unwrap();
+    assert_eq!(std::fs::read_to_string(&stale).unwrap(), "new");
+    write_file_no_follow(&dir.join("fresh.diff"), b"diff").unwrap();
+    assert!(create_file_no_follow(&dir).is_err());
+
+    // Through the sort: a planted `.temp` or `.backup` link leaves its target
+    // alone, and the list is left unsorted rather than written without them
+    let chars = vec!["!".to_string()];
+    let config = crate::fop_sort::SortConfig { backup: true, ..test_sort_config(&chars) };
+    for planted in ["list.temp", "list.backup"] {
+        let _ = std::fs::remove_file(dir.join("list.temp"));
+        let _ = std::fs::remove_file(dir.join("list.backup"));
+        std::os::unix::fs::symlink(&victim, dir.join(planted)).unwrap();
+        let list = dir.join("list.txt");
+        std::fs::write(&list, "! t\n||b.com^\n||a.com^\n").unwrap();
+        let _ = crate::fop_sort::fop_sort(&list, &config);
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious", "{}", planted);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_list_symlinks_stay_in_tree() {
+    // A list that links out of the tree would have FOP read a file from
+    // elsewhere and commit its contents; links within the tree are fine.
+    use crate::{canonical_root, list_file_in_tree};
+    let base = std::env::temp_dir().join(format!("fop-test-intree-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let tree = base.join("repo");
+    std::fs::create_dir_all(tree.join("sub")).unwrap();
+    std::fs::write(tree.join("sub/real.txt"), "! t\n").unwrap();
+    std::fs::write(base.join("secret.txt"), "secret\n").unwrap();
+    std::os::unix::fs::symlink("sub/real.txt", tree.join("inside.txt")).unwrap();
+    std::os::unix::fs::symlink(base.join("secret.txt"), tree.join("outside.txt")).unwrap();
+    std::os::unix::fs::symlink("../secret.txt", tree.join("climb.txt")).unwrap();
+    std::os::unix::fs::symlink("gone.txt", tree.join("dangling.txt")).unwrap();
+    let root = canonical_root(&tree);
+
+    assert!(list_file_in_tree(&tree.join("sub/real.txt"), &root));
+    assert!(list_file_in_tree(&tree.join("inside.txt"), &root));
+    for escaping in ["outside.txt", "climb.txt", "dangling.txt"] {
+        assert!(!list_file_in_tree(&tree.join(escaping), &root), "{}", escaping);
+    }
+    assert!(!list_file_in_tree(&tree.join("sub"), &root), "a directory is not a list");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
 fn test_regex_pseudo_arguments_kept() {
     // Their arguments are regexes, where `+` and `>` are not combinators:
     // tidied as a selector, `/__adv+/` became `/__adv + /`.

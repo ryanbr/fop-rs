@@ -1972,6 +1972,37 @@ pub(crate) fn tidy_rule<'a>(line: &'a str, config: &SortConfig) -> Cow<'a, str> 
     Cow::Owned(tidied)
 }
 
+/// Create `path` afresh for writing, never through a symlink.
+///
+/// Every file FOP creates beside a list -- the sort's temp file, `.backup`,
+/// `--changed`, `.diff`, warnings -- has a predictable name, so a repository
+/// could plant a symlink there aimed at a file elsewhere, and a plain create
+/// would write through it. A symlink at the path is refused and a stale regular
+/// file replaced; `create_new` makes the final check and the creation one step,
+/// so a link that appears in between fails the open rather than being followed.
+pub(crate) fn create_file_no_follow(path: &Path) -> io::Result<File> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{} is a symlink; refusing to write through it", path.display()),
+            ));
+        }
+        Ok(meta) if meta.is_dir() => {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{} is a directory", path.display())));
+        }
+        Ok(_) => fs::remove_file(path)?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    fs::OpenOptions::new().write(true).create_new(true).open(path)
+}
+
+/// `fs::write`, through `create_file_no_follow`.
+pub(crate) fn write_file_no_follow(path: &Path, contents: &[u8]) -> io::Result<()> {
+    create_file_no_follow(path)?.write_all(contents)
+}
+
 /// Why `line` can never be a valid filter rule, or `None` if it might be.
 ///
 /// Deliberately narrow. The set of characters that can *begin* a valid rule is
@@ -2020,7 +2051,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     }
 
     let reader = BufReader::new(Cursor::new(&original_content));
-    let mut output = match File::create(&temp_file) {
+    let mut output = match create_file_no_follow(&temp_file) {
         Ok(f) => BufWriter::with_capacity(64 * 1024, f),
         Err(e) => {
             eprintln!("Cannot create temp file for {}: {}", filename.display(), e);
@@ -2409,7 +2440,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 let ext = filename.extension().and_then(|e| e.to_str()).unwrap_or("txt");
                 let changed_filename = filename.with_file_name(format!("{}--changed.{}", stem, ext));
                 
-                fs::write(&changed_filename, &new_content)?;
+                write_file_no_follow(&changed_filename, &new_content)?;
                 fs::remove_file(&temp_file)?;
                 
                 if !config.quiet {
@@ -2436,7 +2467,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             // Create backup if requested
             if config.backup {
                 let backup_file = filename.with_extension("backup");
-                fs::copy(filename, &backup_file)?;
+                write_file_no_follow(&backup_file, &original_content)?;
             }
             fs::rename(&temp_file, filename)?;
             if !config.quiet {

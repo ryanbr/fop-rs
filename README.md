@@ -269,6 +269,8 @@ direct-push-users =
 history = A: ,P: ,M: Update,M: Cleanup,M: Sort,M: Adjust
 ```
 
+A `.fopconfig` in the working directory travels with the repository, so it may not be yours: a pull request can add one. From there FOP ignores `git-binary`, ignores a `warning-output` outside the directory, and refuses an `output-diff` outside it. Set those on the command line, in `~/.fopconfig`, or with `--config-file`. Every other option applies as normal.
+
 Command line arguments override config file settings.
 
 ### Per-File Overrides
