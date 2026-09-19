@@ -1,0 +1,650 @@
+! #RM-1
+tripadvisor.com#$#hide-if-matches-xpath './/a[contains(text(),"Sponsored")][@target="_blank"]/parent::div/ancestor::div[@class][2]'
+tripadvisor.com#$#hide-if-matches-xpath './/span[@class="listItem"]//div[@data-automation]//span[contains(text(),"Sponsored")]/ancestor::span/parent::div[1]'
+tripadvisor.com#$#hide-if-matches-xpath './/div[@id="typeahead_results"]//div[contains(text(),"Sponsored")]/ancestor::a[@href]'
+tripadvisor.com#$#hide-if-matches-xpath './/span[contains(text(),"Sponsored")]/ancestor::a[@target="_blank"]/ancestor::li[@class]'
+
+! HP & BA
+tripadvisor.com#$#hide-if-matches-xpath './/span[contains(text(), "SPONSORED")]/ancestor-or-self::a[@target="_blank"][@href]/parent::div[1]'
+tripadvisor.com#$#hide-if-matches-xpath './/div[@data-curated-shelf-id and .//div[contains(text(), "Sponsored by")]]/self::div[1]'
+tripadvisor.com#$#hide-if-matches-xpath '//div[.//div[contains(text(), "Sponsored by: ")]]/ancestor-or-self::span[1]/parent::div[1]'
+tripadvisor.com#$#hide-if-matches-xpath './/span[contains(text(), "SPONSORED")]/../../../preceding-sibling::div[@data-vjs-player="true"]/parent::div'
+tripadvisor.com#$#hide-if-matches-xpath './/div[@data-test-target="hero-gallery"][../following-sibling::div//div[contains(text(),"Sponsored by")]]/parent::div/parent::div'
+tripadvisor.com#$#hide-if-matches-xpath './/h2[@class][contains(text(),"Sponsored by")]/preceding::div[@data-vjs-player]/parent::div[not(@class)]'
+tripadvisor.com##[data-sponsored]
+
+! RL
+tripadvisor.com,tripadvisor.com.br,tripadvisor.ca,tripadvisor.com.mx,tripadvisor.com.ar,tripadvisor.cl,tripadvisor.co,tripadvisor.com.ve,tripadvisor.co.uk,tripadvisor.it,tripadvisor.es,tripadvisor.de,tripadvisor.fr,tripadvisor.se,tripadvisor.nl,tripadvisor.com.tr,tripadvisor.dk,tripadvisor.at,tripadvisor.com.gr,no.tripadvisor.com,tripadvisor.pt,tripadvisor.ru,tripadvisor.ch,tripadvisor.be,tripadvisor.jp,cn.tripadvisor.com,tripadvisor.in,tripadvisor.com.my,tripadvisor.com.ph,tripadvisor.com.sg,tripadvisor.co.id,tripadvisor.co.kr,th.tripadvisor.com,tripadvisor.com.tw,tripadvisor.com.hk,tripadvisor.co.za,ar.tripadvisor.com,tripadvisor.com.eg,tripadvisor.co.il#$#hide-if-matches-xpath '././/span[contains(.,"Patrocinado") or contains(.,"Annonce") or contains(.,"Sponsored") or contains (.,"Sponsorizzato") or contains(., "Gesponsert") or contains(.,"Sponsrad") or contains(.,"Gesponsord") or contains(.,"Sponsorlu") or contains(.,"Sponsoreret") or contains(.,"Χορηγία") or contains(.,"Sponset") or contains(.,"Реклама") or contains(.,"スポンサー提供") or contains(.,"赞助商") or contains(.,"Bersponsor") or contains(.,"스폰서") or contains(.,"สปอนเซอร์") or contains(.,"贊助商") or contains(.,"贊助") or contains(.,"مدعوم") or contains(.,"מודעה")]/ancestor::header/ancestor-or-self::div[2]'
+
+tripadvisor.com#$#hide-if-matches-xpath '//span[text()="Sponsored"]/parent::div/parent::div/parent::div[.//a[contains(@href, "Restaurant_Review")]]/parent::div/parent::div[.//button[contains(@data-automation, "trips-save-button")]]'
+tripadvisor.com#$#hide-if-matches-xpath './/span[text()="Sponsored"]/ancestor::div[count(child::div)=3][child::div[descendant::a[descendant::picture]]][1]/ancestor::div[1]/ancestor::div[.//a[starts-with(@href, "/Restaurant_Review-")]][1]'; hide-if-matches-xpath './/span[text()="Sponsored"][not(ancestor::section)]/ancestor::div[@data-automation="restaurantCard"]'
+
+! HL
+tripadvisor.com#$#hide-if-matches-xpath './/div[count(.//div) >= 5]//div[not(*[not(self::span)] or count(span) > 1)]/span[text()="Sponsored"]/ancestor::div[count(.//a[@target]) >= 1 and count(.//a[@href]) >= 2 and string-length(@class) > 10][1]/ancestor-or-self::li[1]'
+
+! #RM-3
+! PP
+lowes.com#$#hide-if-matches-xpath './/div[@class][contains(text(),"Sponsored")]/ancestor::div[@class="carousel-inner-container "]/preceding::h2[@class][@role][contains(text(),"Sponsored")]/ancestor-or-self::div[contains(@class,"recommended")][1]'
+lowes.com#$#hide-if-matches-xpath '//p[text()="Sponsored"]/ancestor-or-self::div[contains(@data-testid,"lws_pdp_recommendations_sponsored_")][1]'
+
+! SA LV
+lowes.com#$#hide-if-contains-visible-text /Sponsored/ 'div[class$="tile_group"][data-row]' 'div[data-selector="prd-lormn-badge"]:not([style])>p>span'
+
+! SA GV
+lowes.com#$#hide-if-matches-xpath './/section[@id="listItems"]/div/div[@data-tile=//section[@id="listItems"]/div/div[@class]//span[text()="Sponsored"]/ancestor::div[@data-tile]/@data-tile]/*'
+
+! #RM-4
+! HP
+acmemarkets.com,albertsons.com,andronicos.com,carrsqc.com,jewelosco.com,pavilions.com,randalls.com,safeway.com,shaws.com,starmarket.com,tomthumb.com,vons.com#$#hide-if-matches-xpath './/span[contains(text(),"Weekly ad")]/parent::div[contains(@class,"carousel")]/ancestor::div[@class="h-100"][1]/parent::div[@data-slick-index]';
+
+! CP
+acmemarkets.com,albertsons.com,andronicos.com,carrsqc.com,jewelosco.com,pavilions.com,randalls.com,safeway.com,shaws.com,starmarket.com,tomthumb.com,vons.com#$#hide-if-matches-xpath './/product-item-al-v2[@data-qa][.//span[contains(text(),"Weekly ad")]]';
+
+! PP
+acmemarkets.com,albertsons.com,andronicos.com,balduccis.com,carrsqc.com,haggen.com,jewelosco.com,kingsfoodmarkets.com,pavilions.com,randalls.com,safeway.com,shaws.com,starmarket.com,tomthumb.com,vons.com#$#race start; hide-if-matches-xpath './/div[contains(text(),"Sponsored")]/parent::div/ancestor::div[contains(@class,"slick-product")][1]'; hide-if-matches-xpath './/span[contains(text(),"Sponsored")]/parent::div/ancestor::div[contains(@class,"slick-product")][1]'; race stop;
+acmemarkets.com,albertsons.com,andronicos.com,carrsqc.com,haggen.com,jewelosco.com,kingsfoodmarkets.com,pavilions.com,randalls.com,safeway.com,shaws.com,starmarket.com,tomthumb.com,vons.com#$#hide-if-contains Sponsored 'div[class^="slick-slide"] meals-card[style]' 'span>span'
+
+! PL
+acmemarkets.com,albertsons.com,andronicos.com,balduccis.com,carrsqc.com,haggen.com,jewelosco.com,kingsfoodmarkets.com,pavilions.com,randalls.com,safeway.com,shaws.com,starmarket.com,tomthumb.com,vons.com#$#hide-if-matches-xpath './/div/span[contains(@data-qa,"spnsrd")][text()="Sponsored"]/parent::div/ancestor::div[contains(@class,"position-relative")][1]/parent::*[contains(@class,"prdItem")]'; hide-if-matches-xpath '//span[text()="Sponsored"][@aria-hidden="false"]/ancestor::div[contains(@class,"position-relative")][1]';
+
+! #RM-5
+! sp
+mercadolibre.*,mercadolivre.com.br#$#hide-if-matches-xpath './/a[@class="poly-component__ads-promotions"][text()]/ancestor-or-self::li[@class="ui-search-layout__item"]'
+mercadolibre.*,mercadolivre.com.br#$#hide-if-matches-xpath './/span[@class="ui-search-sidebar-placements__title"][text()]/ancestor::div[@class="ui-search-sidebar-placements title-placements"]/parent::div[@class="ui-search-sidebar-placements__display"]'
+
+! pp
+mercadolibre.*,mercadolivre.com.br#$#hide-if-matches-xpath './/a[@rel="nofollow, sponsored"]//ancestor-or-self::section[contains(@class,"ui-recommendations-carousel-wrapper-ref")][1]'
+mercadolibre.*,mercadolivre.com.br#$#hide-if-matches-xpath './/span[contains(@class,"ui-recommendations-font-color--GRAY")][text()]//ancestor-or-self::section[contains(@class,"ui-recommendations-carousel-wrapper-ref")][1]'
+
+mercadolivre.com.br#$#hide-if-has-and-matches-style 'div[id]>[data-component^="adn"]>*' 'div[id]>[data-component="adn"]>adn-banner-vertical-square-image ^^sh^^ a[class^="content-target"]>div[class^="adn-container-square"]'
+mercadolivre.com.br#$#hide-if-has-and-matches-style 'div[class^="adn-container-square"]' 'div[id]>[data-component="adn"]' 'div[id]>[data-component="adn"]>adn-banner-vertical-square-image ^^sh^^ a[class^="content-target"]'
+
+! tb
+mercadolibre.*,mercadolivre.com.br#$#hide-if-matches-xpath '//h2[contains(@class,"hero__right-section-text-promoted-typography")][text()]/ancestor-or-self::div[contains(@class,"andes-card")][@id]'
+
+! ba
+mercadolivre.*,mercadolibre.*#$#hide-if-matches-xpath './/span[@class="ui-billboard-ad__title"]/ancestor::div[@id="ui-billboard-ad"]'
+
+! #RM-6
+! HP
+cdiscount.com#$#hide-if-matches-xpath './/img[contains(@src,"sponso")]/parent::a/ancestor::div[contains(@style,"background-color: rgb(255, 255, 255);")][.//div[contains(@style,"color: rgb(41, 56, 71);")]]'
+
+! BA/PC
+cdiscount.com#$#hide-if-contains /Sponsorisé/ 'div[class="o-block"]' 'div[class^="o-block"] *[pos][id] ^^sh^^ div[class]'
+cdiscount.com#$#hide-if-matches-xpath './/span[contains(text(),"Sponsorisé")]/ancestor::section[contains(@class,"blockCarousel")]/parent::div[1]'; hide-if-matches-xpath './/span[text()="Sponsorisé"]/parent::section[1]';
+
+! PP
+cdiscount.com#$#hide-if-matches-xpath './/article[contains(@class,"sponsored")]//ancestor::div[@id][@class="c-fp__cell--side"]'
+
+! PL
+cdiscount.com#$#race start; hide-if-matches-xpath './/input[contains(@name,"Sponsored")]/ancestor::*[(self::article[contains(@class,"c-productCard")] and parent::li) or (self::form and ancestor::div[contains(@class,"prdtBlocInline")])]/ancestor::li[1]'; hide-if-contains-and-matches-style '' 'li , div.l-fp-row' 'li custom-mentions , custom-mentions ^^sh^^ canvas' /./ 'background-image: repeating';  hide-if-contains-and-matches-style '' li 'custom-mentions ^^sh^^ canvas' '' 'display: none'; hide-if-matches-xpath './/div[contains(@class,"sponsor")]/span[text()]/ancestor::article/parent::a[@rel="sponsored"]/ancestor::div[1]' ; hide-if-matches-xpath './/div[contains(@class,"sponsor")]/span[text()]/ancestor::article/parent::a[@rel="sponsored"]/parent::*[self::div or self::section][1]'; race stop;
+cdiscount.com#$#hide-if-canvas-contains Sponsorisé
+
+! #RM-8
+samsclub.com#$#race start; hide-if-contains-visible-text /(Sponsored)/ 'div > div[io-id]' 'div[data-testid^="variant-"] > div > div'; hide-if-matches-xpath './/span[@class="sc-specials-label"]/parent::div/ancestor::div[contains(@class,"promo-static")]/ancestor-or-self::li[1]'; race stop;
+samsclub.com#$#hide-if-contains-visible-text /Sponsored/ 'div[style][class]' span[class]
+samsclub.com#$#hide-if-matches-xpath './/span[@class="sc-specials-label"]/parent::div/ancestor::div[contains(@class,"buy-box")]/parent::div[1]'
+samsclub.com#$#hide-if-matches-xpath './/span[@class="sc-specials-label"]/following::a[@role="button"]/ancestor::div[@class="sc-sba-modules-logo"]/parent::div[contains(@class,"sc-sba-modules")][1]'
+samsclub.com##div[class="analytics"][data-strategy="Sponsored products"]
+
+! #RM-9
+! sl, sc
+instacart.*#$#hide-if-matches-xpath './/ic-dg-tag/ancestor::li[1]';
+
+! ta
+instacart.*##div[id][class]:has(> span[aria-hidden="true"]:first-child):has(> section > span > a > picture > img[src*="display.instacart.com"][alt*="Sponsored"])
+
+! tc
+instacart.*##div[id]:has(> div > a img[src*="display.instacart.com"]):has(> div > a h2):has(> section) > *
+instacart.*##div[id]:has(div > a img[src*="display.instacart.com"]):has(div > a h2):has(> section) > *
+instacart.*#?#:xpath(.//img[contains(@src,"display.instacart.com")]/following-sibling::div/h2/ancestor::a[1]/parent::div//following::section/parent::div[@id]/*/parent::div)
+instacart.*#?#:xpath(.//img[contains(@src, "display.instacart.com")]/ancestor::div[@id][1][div/section])
+instacart.*##div:has(> div > div > a > img[src*="display.instacart.com"]):has(b[aria-hidden="true"])
+instacart.*##div:has(> div > div > a > img[alt="Advertisement"])
+
+! mc
+instacart.*##div[id]:has(> div > a[href*="/brands/"] img[src*="display.instacart.com"]):has(> section div[data-testid*="carousel"]) > *
+instacart.*##div[id]:has(> div > a[href*="/brands/"] img[src*="display.instacart.com"]):has(> section div[data-testid^="shoppable-"]) > *
+instacart.*##div:has(> div > div + section [data-testid="display-ad-item-track"]) > *
+
+! tp
+instacart.*##div:has(> div > div > h2 + div > span > span + b[aria-hidden="true"] + span)
+
+instacart.*#$#abort-current-inline-script setTimeout ic-detect-ad-block; override-property-read ADBLOCK_DETECTED false;
+
+! #RM-11
+! hp
+
+! ba
+ebay.*#$#hide-if-contains-visible-text /(Sponsored|Anzeige|Sponsorisé|Commandité|Patrocinado|Sponsorizzato)/ 'div[id^="placement"]' 'div[id^="placement"] button'
+
+! ta
+
+! cp
+ebay.*#$#hide-if-contains-visible-text /(S*p*o*n*s*o*r*e*d|A*n*z*e*i*g*e|S*p*o*n*s*o*r*i*s*é|P*a*t*r*o*c*i*n*a*d*o|S*p*o*n*s*o*r*i*z*z*a*t*o)/ 'div[class="brwrvr__item-card__body"]' 'span[class="su-sponsored-label__sep"] > span[aria-labelledby]';
+
+! pp
+ebay.*#$#hide-if-contains-visible-text /(Sponsored|Anzeige|Sponsorisé|Commandité|Sponsorowane|Gesponsord|Patrocinado|Sponsorizzato|贊助)/ 'div[class][data-testid] div[id^="placement"]' 'div ^^sh^^ *[role^="text"]'; hide-if-contains-visible-text /(Sponsored|Anzeige|Sponsorisé|Commandité|Sponsorowane|Gesponsord|Patrocinado|Sponsorizzato|贊助)/ 'div[class][data-testid] div[id^="placement"] ^^sh^^ > div' 'div ^^sh^^ *[role^="text"]'; hide-if-contains-visible-text /(Sponsored|Anzeige|Sponsorisé|Commandité|Sponsorowane|Gesponsord|Patrocinado|Sponsorizzato|贊助)/ 'div[class][data-testid] div[id^="placement"][style] ^^sh^^ *' 'div ^^sh^^ *';
+ebay.*#$#hide-if-contains-visible-text 'Sponsored' div.x-evo-middle-river section[data-viewport]
+
+! sp
+ebay.*#$#hide-if-matches-xpath './/span[contains(.,"Sponsored") or contains(.,"Anzeigen") or contains(.,"Sponsorisés") or contains(.,"Commandités") or contains(.,"Promocionado") or contains(.,"Gesponsord") or contains(.,"Sponsorowane") or contains(.,"Patrocinado") or contains(.,"Sponsorizzati") or contains(.,"贊助")]/ancestor::div[@data-hscroll]/parent::li[contains(@class,"ITEMS_CAROUSEL")][1]'
+ebay.*#$#hide-if-matches-xpath './/script[contains(text(),"SRP")]' '' 'load'; hide-if-contains-visible-text /(Sponsored|Anzeige|Sponsorisé|Commandité|Sponsorizzato|Sponsorowane|Gesponsord|Patrocinado)/ 'script[style]~ div.srp-main ul > li[data-viewport]' 'script[style]~ div.srp-main ul > li[data-viewport] *[aria-hidden]'
+
+! #RM-13
+www.booking.com#$#hide-if-contains-visible-text /Ad|Annonce|Annonse|Annons|Annuncio|Anunci|Anuncio|Anúncio|Anzeige|Iklan|Kostað|Mainos|Oglas|Promovată|Publicidad|Publicité|Quảng|Reklaam|Reklam|Reklama|Reklám|Reklāma|Διαφήμιση|[Рр]еклама|إعلان|광고|広告|付费推广|贊助|מודעה|विज्ञापन|โฆษณา/ 'div+div[data-testid^="property-card"]' 'span[tabindex] span'
+
+! #Pkgs
+booking.com#$#hide-if-matches-xpath './/span[@color][contains(@class,"PromoText")]/parent::div[@data-autobot-element-id]/ancestor::div[contains(@class,"ListingCardWrapper")]'
+
+! NA
+kayak.*#$#hide-if-matches-xpath './/div[contains(@class,"c_3eP-pres-default")]/ancestor::div[@role][@tabindex="0"]'
+
+! RM-144
+! NA
+momondo.com#$#hide-if-matches-xpath './/div[contains(@class,"c_3eP-pres-default")]/ancestor::div[@role][@tabindex="0"]'
+
+! #RM-14
+@@||cvs.com^$generichide
+
+! BA
+cvs.com#$#hide-if-matches-xpath './/div[@class]/*[contains(@shelf-type,"criteo")]/ancestor::div[@class][1]'
+cvs.com#$#hide-if-contains /Sponsored/ 'cvs-shop-product-shelf-criteo-container' 'cvs-shop-product-shelf-criteo-container ^^sh^^ span'
+
+! SP
+cvs.com#$#hide-if-contains-visible-text /(Sponsored)/ 'div[style^="width:"]' 'div[dir^="auto"]'
+
+! PP
+cvs.com#$#hide-if-contains /Sponsored/ 'cvs-shop-product-shelf-container' 'cvs-shop-product-shelf-container ^^sh^^ * ^^sh^^ section[id] span'
+cvs.com#$#hide-if-contains /Sponsored/ 'div>div *[new-ec-recommendations] ^^sh^^ * ^^sh^^ * ^^sh^^ section[id] ul>li' 'div>div *[new-ec-recommendations] ^^sh^^ * ^^sh^^ * ^^sh^^ section[id] ul>li>* ^^sh^^ div>div.sponsored-container>span'
+cvs.com#$#hide-if-contains-and-matches-style /Sponsored/ 'cvs-shop-product-shelf-new-ec-recommendation ^^sh^^ * ^^sh^^ * ^^sh^^ section[id] ul>li' 'cvs-shop-product-shelf-new-ec-recommendation ^^sh^^ * ^^sh^^ * ^^sh^^ section[id] ul>li>* ^^sh^^ div>div.sponsored-container>span' '' 'background-color: rgb(247, 247, 247)' 'complete'
+
+! #RM-16
+aliexpress.*#$#hide-if-contains /AD|Annonce|Anuncio|Anzeige|Reklama|Advertentie|Ad|Pub|Publicidad|Werbeanzeige|Rekl|Рекл|ad|Reklam|Anúncio|광고|Ann|إعلان|מודעה/ 'div>div.card-out-wrapper' 'div > div > div > a[target="_blank"] + div[class]'
+aliexpress.*#$#hide-if-matches-xpath './/div[(text()="AD" or text()="Annonce" or text()="Anuncio" or text()="Anzeige" or text()="Reklama" or text()="Advertentie" or text()="Ad" or text()="Pub" or text()="Publicidad" or text()="Werbeanzeige" or text()="Rekl" or text()="ad" or text()="Reklam" or text()="Anúncio" or text()="광고" or text()="Ann" or text()="إعلان" or text()="מودعה") and not(.//h3)]/ancestor::div[contains(@class,"card-out-wrapper")]/parent::div/parent::div[1]'
+
+! #RM-19
+! TB
+allegro.*#$#hide-if-matches-xpath './/span[text()="Sponsorowane" or text()="Спонсороване" or text()="Sponsored" or text()="Sponzorované" or text()="Szponzorált"]/ancestor::div[@data-box-name="allegro.ads.dss.banner"][1]'
+allegro.*#$#hide-if-matches-xpath './/span[text()="Sponsorowane" or text()="Спонсороване" or text()="Sponsored" or text()="Sponzorované" or text()="Szponzorált"]/../../div/ancestor::div[@data-role="showcase"]'
+allegro.*#$#hide-if-matches-xpath './/span[text()="Sponsorowane" or text()="Спонсороване" or text()="Sponsored" or text()="Sponzorované" or text()="Szponzorált"]/parent::span/ancestor::div[1]/parent::div[@data-box-name]/../../../parent::div[@data-item]'
+
+! SA
+allegro.*#$#hide-if-matches-xpath './/*[text()="Sponsorowane" or text()="Спонсороване" or text()="Sponsored" or text()="Sponzorované" or text()="Szponzorált"]/ancestor::div[1]/ancestor-or-self::article[@class]'
+
+! PP
+allegro.*#$#hide-if-matches-xpath './/h2[text()][@data-role="replaceable-title"]/following::span[.="Sponsorowane" or .="Sponsored" or .="Спонсоровано" or .="Sponzorováno" or .="Sponzorované" or .="Szponzorált"]/ancestor::div[contains(@class, "opbox-sheet") and @data-item]/parent::div[@*[starts-with(name(), "data-")] and count(@*[starts-with(name(), "data-")]) = 1]'
+
+! HP
+allegro.*#$#hide-if-matches-xpath './/ul//span[text()="Sponsorowane"]/../../parent::a/ancestor::li[1]' '' complete;
+allegro.*#$#hide-if-matches-xpath './/span[text()="Sponsorowane" or text()="Sponzorované"]/../../parent::div/ancestor::div[@data-box-id][1]/../../../parent::div[@style]' '' complete;
+allegro.pl#$#hide-if-matches-xpath '//div[@data-box-name="structure-container"][@data-analytics-category="layout.container"]//div[contains(@class,"mj7a_0")][.//span[text()="Sponsorowane"] or .//span[text()="Szponzorált"]]'
+allegro.hu#$#hide-if-matches-xpath '//div[@data-box-name="structure-container"][@data-analytics-category="layout.container"][.//span[text()="Szponzorált"]]';
+allegro.pl#$#hide-if-contains Sponsorowane 'div[data-box-name="structure-container"][data-analytics-tags*="adsRecoCarousel"]' 'span'
+allegro.pl#$#hide-if-matches-xpath '//div[@data-box-name="Carousel without Image"][.//span[normalize-space(.)="Sponsorowane"]][ancestor::div[@data-box-name="structure-container"][contains(@data-analytics-tags,"offerCarousel")]]'
+allegro.*#$#hide-if-matches-xpath '//div[@data-box-name="structure-container"][contains(@data-analytics-tags,"BrandedShop")][contains(@data-analytics-tags,"content-advertising")][.//span[normalize-space(.)="Sponsorowane" or normalize-space(.)="Sponzorované"]]'
+allegro.*#$#hide-if-contains /Sponsorowane|Sponzorované/ 'div[data-box-name="structure-container"][data-analytics-tags*="campaignStructure"][data-analytics-tags*="content-editorial"]' 'span'
+
+  ! MISC
+allegro.*#$#override-property-read adblockEnabledPreferenceUpdated true
+
+! #RM-42
+tesco.com#$#hide-if-contains-visible-text /Sponsored/ ul[id^="list-content"]>li 'div>div>span'; hide-if-matches-xpath './/p[contains(@class,"sponsored")]/parent::div/ancestor::li';
+
+! #RM-45
+! ba
+rakuten.com#$#hide-if-matches-xpath './/span[contains(@class,"sponsoredTag")]/parent::div/ancestor::div[@*[contains(name(), "fragment-id")] and @*[contains(name(), "fragment-selector")]]'; hide-if-matches-xpath './/span[contains(@class,"sponsoredTag")]/parent::div/ancestor::div[contains(@class,"flex-row")][1]'
+
+! sp
+rakuten.com#$#hide-if-contains-visible-text /Sponsorisée/ 'div[class*="flex"]' 'div[class*="sponsoredAds"]'
+
+! pp
+rakuten.com###second_promo
+rakuten.com#$#hide-if-matches-xpath './/div[@id]/ul/li[@advertsource][@widget="PRODUCT_ADS"]/following::div[@class="gtm_ads_caption"]/parent::div[@id]/ancestor::div[starts-with(@class,"prd_side")][@style]'
+
+! #RM-48
+! sp
+atlanticsuperstore.ca,fortinos.ca,loblaws.ca,maxi.ca,newfoundlandgrocerystores.ca,nofrills.ca,provigo.ca,realcanadiansuperstore.ca,valumart.ca,yourindependentgrocer.ca,zehrs.ca#$#hide-if-matches-xpath './/section/div[contains(@class,"product-grid-component")]//span[text()="Sponsored" or .="Sponsorisé"]/ancestor-or-self::span[contains(@class,"chakra-badge")]/ancestor::div[contains(@class,"chakra-linkbox")]/ancestor-or-self::div[@class="css-0"][1]'
+
+atlanticsuperstore.ca,fortinos.ca,loblaws.ca,maxi.ca,newfoundlandgrocerystores.ca,nofrills.ca,provigo.ca,realcanadiansuperstore.ca,valumart.ca,yourindependentgrocer.ca,zehrs.ca#$#hide-if-matches-xpath './/p[@aria-hidden="true"][text()="You might like" or text()="Vous Pourriez Aussi Aimer"]/ancestor-or-self::div[@data-testid="rmp-product"]/preceding::span[text()="You might like" or text()="Vous Pourriez Aussi Aimer"]/parent::div[1]'
+
+! ba
+atlanticsuperstore.ca,fortinos.ca,loblaws.ca,maxi.ca,newfoundlandgrocerystores.ca,nofrills.ca,provigo.ca,realcanadiansuperstore.ca,valumart.ca,yourindependentgrocer.ca,zehrs.ca#$#hide-if-matches-xpath '//img[contains(@alt,"Sponsor")]/preceding::p[contains(@class,"chakra-text")][text()="Sponsored" or .="Sponsorisé"]/ancestor::div[contains(@class,"chakra-container")]'
+
+! #RM-61
+@@||woolworths.com.au^$generichide
+woolworths.com.au#$#hide-if-contains-visible-text /\\s*Promoted\\s*/ 'div .ng-star-inserted wc-product-tile' 'wc-product-tile ^^sh^^ div.sponsored-text'
+woolworths.com.au#$#hide-if-contains-visible-text /\\s*Promoted\\s*/ 'div>wc-product-tile' 'wc-product-tile ^^sh^^ div.sponsored-text'
+
+! #RM-65
+skyscanner.*,tianxun.com#$#hide-if-matches-xpath './/button[contains(@class,"SponsoredInfoButton_adInfoBtn")]/ancestor-or-self::div[@aria-label]/parent::div[1]'
+skyscanner.*,tianxun.com#$#hide-if-matches-xpath './/button[contains(@class,"SponsoredInfoButton_adInfoBtn")]/ancestor-or-self::a[contains(@href,"sponsored")][@data-testid]/parent::div[1]'
+skyscanner.*,tianxun.com#$#hide-if-matches-xpath './/button[contains(@class,"SponsoredInfoButton_adInfoBtn")]/preceding::div[contains(@class,"ItineraryInlinePlusWrapperHeader_header")][@role="group"][@aria-label]/parent::div[1]'
+
+! #RM-66
+! PL
+newegg.*#$#hide-if-matches-xpath './/a[@class="item-img"][@rel]/following::span[contains(text(),"Sponsored")]/ancestor::div[contains(@class,"item-cell")][starts-with(@id,"item_cell")]'
+! PP
+newegg.*#$#hide-if-matches-xpath './/div[contains(@class,"menu-box")]/span[contains(text(),"Sponsored")]/ancestor::div[contains(@class,"at-side")]'; hide-if-matches-xpath './/span["Sponsored"]/ancestor::div[starts-with(@class,"product-headline")]'; hide-if-matches-xpath './/span[contains(text(),"Sponsored")]/ancestor::div[starts-with(@class,"product-headline") or @class=" grid-col" or contains(@class,"swiper-slide")]'; hide-if-matches-xpath './/div[@class="row-body-inner"]//div[contains(@class,"menu-box")]/span[contains(text(),"Sponsored")]/ancestor::div[contains(@class,"with-video")]'; hide-if-contains-visible-text /Sponsored/ div[class^="product"] 'div[class][style]>span';
+newegg.com##div[class*="-sponsored"]
+! BA
+newegg.*#$#hide-if-matches-xpath './/div[@class="row-body-inner"]//div[contains(@class,"display-flex")]//ancestor::div[@class][2]/ancestor::div[@data-nosnippet="true"]'
+newegg.*#$#hide-if-matches-xpath './/div[@class="row-body-inner"]//div[contains(@class,"menu-box")]/span[contains(text(),"Sponsored")]/ancestor::div[@class][2]/parent::div[not(@class="list-wrap")]';
+
+newegg.*#$#override-property-read window.__initialState__.SponsoredBrand emptyObj
+
+! #RM-68
+! sa
+cars.com#$#hide-if-matches-xpath './/spark-badge[@variant="text"][@class="sp-badge"]/following::spark-button[@data-sponsored="true"]/ancestor-or-self::div[contains(@class,"inventory-")][1]'
+cars.com#$#hide-if-matches-xpath './/span[contains(@class,"hero-cta-tag")][contains(text(),"Sponsored")]/preceding::img[@class="sponsored-hero-cta"]/ancestor::a[@aria-describedby][contains(@href,"adclick")]/ancestor-or-self::section[@id="primary-hero"]'
+cars.com#$#hide-if-matches-xpath '//li[fuse-card[@data-listing-id][card-gallery[contains(@card-href, "attribution_type=premier") or contains(@card-href,"attribution_type=")]]]/ancestor-or-self::li'
+
+! ba
+cars.com##li>cars-banner-ad {remove:true;}
+
+
+! #RM-78
+noon.com##img[src^="ad-tag"]
+noon.com##div[id*="adBannerModule"]
+
+! SP
+noon.com#$#race start; hide-if-matches-xpath './/*[local-name()="svg"][@width][@fill="none"]/*[local-name()="rect"]/ancestor::a[@class][@href]/parent::div[1]'; hide-if-matches-xpath './/div[@class][contains(text(),"Ad") or contains(text(),"مدفوع")]/ancestor::a[@href]/ancestor-or-self::div[contains(@class,"ProductBoxLinkHandler")]'; hide-if-matches-xpath './/div[@class][contains(text(),"Sponsored") or contains(text(),"إعلان")]/ancestor::a[@href]/ancestor-or-self::div[contains(@class,"ProductBoxLinkHandler")]'; hide-if-matches-xpath './/img[contains(@src,"ad-")]/ancestor::a[@href]/ancestor-or-self::div[contains(@class,"ProductBoxLinkHandler")]'; race stop;
+
+!BA
+noon.com#$#hide-if-matches-xpath './/span[@style][contains(text(),"Ad")]/parent::div[contains(@class,"adWrapper")]/ancestor::div[contains(@class,"ProductDetailsDesktop_maxWrapper")][1]'
+noon.com#$#hide-if-matches-xpath './/img[contains(@src,"ads/banner-")]/parent::span/ancestor::div/parent::div[contains(@class,"Banner")]';
+noon.com#$#hide-if-matches-xpath './/*[local-name()="svg"][@width][@fill="none"]/*[local-name()="rect"]/ancestor::div[contains(@id,"adProductsListBanner")]/ancestor::div[@class][@style][not(@id)][1]'
+
+! PP
+noon.com#$#hide-if-matches-xpath './/img[contains(@src,"ads/banner")]/parent::div/ancestor::div[@style="opacity: unset;"]/parent::a/parent::div/parent::div[contains(@class,"AdBanner")]'
+noon.com#$#hide-if-matches-xpath './/img[contains(@src,"ad")]/ancestor::div[contains(@class,"Ad")]/parent::div/parent::div[contains(@id,"adMultiProductsBanner")]/parent::div[1]';
+noon.com#$#hide-if-matches-xpath './/div/*[@width][@fill="none"][@viewBox]/*[@fill="white"][@fill-opacity]/ancestor::a[contains(@class,"productBoxLink")]/parent::div[@data-qa]//parent::div[contains(@class,"Recommendations_")]/ancestor::div[contains(@class,"PdpRecommendations")][1]'
+noon.com#$#hide-if-matches-xpath './/*[local-name()="svg"][@width][@fill="none"]/*[local-name()="rect"]/ancestor::div[@id="noon-modules"]/parent::div[contains(@class,"PdpWidgets_widgetContainer")]'
+
+! HP
+noon.com##div[class*="_carouselItem_"]:has(a[href*="&pcl="], a[href*="?pcl="])
+noon.com##div[data-qa="plp-product-box"]:has(a[href*="&pcl="], a[href*="?pcl="])
+||noon.com/_vs/nc/mp-adserver-api-display/*$xmlhttprequest,domain=noon.com
+
+! #RM-82
+! CA
+flipkart.com#$#hide-if-contains Sponsored 'div[style*="position: absolute"][style*="transform"]' 'div[dir="auto"]'
+
+! HP
+flipkart.com#$#hide-if-matches-xpath './/a[contains(@href,"_AD")][@style]/ancestor::div[contains(@class,"grid-formation")]/parent::div[@style]'; hide-if-matches-xpath './/a[contains(@href,"_AD")][@style]/ancestor::div[contains(@class,"grid-formation")]/parent::div[@style]/parent::div[@style]/parent::div[.//div[text()="Sponsored"]]'
+
+! PP & MA
+flipkart.com#$#hide-if-matches-xpath './/div[@dir][text()="AD"]/ancestor::div//ancestor::div[text()="Similar Products"][not(contains(@style,"margin:0px 0px 0px 0px"))]/ancestor::div[contains(@style,"static")]'
+flipkart.com#$#hide-if-matches-xpath './/div[text()="You may also like"]//following::div[text()="AD"][@font]/ancestor::div[contains(@style,"position: static")]'
+flipkart.com#$#hide-if-matches-xpath './/div[text()="AD"][@font]/ancestor::div[contains(@style,"static")]/div[contains(@style,"order:")]'
+flipkart.com#$#hide-if-matches-xpath './/a[contains(@href,"_PAD") or contains(@href,"_AD")]/ancestor::div[contains(@style,"width: 100%") and contains(@style,"static")][1]'
+
+! BA
+flipkart.com#$#hide-if-matches-xpath './/img[contains(@srcset,"cf-chitrakaar-prod")]/parent::div[@style]/ancestor::a[contains(@style,"cursor")]/ancestor::div[contains(@style,"transparent")]/parent::div[@style]'
+flipkart.com#$#hide-if-matches-xpath './/div[text()="AD"][contains(@style,"line-height")]/ancestor::div[@style][1]/ancestor::a[@style]/parent::div[contains(@style,"min-width")]/parent::div[@style]'
+
+! #RM-114
+! sp
+target.com#$#hide-if-contains-visible-text /Sponsored/ 'div[data-test*="ProductCardWrapper"]' 'p[data-test="sponsoredText"]'
+
+target.com#$#hide-if-contains /Sponsored/ 'li[class]' 'div[style] div[data-test="sponsoredText"]'
+
+! #RM-115
+! sp (.pt|.pl|.ro|.*)
+olx.*#?#div:-abp-has(> div:-abp-has(> div:-abp-has(> a div:-abp-has(> div:-abp-properties(/content: "Wyróżnione";|"TOP";|"ТОП";|"PROMOVAT";|"Промотирана обява";/)))))
+olx.*#$#hide-if-matches-xpath '//div[text()="Wyróżnione" or text()="TOP" or text()="ТОП" or text()="PROMOVAT" or text()="Промотирана обява"]/ancestor::div[@data-testid="l-card"][1]'
+olx.*#$#hide-if-canvas-contains '/WYRÓŻNIONE|TOP|ТОП|PROMOVAT|Промотирана обява/i' 'div[data-cy="l-card"][id]'
+olx.com.br#$#hide-if-matches-xpath './/div[.="Destaque"][@aria-label]/ancestor::section[1]'; hide-if-matches-xpath './/span[.="DESTAQUE" or .="Destaque" or .="Impulsionado"]/ancestor::section[1]';
+olx.com.br#$#hide-if-matches-xpath './/h2[contains(text(),"Você pode gostar")][.//following::picture/following-sibling::div[@data-ds-component="AdBadge"][text()="Destaque"]/ancestor::section[1]/ancestor::div[@class="olx-core-carousel"]]/ancestor::div[contains(@class,"flex-col wrapper___")]'
+olx.*#$#hide-if-canvas-contains /.{500}/ 'div[data-cy="l-card"][id]' '' data
+olx.pl#$#hide-if-contains SPONSOROWANE 'div[data-testid="qa-advert-slot"]' '.baxter-native-lopdwoi-template__attribution'
+
+! pp & ph
+olx.com.br#$#hide-if-matches-xpath './/p[.="publicidade"]/parent::div[@data-testid="advertising-placeholder" or contains(@class,"ad__")]/parent::div'
+olx.com.br#$#hide-if-matches-xpath './/picture/following-sibling::div[@data-ds-component="AdBadge"][text()="Destaque"]/ancestor::section[1]/parent::div[@data-reduced="true"]'
+
+olx.*#$#hide-if-matches-xpath './/div[@style="position: relative;"]/button[contains(@aria-label,"reklamie") or contains(@aria-label,"publicitare")]//ancestor::div[contains(@id,"baxter")]/parent::div[@id][@data-cy]'
+olx.pl#$#abort-on-property-write _gde_ingPriceImg
+olx.*#$#abort-on-property-read Baxter.targeting.ad_price; abort-on-property-read Baxter.targeting.ad_title; override-property-read Baxter.targeting emptyObj;
+
+! hp
+olx.*#$#hide-if-matches-xpath '//a[contains(@href,"promoted")]/parent::div/ancestor-or-self::div[@data-testid="l-card"]/preceding::h2[contains(., "VIP-объявления") or contains(., "VIP-оголошення")]/parent::div'
+olx.pt#$#hide-if-matches-xpath '//a[contains(@href,"promoted")]/parent::div/ancestor-or-self::div[@data-testid="l-card"]/preceding::h2[contains(., "Destaques no OLX")]/parent::div'
+olx.pl#$#hide-if-matches-xpath '//a[contains(@href,"promoted")]/parent::div/ancestor-or-self::div[@data-testid="l-card"]/preceding::h2[contains(., "Ogłoszenia promowane")]/parent::div'
+olx.ro#$#hide-if-matches-xpath '//a[contains(@href,"promoted")]/parent::div/ancestor-or-self::div[@data-testid="l-card"]/preceding::h2[contains(., "Anunturi promovate")]/parent::div'
+olx.bg#$#hide-if-matches-xpath '//a[contains(@href,"promoted")]/parent::div/ancestor-or-self::div[@data-testid="l-card"]/preceding::h2[contains(., "Промо обяви")]/parent::div'
+olx.com.br#$#hide-if-matches-xpath './/span[.="DESTAQUE"]/ancestor::section[1]/parent::div[contains(@class,"olx-carousel")]';
+olx.com.br#$#hide-if-matches-xpath '//h2[text()="Anúncios patrocinados"]/ancestor-or-self::section[contains(@class,"PremiumGallery_home-premium-gallery")]'
+olx.com.br#$#hide-if-matches-xpath '//div[@id="advertising-home-banner-anchor"]/ancestor-or-self::div[contains(@class,"AdvertisingSlotAnchor_advertising-anchor__content__")]/parent::div[1]'
+olx.com.br###advertising-top-banner
+
+! sp-block
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40,41(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39,40(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38,39(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37,38(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27,28(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26,27(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25,26(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24,25(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14,15(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13,14(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12,13(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1,2(?:,|\\])/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1\\]/
+olx.ro#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*0\\]/
+
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40,41(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39,40(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38,39(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37,38(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27,28(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26,27(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25,26(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24,25(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14,15(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13,14(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12,13(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1,2(?:,|\\])/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1\\]/
+olx.bg#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*0\\]/
+
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){39})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40,41(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){39})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){39})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){38})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39,40(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){38})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){38})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){37})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38,39(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){37})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){37})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){36})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37,38(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){36})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){36})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){26})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27,28(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){26})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){26})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){25})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26,27(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){25})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){25})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){24})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25,26(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){24})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){24})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){23})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24,25(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){23})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){23})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){13})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14,15(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){13})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){13})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){12})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13,14(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){12})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){12})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){11})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12,13(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){11})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){11})(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[)(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1,2(?:,|\\])/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[)(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1\\]/
+olx.kz,olx.uz#$#replace-fetch-response /("data":\\[)(?:\\{"id":\\d+,"url":"(?:(?!\\{"id":\\d+,"url":")[\\s\\S])*?\\},(?=\\{"id":\\d+,"url":")){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*0\\]/
+
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40,41(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39,40(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38,39(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37,38(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27,28(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26,27(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25,26(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24,25(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14,15(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13,14(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12,13(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1,2(?:,|\\])/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1\\]/
+olx.pt,olx.ua#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*0\\]/
+
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40,41(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39,40\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){39})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!38,)39\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39,40(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38,39\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){38})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!37,)38\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38,39(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37,38\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){37})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!36,)37\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37,38(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36,37\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){36})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!35,)36\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27,28(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26,27\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){26})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!25,)26\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26,27(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25,26\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){25})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!24,)25\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25,26(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24,25\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){24})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!23,)24\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24,25(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23,24\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){23})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!22,)23\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14,15(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13,14\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){13})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!12,)13\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13,14(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12,13\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){12})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!11,)12\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12,13(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11,12\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){11})(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*(?<!10,)11\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){3}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1,2(?:,|\\])/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){2}/ '$1' /"promoted":\\[(?:[0-9]+,)*0,1\\]/
+olx.pl#$#replace-fetch-response /("ListingSuccess","data":\\[)(?:\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj(?:(?!\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)[\\s\\S])*?\\},(?=\\{"_nodeId":"bGVnYWN5QWR2ZXJ0Oj)){1}/ '$1' /"promoted":\\[(?:[0-9]+,)*0\\]/
+
+olx.pl,olx.ro,olx.bg,olx.pt,olx.ua,olx.kz,olx.uz#$#replace-fetch-response /"promoted":\\[[0-9,]*\\]/ '"promoted":[]'
+olx.pl,olx.ro,olx.bg,olx.pt,olx.ua,olx.kz,olx.uz#$#json-prune 'listing.listing'
+
+! #RM-177
+! pp
+otomoto.*#?#[data-testid="financing-widget-simulator-entrypoint"]:has(span:has-text(reklama))
+otomoto.*#$#abort-on-property-read Baxter.targeting.ad_price; abort-on-property-read Baxter.targeting.ad_title; override-property-read Baxter.targeting emptyObj;
+
+! #RM-117
+pinterest.*#?#div[data-grid-item]:has(div[title]:-abp-contains(/^(Ad|Sponsored|Sponsorisé|Gesponsert|Gesponsord|Promocionado|Patrocinado|Sponsorizzato|Sponsorowane|広告|贊助內容|赞助的 Pin 图|후원 핀|ממומן|قيد الدعم|Được tài trợ|प्रायोजित|স্পনসর করা|స్పాన్సర్ చేసారు|Спонсорований)$/))
+
+! va 
+pinterest.*##div[data-grid-item="true"]:has(div[data-test-id="pinrep-video"]):has(div[data-test-id="one-tap-desktop"] > a[rel="nofollow"])
+
+! #RM-167
+! HP&PP
+tokopedia.com#$#hide-if-contains /^Ad$/ 'div[data-testid^="divProductGrid"], div[data-testid^="divProduct"]>div' 'div>div[class][data-testid][data-action]>div[data-testid] a span[data-testid]'
+
+! CP
+tokopedia.com#$#hide-if-contains /^Ad$/ 'div[class$="carousel"]>div[class][style]' 'a[class][data-theme] span'
+
+! #RM-176
+! sp
+aboutyou.*#$#hide-if-matches-xpath './/a[@data-product-tile-gallery-mode-hover]/following::button/span[@class][@style]/ancestor::li[contains(@data-testid,"productTileTracker")]'
+aboutyou.*#$#hide-if-canvas-contains '/Sponsored|Gesponsert|Gesponsord|Sponsorisé|Спонсориран|Χορηγούμενο|Sponsoreret|Patrocinado|Sponzorirano|Sponzorováno|Sponsoreeritud|Remiama|Sponsorēts|Sponsorizzato|Sponsorizat|Sponzorované|Sponsrad|Szponzorált|Sponsorowane/' 'li[class][data-testid][style]'
+
+! pp
+aboutyou.*#$#hide-if-matches-xpath './/span[@data-testid][contains(text(),"Sponsored") or contains(text(),"Gesponsert") or contains(text(),"Gesponsord") or contains(text(),"Спонсорирано") or contains(text(),"Sponsoreret") or contains(text(),"Sponsoreeritud") or contains(text(),"Χορηγούμενο") or contains(text(),"Patrocinado") or contains(text(),"Sponzorirano") or contains(text(),"Sponsoroitu") or contains(text(),"Szponzorált") or contains(text(),"Sponsorisé") or contains(text(),"Sponsorizzato") or contains(text(),"Sponsorēts") or contains(text(),"Remiama") or contains(text(),"Sponsorowane") or contains(text(),"Sponzorováno") or contains(text(),"Sponzorované") or contains(text(),"Sponsorizat")]/ancestor::section[@style][@data-testid][1]'
+
+! ca & ba
+aboutyou.*#$#hide-if-canvas-contains /Sponsored|Gesponsert|Gesponsord|Sponsorisé|Спонсориран|Χορηγούμενο|Sponsoreret|Patrocinado|Sponzorirano|Sponzorováno|Sponsoreeritud|Remiama|Sponsorēts|Sponsorizzato|Sponsorizat|Sponzorované|Sponsrad|Szponzorált/ 'li>a[data-content-alignment="end"]'
+aboutyou.*#$#hide-if-canvas-contains /Sponsored|Gesponsert|Gesponsord|Sponsorisé|Спонсориран|Χορηγούμενο|Sponsoreret|Patrocinado|Sponzorirano|Sponzorováno|Sponsoreeritud|Remiama|Sponsorēts|Sponsorizzato|Sponsorizat|Sponzorované|Sponsrad|Szponzorált/ 'div[data-slide-index][data-active][class][style]>div'
+
+! #RM-180
+! HP & SA
+knuspr.de#$#hide-if-matches-xpath '//span[contains(., "Sponsored") or contains(., "Gesponsert")]/ancestor::a/parent::div[contains(@class,"justify-")]/ancestor::div[contains(@data-test,"productCard-AVAILABLE")][1]'
+knuspr.de#$#hide-if-contains-visible-text /Anzeigen/ 'div[data-test^="other-company-item-wrapper"]' 'button>div'
+
+! SB
+knuspr.de#$#hide-if-matches-xpath '//span[contains(., "Sponsored") or contains(., "Gesponsert")]/ancestor::a[@aria-label]/ancestor::div[@data-test][@class][1]'
+
+! #RM-193
+! BA
+staples.com#$#hide-if-matches-xpath './/img[@alt="Sponsored Products"]/parent::picture/ancestor::div[@class][string-length(@class) < 16][1]/ancestor::div[.//div[@role="listitem"]][1]'
+
+! #RM-194
+! SP
+fiverr.com##div.gig-card-layout:has(img[src*="ssW9FScESw1qcWo9.png"], img[src*="j2UZtgDmo3mCECkN.png"], img[src*="TqHvuDd95vjRwvqi.png"], img[src*="3yuuixQweXvQFqF4.png"], img[src*="Ss3AV7JHIZUGYwcR.png"], img[src*="tz6W6pk1KVxU7BS0.png"], img[src*="Jw3UzK1ZV5d9YjKG.png"], img[src*="axtPvwgf3AwJhbyO.png"], img[src*="xDURa8fN4l6D1SLh.png"], img[src*="SbQ22H3G6CxqVlKF.png"], img[src*="4u1SYs3DzMnxIqPe.png"], img[src*="7YtmNgmfWeJgfMxZ.png"], img[src*="WG2sZ2BLtZhO9skU.png"], img[src*="F2TzTk8X1TKQk9eH.png"], img[src*="APWKgbzBrtnuSCbc.png"], img[src*="PjQ4v2bVjswTYqha.png"], img[src*="4wEVeh3jElCioUVP.png"], img[src*="ua3KHvMdFsvUclNb.png"], img[src*="vZm8H92LktsntIrq.png"], img[src*="CPQVxZRCFcP5KPxL.png"], img[src*="aNYUzBP6RRWZLONg.png"], img[src*="ILWcQyqALW9d6jlc.png"], img[src*="GGYrnZUSxFXjGS1b.png"], img[src*="IXaVHO8OEQ0LjtYl.png"], img[src*="7bRx6L3tTNVfAYfO.png"], img[src*="BUd20YQjXvPZmUdw.png"], img[src*="VMZ8SiR56oN4Z64d.png"], img[src*="xLj4CcSY7Z41Vv30.png"], img[src*="5Ubng9dLOI3Y2OY9.png"], img[src*="w1pxjRGYqvUxWiYb.png"], img[src*="4JC5fIOxrVyo1on8.png"])
+
+! CP
+fiverr.com#?#div.slide:has(span[data-track-tag^="typography"]:-abp-contains(/Anzeige|Ad|Anuncio|Publicité|Anúncio|Annuncio|Advertentie/))
+
+! #RM-146
+! ba
+mundi.com.br#$#hide-if-contains-visible-text /Anúncio/ 'div[role][tabindex^="0"]' 'div[class]>div'
+
+! #RM-112
+! SP
+sameday.costco.*#$#race start; hide-if-matches-xpath './/ic-nt-tag/ancestor::li[1]'; hide-if-matches-xpath './/div[@role="group"][.//ic-nt-tag]/ancestor::li[1]'; race stop;
+
+! ca
+sameday.costco.*#$#hide-if-matches-xpath './/div[@style]/following::span[text()]/preceding::div[@aria-hidden="true"]/preceding::img[contains(@alt,"Sponsored") or contains(@alt,"Advertisement")]/ancestor-or-self::div[@id][@class][1]'
+sameday.costco.*##div[id]:has(> div > a img[src*="display.instacart.com"]):has(> div > a h2):has(> section)
+sameday.costco.*##div[id]:has(div > a img[src*="display.instacart.com"]):has(div > a h2):has(> section)
+sameday.costco.*##div[id]:has(> div[id$="-content"] > a img[src*="display.instacart.com"]):has(> div[id$="-content"] li img[src*="display.instacart.com"])
+
+! mc
+sameday.costco.*#$#race start; hide-if-matches-xpath '//div[@id]/div[contains(@id,"-content")][a[img[contains(@alt,"Ad")]] or .//div[starts-with(@id,"video-player")]]/parent::div'; hide-if-matches-xpath '//div[@id]/section[contains(@id,"-content")][a[img[contains(@alt,"Ad")]] or .//div[starts-with(@id,"video-player")]]/parent::div'; race stop;
+
+sameday.costco.*#$#abort-current-inline-script setTimeout ic-detect-ad-block; override-property-read ADBLOCK_DETECTED false
+
+! #RM-207
+||app.golfgalaxy.com^$domain=golfgalaxy.com|dickssportinggoods.com
+||telulr.golfgalaxy.com^$domain=golfgalaxy.com|dickssportinggoods.com
+||smetrics.golfgalaxy.com^$domain=golfgalaxy.com|dickssportinggoods.com
+||metrics.golfgalaxy.com^$domain=golfgalaxy.com|dickssportinggoods.com
+||app.dickssportinggoods.com^$domain=golfgalaxy.com|dickssportinggoods.com
+||inqjal.dickssportinggoods.com^$domain=golfgalaxy.com|dickssportinggoods.com
+||smetrics.dickssportinggoods.com^$domain=golfgalaxy.com|dickssportinggoods.com
+||mi.dickssportinggoods.com/p/js/1.js^$domain=golfgalaxy.com|dickssportinggoods.com
+||tag.*/scripts/px.gif?ch=2$domain=golfgalaxy.com|dickssportinggoods.com
+||tag.*/scripts/px.gif?ch=1$domain=golfgalaxy.com|dickssportinggoods.com
+||ad-*-prod.tagdelivery.com/request?$domain=golfgalaxy.com|dickssportinggoods.com
+||ad-*-prod.tagdelivery.com/impression?$domain=golfgalaxy.com|dickssportinggoods.com
+||ad.doubleclick.net/activity;register_conversion=$domain=golfgalaxy.com|dickssportinggoods.com
+||hlserve.com/Delivery/ClientPaths/Library/hook.js?$domain=golfgalaxy.com|dickssportinggoods.com
+||tpc.googlesyndication.com/sodar/$domain=golfgalaxy.com|dickssportinggoods.com
+||securepubads.g.doubleclick.net/pagead/$domain=golfgalaxy.com|dickssportinggoods.com
+||securepubads.g.doubleclick.net/gampad/ads?$domain=golfgalaxy.com|dickssportinggoods.com
+||securepubads.g.doubleclick.net/static/topics/topics_frame.html$subdocument,domain=golfgalaxy.com|dickssportinggoods.com
+||pagead2.googlesyndication.com^$subdocument,other,image,xmlhttprequest,domain=golfgalaxy.com|dickssportinggoods.com
+||googlesyndication.com/safeframe^$subdocument,domain=golfgalaxy.com|dickssportinggoods.com
+||ads.nextdoor.com/public/pixel/ndp.js$domain=golfgalaxy.com|dickssportinggoods.com
+golfgalaxy.com,dickssportinggoods.com##.google-ad-container
+dickssportinggoods.com##div[id*="dickssportinggoods/stores/top_banner_"]
+
+! #RM-108
+! ba
+slickdeals.net#$#hide-if-matches-xpath '//span[contains(text(),"Sponsored")][@data-partial="sponsor"]/ancestor-or-self::div[@data-role="announcementBar"][1]'
+slickdeals.net#$#hide-if-matches-xpath '//div[contains(@class,"displayAdContainer")]/ancestor-or-self::div[@class="searchPage__headerContent"][1]'
+slickdeals.net##.displayAdContainer
+
+! #RM-7
+! BA
+walmart.*#$#hide-if-matches-xpath './/div[text()="Sponsored"]//ancestor::section[@data-dca-type]/ancestor::span/parent::div[@data-testid="buy-box-ad"]'
+
+
+! #RM-88
+! pp
+nordstrom.com#$#hide-if-matches-xpath './/header/h3[.="Sponsored"]/ancestor::div[contains(@id,"sponsored")]/parent::div'
+
+! sa
+nordstrom.com#$#hide-if-contains-visible-text Sponsored 'article' 'span'
+
+! #RM-232
+! hp
+kroger.com#$#hide-if-matches-xpath './/div[@class="PremiumPlacementCarousel"]/div[contains(text(),"Sponsored")]/ancestor::div[@data-testid]/parent::div'
+kroger.com#$#hide-if-matches-xpath './/div[@class="flex"]/span[contains(text(),"Sponsored")]/ancestor::div[@data-citrus-component="Card"]/../parent::li'
+
+! pl
+kroger.com#$#hide-if-matches-xpath './/div[@class="flex"]/span[contains(text(),"Sponsored")]/ancestor::div[@class="ProductCard-tags"]/../parent::div[@data-testid][@style]'
+kroger.com##li.citrus-Carousel-item:has([data-testid="featured-product-tag"])
+kroger.com##.AutoGrid-cell:has([data-testid="featured-product-tag"])
+
+! ba
+kroger.com##.AutoGrid-cell:has(> .CuratedCarousel > [data-testid="carousel-featured-flag"])
+
+! pp
+kroger.com#$#hide-if-matches-xpath './/div[@class="flex"]/span[contains(text(),"Sponsored")]/ancestor::div[@class="ProductCard-tags"]/../parent::li'
+
+! cb
+kroger.com##.kac-product-grid-cell:has(.kac-product-badge--sponsored)
+
+! #RM-232
+! sp
+dribbble.com#$#hide-if-contains /Promoted/ 'article' 'article drb-tooltip > div'
+dribbble.com##article:has([data-track-cta="Learn more about Promoted Services"])
+
+! #RM-222
+
+chatgpt.com#$#hide-if-matches-xpath 'id("thread")//h3[normalize-space(text())="Sponsored"]/ancestor::div[starts-with(@class,"border-") and not(.//div[@data-message-author-role])][1] | id("thread")//span[normalize-space(text())="Ad"]/ancestor::div[starts-with(@class,"border-") and not(.//div[@data-message-author-role])][1]' 'id("thread")'
+chatgpt.com#$#hide-if-matches-xpath 'id("thread")//*[contains(concat(" ",normalize-space(@class)," ")," bg-token-bg-tertiary ") and contains(concat(" ",normalize-space(@class)," ")," rounded-full ") and normalize-space(text())="Ad"]/ancestor::div[contains(concat(" ",normalize-space(@class)," ")," border-t ")][1]'
+chatgpt.com#$#hide-if-matches-xpath 'id("thread")//div[starts-with(@class,"border-") and not(contains(@class,"sidebar")) and contains(.,"Ad")]'
+chatgpt.com#$#hide-if-matches-xpath 'id("thread")//div[starts-with(@class,"border-") and not(contains(@class,"sidebar")) and contains(.,"Sponsored")]'

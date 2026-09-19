@@ -1,0 +1,91 @@
+! #CV-663
+aupetitparieur.com,mamieastuce.com,meilleurpronostic.fr##div[class] > div[id] > main[class][id]
+
+! #CV-170
+supertoinette.com#$#abort-on-property-read setInterval
+||www.planet.fr/foretimes^
+||viedemerde.fr/cuckolding^
+||ladepeche.fr/taffrail^
+||laprovence.com/fatalistic^
+||e-sante.fr/responsiblenesses^
+rtl.be##div[class="adm-ad-loading"]
+lephoceen.fr##div[class*="ad_ad__"]
+
+! #CV-662
+||1yv1phk.jaz.sportauto.fr^$script
+||1v9d7vx.jaz.sportauto.fr^$script
+||ib3i33.cob.autojournal.fr^$script
+||1v9d7vx.cob.autojournal.fr^$script
+||mssjxgfk.gos.autoplus.fr^$script
+||ovtyvnei.g00.closermag.fr^$script
+
+! #CV-368
+extreme-down.*,extreme-download.*,voiranime.*#$#abort-on-property-read NativeAd
+
+! #CV-667
+voiranime.*#$#abort-current-inline-script document.createElement String.fromCharCode
+extreme-down.*,extreme-download.*,filmtelecharger.net,libertyvf.co,libertyvf.com,libertyvf.tv,streaming-one.com#$#abort-current-inline-script Math zfgloaded
+
+! MISC
+hqq.*,netu.tv#$#abort-on-property-read ownerid
+hqq.*,netu.tv#$#abort-on-property-read _pop
+japscan.*#$#abort-on-property-read atob; abort-current-inline-script document.createElement String.fromCharCode; abort-current-inline-script Object.defineProperty XMLHttpRequest
+jpscan-vf.com#$#abort-on-property-read __formatsGetters
+blablastream.rip,frstream.rip,papadustream-to.lol,voirseries.*#$#abort-on-property-read localStorage; abort-on-property-write JSON.parse
+ianime-fr.com#$#abort-on-property-read document.createElement
+1freebb.com,babaorum.info,bboard.it,bestforum4u.com,bestforumforyou.com,bestoof.com,bestthread.com,bigboardlive.com,bigforum4you.com,boardforyou.com,cforum.info,clicforum.com,clicforum.fr,coolforum.info,discuforum.info,discussionforyou.com,ebboard.com,fansforum.info,forum-box.com,forumdesfans.com,forumforever.com,forumserv.com,hereboard.com,hotforum4u.com,hotforumonline.com,leforum.cc,leforum.eu,leforum.tv,level52.com,lolforum.com,lolforum.info,majz.com,myforumlive.com,newforumlive.com,ogameteam.com,phpboard1.com,positiforum.info,quickforum.info,smileforum.info,soforums.com,theforumcity.com,topbboard.com,urtopic.com,vraiforum.com,webrpg.info,xoo.it,xooit.be,xooit.biz,xooit.cc,xooit.co.uk,xooit.com,xooit.eu,xooit.fr,xooit.info,xooit.org,xooit.org.uk,xooit.tv#$#abort-on-property-read document.body.style.backgroundPosition
+
+0wn0.com,1forum.biz,1fr1.net,1talk.net,30yearsstillyoung.com,3oloum.com,3rab.pro,4umer.com,5turbo.org,666forum.com,7olm.org,ace.st,actieforum.com,actifforum.com,aforumfree.com,africamotion.net,ahladalil.com,ahlamontada.com,ahlamontada.net,ahlamountada.com,airesdelibertad.com,alamontada.com,alanoblebouffarde.com,aldeiarpg.com,all-up.com,ambiance-varadero.com,amoticos.org,arabepro.com,archeryonline.net,argyletd.com,artes-ana.com,audittpassion.com,avenir-vsp.com,bachandbachettefans.net,banouta.net,bbactif.com,beagle-attitude.com,benimforum.net,black-librarium.com,boxster-cayman.com,briefmarken-forum.com,bromptonforum.net,caferacerclub.org,camperfree.com,canadaboard.net,canadian-forum.com,cantal-leforum.com,casatridente.com,catsboard.com,cdnmilitarycollectors.com,chemin-de-memoire-parachutistes.org,clooneysopenhouse.com,club-bajaj.com,clubcb500x.com,clubgtipowers.com,clubtrackerarg.com,contrabaixobr.com,corvettepassion.com,coxengineforum.com,cro-wood.com,dan-moc.net,darkbb.com,deco-moderne-fr.com,desforums.net,detenteaujardin.com,discustoutsimplement.com,e30passion.com,easyforumpro.com,editboard.com,enbicielectrica.com,entreelles.org,exprimetoi.net,fcmulhousefans.com,filthy-secret.com,fmsp.net,focusrstteam.com,ford100e.org,foroactivo.com,foroactivo.com.es,forseps.org,forum-jardins.com,forum-zafira.com,forum2jeux.com,forumactif.com,forumactif.fr,forumactif.org,forumalgerie.net,forumattivo.it,forumbrasil.net,forumegypt.net,forumeiros.com,forumeiros.net,forumgamers.net,forumgaming.fr,forumgratuit.be,forumgratuit.ch,forumgratuit.org,forumgratuit.ro,forumgreek.com,forumgsr750.com,forumlaguna3.com,forumlumix.com,forumotion.com,forumotion.net,forumperso.com,forumpro.fr,forums-actifs.com,forumshiba.com,forumvi.com,fra.co,fritzbox-forum.com,fxsforexsrbijaforum.com,galoppourlavie.org,gid3an.com,giocattolivintage.com,glory-box-forum.com,goldwingpartage.com,goodforum.net,grisoghetto.com,gunetwork.org,hareketforum.net,hifi4sale.net,hooxs.com,i-love-harvard.com,iftopic.com,imperialgunneryforum.com,jeun.fr,jordanforum.net,kanak.fr,kawasaki-customs-forum.com,keuf.net,la-taverne-des-aventuriers.com,le-medaillon.org,le-site-de-la-citroen-xm.com,lebonforum.com,leforumlafigurine.com,legion-etrangere-munch.com,lemondedudiagauto.com,letrasyalgomas.com,levriers-forever.com,lights-camera-action.org,longluntan.com,mam9.com,manager-fifa.com,materielceleste.com,matostt.com,megane4forum.com,meilleurforum.com,minivanchrysler.com,mirbb.com,montres-russes.org,moseisleyraumhafen.com,mundoqashqai.com,never-utopia.com,niceboard.com,novaerarpg.com,onepiece-mangas.com,open-consoles.com,orizzontescuolaforum.net,ottobreaddicts.net,own0.com,palstani.com,passion-harley.net,passionmilitaria.com,passionphoto-passionmontage.com,pblvfrance3.com,photos-camions.com,planete4x4.com,portalmercedes.com,portalmercedesbrasil.com,pro-forum.fr,puntoevoforum.com,quilterslastresort.com,repartocorse2.com,rigala.net,roo7.biz,rpg-board.net,rpghogwarts.org,sanata.biz,sdvg-deti.com,serbianforum.info,sgt3r.com,shaveua.com,sheffieldboardgamers.com,small-tracks.org,sorcieremonique.com,sporepedia2.com,stickeristas.com,subarashiis.com,superforo.net,superforum.fr,survivarium.net,suzuki800.com,syriaforums.net,t5zone.com,terre-bitume.org,tubelesskite.net,ufologie-paranormal.org,unimog-mania.com,v2-honda.com,velovintageagogo.com,viterbikers.com,vivelecrpe.com,vstromhellasforum.com,walkingdead-rpg.com,warriorcatsnl.com,warriors-rpg.com,wwrail.net,yoo7.com,ze-43eme.com,zxr7team.com##a[onclick*="\x"]
+0wn0.com,1forum.biz,1fr1.net,1talk.net,30yearsstillyoung.com,3oloum.com,3rab.pro,4umer.com,5turbo.org,666forum.com,7olm.org,ace.st,actieforum.com,actifforum.com,aforumfree.com,africamotion.net,ahladalil.com,ahlamontada.com,ahlamontada.net,ahlamountada.com,airesdelibertad.com,alamontada.com,alanoblebouffarde.com,aldeiarpg.com,all-up.com,ambiance-varadero.com,amoticos.org,arabepro.com,archeryonline.net,argyletd.com,artes-ana.com,audittpassion.com,avenir-vsp.com,bachandbachettefans.net,banouta.net,bbactif.com,beagle-attitude.com,benimforum.net,black-librarium.com,boxster-cayman.com,briefmarken-forum.com,bromptonforum.net,caferacerclub.org,camperfree.com,canadaboard.net,canadian-forum.com,cantal-leforum.com,casatridente.com,catsboard.com,cdnmilitarycollectors.com,chemin-de-memoire-parachutistes.org,clooneysopenhouse.com,club-bajaj.com,clubcb500x.com,clubgtipowers.com,clubtrackerarg.com,contrabaixobr.com,corvettepassion.com,coxengineforum.com,cro-wood.com,dan-moc.net,darkbb.com,deco-moderne-fr.com,desforums.net,detenteaujardin.com,discustoutsimplement.com,e30passion.com,easyforumpro.com,editboard.com,enbicielectrica.com,entreelles.org,exprimetoi.net,fcmulhousefans.com,filthy-secret.com,fmsp.net,focusrstteam.com,ford100e.org,foroactivo.com,foroactivo.com.es,forseps.org,forum-jardins.com,forum-zafira.com,forum2jeux.com,forumactif.com,forumactif.fr,forumactif.org,forumalgerie.net,forumattivo.it,forumbrasil.net,forumegypt.net,forumeiros.com,forumeiros.net,forumgamers.net,forumgaming.fr,forumgratuit.be,forumgratuit.ch,forumgratuit.org,forumgratuit.ro,forumgreek.com,forumgsr750.com,forumlaguna3.com,forumlumix.com,forumotion.com,forumotion.net,forumperso.com,forumpro.fr,forums-actifs.com,forumshiba.com,forumvi.com,fra.co,fritzbox-forum.com,fxsforexsrbijaforum.com,galoppourlavie.org,gid3an.com,giocattolivintage.com,glory-box-forum.com,goldwingpartage.com,goodforum.net,grisoghetto.com,gunetwork.org,hareketforum.net,hifi4sale.net,hooxs.com,i-love-harvard.com,iftopic.com,imperialgunneryforum.com,jeun.fr,jordanforum.net,kanak.fr,kawasaki-customs-forum.com,keuf.net,la-taverne-des-aventuriers.com,le-medaillon.org,le-site-de-la-citroen-xm.com,lebonforum.com,leforumlafigurine.com,legion-etrangere-munch.com,lemondedudiagauto.com,letrasyalgomas.com,levriers-forever.com,lights-camera-action.org,longluntan.com,mam9.com,manager-fifa.com,materielceleste.com,matostt.com,megane4forum.com,meilleurforum.com,minivanchrysler.com,mirbb.com,montres-russes.org,moseisleyraumhafen.com,mundoqashqai.com,never-utopia.com,niceboard.com,novaerarpg.com,onepiece-mangas.com,open-consoles.com,orizzontescuolaforum.net,ottobreaddicts.net,own0.com,palstani.com,passion-harley.net,passionmilitaria.com,passionphoto-passionmontage.com,pblvfrance3.com,photos-camions.com,planete4x4.com,portalmercedes.com,portalmercedesbrasil.com,pro-forum.fr,puntoevoforum.com,quilterslastresort.com,repartocorse2.com,rigala.net,roo7.biz,rpg-board.net,rpghogwarts.org,sanata.biz,sdvg-deti.com,serbianforum.info,sgt3r.com,shaveua.com,sheffieldboardgamers.com,small-tracks.org,sorcieremonique.com,sporepedia2.com,stickeristas.com,subarashiis.com,superforo.net,superforum.fr,survivarium.net,suzuki800.com,syriaforums.net,t5zone.com,terre-bitume.org,tubelesskite.net,ufologie-paranormal.org,unimog-mania.com,v2-honda.com,velovintageagogo.com,viterbikers.com,vivelecrpe.com,vstromhellasforum.com,walkingdead-rpg.com,warriorcatsnl.com,warriors-rpg.com,wwrail.net,yoo7.com,ze-43eme.com,zxr7team.com##.croco_wrapper
+
+e-sushi.fr#$#abort-on-property-read aEteAffiche
+frandroid.com#$#hide-if-matches-xpath './/div[contains(@class,"-ad-center")]/ancestor-or-self::div[@class="optidigital-wrapper-div"][1]'
+frandroid.com#$#hide-if-matches-xpath './/div[contains(@id,"optidigital-adslot-Billboard_Infinite_")]/ancestor-or-self::div[@class="optidigital-wrapper-div"][1]/parent::div[contains(@class,"is-")][1]'
+frandroid.com#$#hide-if-matches-xpath './/div[@class="post-card__cover-inner"]/preceding::li[contains(@class,"post-2502961") or contains(@class,"post-2473352") or contains(@class,"post-2477058") or contains(@class,"post-2478184") or contains(@class,"post-2478196") or contains(@class,"post-2478304") or contains(@class,"post-2478304") or contains(@class,"post-2478900)") or contains(@class,"post-2479826)") or contains(@class,"post-2480094)") or contains(@class,"post-2481240)") or contains(@class,"post-2481326") or contains(@class,"post-2481936") or contains(@class,"post-2482146") or contains(@class,"post-2484626") or contains(@class,"post-2485792") or contains(@class,"post-2486100") or contains(@class,"post-2488986") or contains(@class,"post-2489340") or contains(@class,"post-2489366") or contains(@class,"post-2490942") or contains(@class,"post-2493640") or contains(@class,"post-2495048") or contains(@class,"post-2495136") or contains(@class,"post-2495146") or contains(@class,"post-2496486") or contains(@class,"post-2497392") or contains(@class,"post-2498190") or contains(@class,"post-2497436") or contains(@class,"post-2501467") or contains(@class,"post-2503539") or contains(@class,"post-2501729")]'
+
+gamekult.com#$#hide-if-matches-xpath './/a[@href][@data-track-category="native-ad"]/preceding::span[@target="js-modal-ad"]/parent::li[@data-id][1]'
+oxtorrent.*#$#hide-if-matches-xpath './/div[@style="position: fixed; inset: 0px; z-index: 2147483647; background: black; opacity: 0.01; height: 961px; width: 1854px;"]';
+anime-sama.*#$#abort-on-property-read aclib.runBanner
+
+automobile-propre.com#$#hide-if-matches-xpath '//div[contains(@class,"optidigital-ad-center-sticky")]/preceding::p[contains(text(),"annonce")]/parent::div[contains(@class,"max-md:!hidden")][1]'
+automobile-propre.com##div[data-ref="halfpage-ad"]
+automobile-propre.com##div[class*="ad-desktop"]
+pausemusicale.com#$#hide-if-matches-xpath './/div[contains(@id,"hit-inc-")][@style="min-height:280px"]'
+lenouvelliste.ch##.components-advertisement
+cnews.fr#$#hide-if-matches-xpath './/div[contains(@class,"-ads")]/parent::div[1]'
+mairesdefrance.com##div>a[href*="smartadserver.com"]
+fs-miroir6.lol##div[style^="position: fixed; inset: 0px; z-index: 2147483647; pointer-events: auto;"] {remove:true;}
+journaldugeek.com#$#hide-if-matches-xpath './/div[contains(@class,"bg-neutral-100")]/following::div[contains(@id,"adslot")][@style]/ancestor::div[contains(@class,"text-center")]'
+fs14.lol,fss.lol#$#abort-current-inline-script String.fromCharCode 2147483647
+ledemondujeu.com#$#prevent-element-src-loading script player.fabster.com
+zone-torrent.org#$#hide-if-matches-xpath '//iframe[contains(@style,"top: -1000px") and contains(@style,"left: -1000px")]/self::iframe'
+french-stream.*#$#abort-on-property-write _vrhxb; abort-on-property-write _uhkeedds; abort-current-inline-script EventTarget.prototype.addEventListener 'delete window';
+euautopieces.fr#$#hide-if-matches-xpath './/div[contains(@class,"popup-overflow")]/parent::div[contains(@id,"traffic_banner_wrapper")]'
+orange.fr#$#hide-if-matches-xpath './/div[.="Annonce"]/parent::div[@id="in8-skyscraper-display"]'
+jeanmarcmorandini.com#$#hide-if-matches-xpath './/div/div[contains(@class,"jmm_ads") and contains(@id,"jmm_ads")]/ancestor::div[@class="ban-bottom-desktop"]'
+jeanmarcmorandini.com##div[class*="jmm_ads"][id*="jmm_ads"]
+jeanmarcmorandini.com##div[class*="jmm-ads"][id*="jmm-ads"]
+||*/sdk.js$domain=meilleurpronostic.fr|aupetitparieur.com
+||fabster.com/autoplay.mp4^$domain=aupetitparieur.com|meilleurpronostic.fr
+
+! Popup/Popunder
+french-streams.com,down-paradise.com,mega-p2p.net,jetanimes.*,voirseries.*#$#abort-on-property-read open
+supersexeamateur.com,manga-scantrad.net,toonanime.*#$#abort-current-inline-script document.querySelectorAll popMagic
+batporno.com#$#abort-on-property-read decodeURI
+vostfree.*#$#abort-on-property-write _pop
+animecomplet.*,cpasbien.ch,cpasbien.si,dadyflix.co,dl-protect.*,dl-protect1.com,ed-protect.org,extreme-down.*,extreme-download.*,filmsexeporno.com,french-stream.*,hds-streaming.tv,hdss.la,hdss.to,ianime-fr.com,japscan.*,jetanimes.*,lelscanfr.com,lelscans.net,mavanimes.*,streaming-french.*,streamingfrance.com,summarynetworks.com,toonanime.*,torrent9.*,vanime.*,vf-film.net,voirseries.*,vostanimey.net,vostanimez.tv,vostfree.*,wawacity.*,zone-annuaire.*,zone-telechargement.*#$#abort-current-inline-script document.documentElement /atob|case|JSON.parse/; abort-current-inline-script String.fromCharCode /atob|break/; abort-on-property-write JSON.parse; abort-current-inline-script Math /atob|break/;
+mavanimes.*,toonanime.*#$#abort-current-inline-script document.documentElement /atob|break|JSON.parse/; abort-current-inline-script String.fromCharCode /atob|break/; abort-current-inline-script Math /atob|break/;
+protege-torrent.com#$#abort-on-property-write JSON.parse; abort-current-inline-script Math /atob|break/;
+japscan.*,mavanimes.*#$#abort-current-inline-script JSON.parse;
+strtapeadblock.me#$#abort-on-property-write _pao
+||tirexo.day^$csp=script-src 'self'
+wawacity.*,zone-telechargement.*#$#abort-current-inline-script JSON.stringify
+tirexo.day,oxtorrent.*#$#abort-on-property-read window.open
+extreme-down.*,zone-telechargement.*#$#abort-on-property-read decodeURIComponent
+f75s.com,fs14.lol#$#abort-on-property-write window.open; abort-current-inline-script EventTarget.prototype.addEventListener 'delete window'
+cpasbien.*#$#abort-on-property-read aclib false
+cpasbien.*#$#hide-if-matches-xpath '//div[contains(@style,"z-index: 2147483647")]/ancestor-or-self::*[1]'; hide-if-matches-xpath './/iframe[(@style="position: absolute; top: -1000px; left: -1000px; visibility: hidden; border: medium none; background-color: transparent;")][@width and @height]/self::*[1]'
+||horizontallyresearchpolar.com^$popup,domain=nakastream.tv
+nakastream.*#$#replace-fetch-response /("adsterraSmartLink[0-9]?":")[^"]+/ '$1' 'adsterraSmartLink'
+french-stream.*,fs15.lol,fs17.lol,fs21.lol#$#override-property-read aclib.runPop noopFunc
+playmogo.com#$#prevent-element-src-loading script /doodcdn\\.io\/ads\/ad\\.js/

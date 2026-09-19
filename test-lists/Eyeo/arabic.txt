@@ -1,0 +1,24 @@
+! MISC
+33sk.tv,3sk.*,esheeq.co#$#abort-on-property-read atob; abort-on-property-write Fingerprint2; abort-on-property-read decodeURIComponent; abort-on-property-read RegExp
+topcinema.*#$#hide-if-matches-xpath './/div[(@style="position: fixed; inset: 0px; z-index: 2147483647; pointer-events: auto;") or (@class and starts-with(@style, "pointer-events: none; position: absolute; top: 0px; left: 0px; width:"))]';
+
+stardima.*#$#abort-current-inline-script document.createElement /break|case/
+iegybest.*#$#abort-on-property-read attr
+
+! #CV-685
+arabseed.*#$#abort-on-property-read atob; abort-on-property-read decodeURI; abort-on-property-read decodeURIComponent
+hawak.net#$#abort-on-property-read atob
+
+! #CV-667
+actionz.tv,animetak.net,arabseed.*,beinconnect.*,brstej.com,coroot.blogspot.com,filmey.tv,kora-online.tv,ktarab.com,movs4u.*#$#abort-current-inline-script Math zfgloaded
+
+! Popup/Popunder/Clickunder
+egyanime.*,egydead.*#$#abort-on-property-write _pop
+actionz.tv,cimaclub.com,cimaclub.in,elmstba.com,hawak.net,lodynet.*#$#abort-on-property-read decodeURIComponent
+egy.*,egybest.*,egybest2.*,iegy.*#$#abort-on-property-read open
+akhbara24.news,anime4up.*,arabseed.*,asia2tv.*,cima-club.*,cima4u.*,cimalina.*,egy-live.online,egyanime.com,egydead.*,egynow.*,faselhd.*,hawak.net,iegybest.co,lodynet.*,manga.ae,moshahda.net,movizland.online,shahed4u.*,shaheed4u.*,shahid4uu.*,shahidd4u.*,tuktukcinema.*,witanime.com,yalla-shoot.today#$#abort-current-inline-script document.documentElement /atob|case|JSON.parse/; abort-current-inline-script String.fromCharCode /atob|break/; abort-on-property-write JSON.parse; abort-current-inline-script Math /atob|break/;
+cima-club.*#$#abort-on-property-read window.zfgstorage
+topcinema.*,topcinemaa.*#$#abort-on-property-write zfgformats; abort-on-property-write window.open; abort-current-inline-script EventTarget.prototype.addEventListener 'delete window'; abort-current-inline-script atob ChmaorrC; abort-on-property-write zfgproxyhttp;
+
+! #CV-754
+akoam.*,akwam.*,gateanime.com#$#abort-on-property-read String.fromCharCode

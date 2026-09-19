@@ -1,0 +1,81 @@
+
+! #CV-705
+www.wp.pl#$#abort-on-property-read SlotRegistrar; abort-current-inline-script PRELOAD randvar
+dobreprogramy.pl#$#abort-on-property-read wp_adv_labels
+abczdrowie.pl#$#abort-on-property-read slot.parentElement
+autokult.pl,fotoblogia.pl,gadzetomania.pl,kafeteria.pl,komorkomania.pl,medycyna24.pl,smaczneblogi.pl#$#abort-on-property-read __wpApi
+autokult.pl,fotoblogia.pl,gadzetomania.pl,kafeteria.pl,komorkomania.pl,medycyna24.pl,smaczneblogi.pl#$#abort-current-inline-script document.getElementsByTagName slParent
+abczdrowie.pl,echirurgia.pl,nerwica.com,parenting.pl,twojeip.wp.pl#$#abort-current-inline-script document.querySelector registerSlot
+money.pl#$#abort-current-inline-script document.querySelector querySelector
+money.pl#?#div:-abp-has(> img[src$="/bg.png"])
+finanse.wp.pl#$#abort-on-property-read prebidConfig.hbA
+film.wp.pl,finanse.wp.pl,gwiazdy.wp.pl,moto.wp.pl,opinie.wp.pl,teleshow.wp.pl,wawalove.wp.pl#$#abort-on-property-read prebidConfig.hb
+pogoda.wp.pl#$#abort-on-property-read prebidConfig.config.floorprices
+autokult.pl#?#figure[class^="insert"]:-abp-has(var + script)
+autokult.pl#$#abort-on-property-write scriptTag
+autocentrum.pl,autokult.pl,horoskop.wp.pl,kardiolo.pl#$#abort-on-property-write rekid
+dom.wp.pl,twojeip.wp.pl#$#abort-on-property-read rekid
+facet.wp.pl,ksiazki.wp.pl,money.pl,moneyv.wp.pl,tech.wp.pl#$#abort-on-property-read pbjs.bidderSettings
+kuchnia.wp.pl#$#abort-on-property-read pbjs.libLoaded
+turystyka.wp.pl#$#abort-on-property-read pbjsChunk
+dom.wp.pl,facet.wp.pl#?#.view-first:-abp-has(a[onclick*="var img = document.createElement('img');"])
+o2.pl,wp.pl#?#div:-abp-has(> script:-abp-contains(adsFirstRegisterSlot))
+money.pl,pudelek.pl#?#div:-abp-has(> div > script:-abp-contains(registerPlaceholder))
+parenting.pl#$#abort-on-property-read slot
+dom.wp.pl,facet.wp.pl,film.wp.pl,finanse.wp.pl,gry.wp.pl,gwiazdy.wp.pl,kobieta.wp.pl,ksiazki.wp.pl,kuchnia.wp.pl,moto.wp.pl,opinie.wp.pl,tech.wp.pl,teleshow.wp.pl,turystyka.wp.pl,wawalove.wp.pl,wiadomosci.wp.pl#$#abort-on-property-write window.INITIAL_STATE.ui
+abczdrowie.pl,dobreprogramy.pl,echirurgia.pl,parenting.pl,wp.pl#$#override-property-read rekid undefined; override-property-read rekids undefined;
+o2.pl,wp.pl#?#div:-abp-has(> script:-abp-contains(=== 'function'))
+
+abczdrowie.pl,autocentrum.pl,autokult.pl,dobreprogramy.pl,echirurgia.pl,fotoblogia.pl,gadzetomania.pl,kafeteria.pl,kardiolo.pl,komorkomania.pl,medycyna24.pl,money.pl,nerwica.com,o2.pl,open.fm,parenting.pl,~poczta.wp.pl,polygamia.pl,pudelek.pl,smaczneblogi.pl,wp.pl#$#hide-if-matches-xpath './/div[@class and @* and not (@id)]//a[@class and @* and not (@id)][string-length(@href)>1000]//div[@class]//img[@class and @* and not (@id)][string-length(@src)>100]/ancestor::div[@class and @* and not(@id)][3]'
+abczdrowie.pl,autocentrum.pl,autokult.pl,dobreprogramy.pl,echirurgia.pl,fotoblogia.pl,gadzetomania.pl,kafeteria.pl,kardiolo.pl,komorkomania.pl,medycyna24.pl,money.pl,nerwica.com,o2.pl,open.fm,parenting.pl,~poczta.wp.pl,pudelek.pl,smaczneblogi.pl,wp.pl#$#hide-if-matches-xpath '//a[string-length(@href)>1000]/img[@class and @*[not(name() = "class")]][string-length(@src)>125]'
+
+abczdrowie.pl,autocentrum.pl,autokult.pl,dobreprogramy.pl,echirurgia.pl,fotoblogia.pl,gadzetomania.pl,kafeteria.pl,kardiolo.pl,komorkomania.pl,medycyna24.pl,money.pl,nerwica.com,o2.pl,open.fm,parenting.pl,~poczta.wp.pl,polygamia.pl,pudelek.pl,smaczneblogi.pl,~sportowefakty.wp.pl,wp.pl#$#hide-if-matches-xpath '//div[@class and @*[not(@class)]=""]/div[not(*) and not(normalize-space())][@class and @*[not(@class)]=""]/ancestor::div[@class and @*[not(@class)]=""][contains(@class," ")][contains(@*[not(@class)]," ")][string-length(@*[not(@class)]) > 25][not(starts-with(@class,"app-container") or starts-with(@class,"sticky-wrapper"))]'
+autokult.pl,dobreprogramy.pl,echirurgia.pl,money.pl,o2.pl,pudelek.pl,wp.pl#$#hide-if-matches-xpath '//div[@id]/a[@id]/img[string-length(@src) < 120][contains(normalize-space()," ")][@class="img-full show"]/ancestor::div[1]'
+abczdrowie.pl,autocentrum.pl,autokult.pl,dobreprogramy.pl,echirurgia.pl,fotoblogia.pl,gadzetomania.pl,kafeteria.pl,kardiolo.pl,komorkomania.pl,medycyna24.pl,money.pl,nerwica.com,o2.pl,open.fm,parenting.pl,~poczta.wp.pl,polygamia.pl,pudelek.pl,smaczneblogi.pl,~sportowefakty.wp.pl,wp.pl#$#hide-if-matches-xpath '//a[string-length(@href)>1000]/img[@src]/ancestor::div[.//span[normalize-space(text())="REKLAMA"]][1][string-length(normalize-space()) < 100]'
+autokult.pl,dobreprogramy.pl,echirurgia.pl,fotoblogia.pl,gadzetomania.pl,kafeteria.pl,komorkomania.pl,medycyna24.pl,money.pl,o2.pl,pudelek.pl,wp.pl#$#hide-if-matches-xpath '//div[@*]/p[contains(normalize-space(), " ")][@*]/preceding-sibling::label[1][@class]/ancestor::div[2]'
+money.pl#$#hide-if-matches-xpath '//div[@id]/following::a[@class]/img[string-length(@src) < 130]/ancestor::div[1]'
+
+o2.pl#$#hide-if-matches-xpath '//div[.//script[contains(.,"__INIT_CONFIG__")]][not(.//a)][.//span[normalize-space(text())="REKLAMA"]]'
+o2.pl##div.wp-section-placeholder-container {remove:true;}
+
+abczdrowie.pl,autocentrum.pl,autokult.pl,dobreprogramy.pl,echirurgia.pl,fotoblogia.pl,gadzetomania.pl,kafeteria.pl,kardiolo.pl,komorkomania.pl,medycyna24.pl,money.pl,nerwica.com,o2.pl,open.fm,parenting.pl,~poczta.wp.pl,polygamia.pl,pudelek.pl,smaczneblogi.pl,wp.pl#$#hide-if-matches-xpath '//ul[@class]/li[string-length(@class)<=25][contains(normalize-space(), " ")]/img[string-length(@src) >140]/following-sibling::span/a[string-length(@href) > 2000]/ancestor::li'
+
+poczta.o2.pl#$#hide-if-matches-xpath './/a[@class][contains(@href,"wp.pl/")]/parent::div[@style]/ancestor-or-self::div[@class][@slot="NATIVE_FEED"]/parent::div[1]'
+poczta.o2.pl#$#hide-if-matches-xpath './/div[@class]/iframe[@sandbox][contains(@src,"wpcdn.pl/tag/poczta.o2.pl/")]/ancestor::div[string-length(@class) >30]'
+poczta.o2.pl#$#hide-if-matches-xpath '//div[@class]/following-sibling::a[@target="_blank"]/following::div[@class][@id][@style]/preceding::div[@class][1]'
+poczta.o2.pl#$#hide-if-matches-xpath '//div[@class]/div[@style="height: 60px;"]/a[contains(@href,"poczta.o2.pl/")]/div/following::div[2]/following-sibling::img[contains(@src,"v.wpimg.pl/")]/following-sibling::div[@class]/parent::div'
+poczta.o2.pl##img[src*="wpimg.pl/"]
+poczta.o2.pl##dd-holder[slot^="BANNER_TOP"]
+poczta.o2.pl##dd-holder[slot^="DOUBLE_BILLBOARD"]
+poczta.o2.pl##dd-holder[slot^="FEED_RECTANGLE_"]
+poczta.o2.pl###placeholder56
+sportowefakty.wp.pl#$#hide-if-matches-xpath './/a[@href][@class][@*]/img[@class][@src][not(@alt)]/parent::a/ancestor::div[not(contains(@class,"layout"))][string-length(@class)>=5][contains(normalize-space(), "")][3]'; hide-if-matches-xpath './/*[@class]//a[@target][contains(@href,"adblock")]/parent::div//ancestor::div[not(contains(@class,"npp-container")) and not(string-length(@class)=41) and not(string-length(@class)=7) and not(contains(@*,"layout")) and not(contains(@class,"column"))][5]/div[@class]'; hide-if-matches-xpath './/img[string-length(@src)>155]/following::span/a[string-length(@href)>1000]/ancestor::li[@class]';
+
+www.wp.pl#$#hide-if-matches-xpath '//div[contains(@class, " ")][div[last()][text()="REKLAMA"]][div[1]//a/div[not(node())]]'
+www.wp.pl#$#hide-if-matches-xpath '//div[contains(@class, " ")][.//span[text()="REKLAMA"]][script[contains(., "LayoutChangeAdManager")]]'
+www.wp.pl#$#hide-if-matches-xpath '//div[contains(@class, " ")][img[1][starts-with(@src, "https://v.wpimg.pl/")]][div[2][position() = last()][not(node())]]'
+www.wp.pl#$#hide-if-matches-xpath '//div[contains(@class, " ")][img[1][starts-with(@src, "https://v.wpimg.pl/")]][*[2][self::div][contains(@class, " ")]][*[3][self::script][position() = last()]]';
+www.wp.pl#$#abort-on-property-write Object.prototype.reloadedSlots
+www.wp.pl#$#abort-on-property-write Object.prototype.directOnly
+www.wp.pl#$#abort-on-property-write Object.prototype.gafDirect
+www.wp.pl#$#abort-on-property-write Object.prototype.bodyCode
+www.wp.pl#$#abort-on-property-write Object.prototype.advViewability
+
+o2.pl##div[class$="cevoIl"]
+
+money.pl#$#simulate-mouse-event 'xpath(.//div[@class]//div[contains(text(),"REKLAMA")]/following-sibling::div[contains(text(),"Przejdź teraz")])$delay=0'
+
+! MISC
+www.elektroda.pl#$#abort-on-property-read popupStatus; abort-on-property-write welcomeAdContainer
+naekranie.pl#$#abort-on-property-read adQueue
+gierkionline.pl#$#hide-if-matches-xpath './/div[@id]//div[contains(text(),"Reklama")]/parent::div[contains(@class,"banner")]/ancestor::div[@id][@class][1]'
+wykop.pl#$#hide-if-matches-xpath './/section[starts-with(@data-label, "ad: ")]/section[@*[starts-with(name(),"data-v")]]/parent::*[1]'; hide-if-matches-xpath './/aside[./section[starts-with(@data-label, "ad: ")]]/section[@*[starts-with(name(),"data-v")]]/parent::*[1]'
+
+! video ads
+||g.cda.pl/player*?ads&vi*^$xmlhttprequest,domain=cda.pl
+
+! Popup/Popunder/Clickunder
+strumyk.*#$#abort-on-property-read aclib;
+ebd.cda.pl#$#abort-on-property-write window.open
+filmy69.pl,oglaszamy24.pl#$#abort-current-inline-script document.querySelectorAll popMagic
+oglaszamy24.pl#$#abort-on-property-write onload
