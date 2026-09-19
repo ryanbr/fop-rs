@@ -114,9 +114,9 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--check-banned-list=FILE` | Check for banned domains in git additions |
 | `--auto-banned-remove` | Auto-remove banned domains and commit |
 | `--ci` | CI mode - exit with error code on failures (banned domains) |
-| `--rebase-on-fail` | Auto `git pull --rebase --autostash` and retry when a push fails. **On by default** |
+| `--rebase-on-fail` | Auto `git pull --rebase --autostash` and retry when a push fails, up to 3 times when another push keeps landing first. Stops at a merge conflict with instructions to finish it. A commit that could not be published makes FOP exit 1. **On by default** |
 | `--threads=N` | Worker threads for the parallel pool. Defaults to the core count capped at 8; overrides `RAYON_NUM_THREADS`. |
-| `--no-rebase-on-fail` | Don't auto-rebase; print the suggested `git pull --rebase` command and stop |
+| `--no-rebase-on-fail` | Don't auto-rebase; print the suggested `git pull --rebase` command and stop (exit 1) |
 | `--commit-mask=N` | Mask URLs in commit messages (1=`[.]`, 2=`(.)`, 3=space, 4=preserve subdomain dot, 5=Unicode lookalike `․`) |
 | `--no-commit-mask` | Disable URL masking even when `.fopconfig` sets `commit-mask` (`--commit-mask=0` cannot: 0 falls through to level 1) |
 | `--commit-mask-users=u1,u2` | Restrict `--commit-mask` to these `git config user.name` values (lowercased) |

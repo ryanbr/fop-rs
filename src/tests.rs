@@ -3532,6 +3532,76 @@ fn test_remote_moved_on() {
     }
 }
 
+/// A bare remote and a clone of it, both removed on drop.
+fn remote_and_clone(name: &str) -> (ScratchRepo, ScratchRepo) {
+    let remote = ScratchRepo::new(&format!("{}-remote", name));
+    std::fs::remove_dir_all(&remote.0).unwrap();
+    std::fs::create_dir_all(&remote.0).unwrap();
+    remote.git(&["init", "-q", "--bare", "-b", "main"]);
+    let seed = ScratchRepo::new(&format!("{}-seed", name));
+    seed.write("list.txt", "! Title: t\n||a.com^\n||b.com^\n");
+    seed.write("other.txt", "x\n");
+    seed.git(&["add", "."]);
+    seed.git(&["commit", "-qm", "init"]);
+    seed.git(&["push", "-q", &remote.0.display().to_string(), "main"]);
+    let clone = ScratchRepo::new(&format!("{}-clone", name));
+    std::fs::remove_dir_all(&clone.0).unwrap();
+    let out = std::process::Command::new("git")
+        .args(["clone", "-q"]).arg(&remote.0).arg(&clone.0).output().unwrap();
+    assert!(out.status.success());
+    clone.git(&["config", "user.email", "t@t"]);
+    clone.git(&["config", "user.name", "t"]);
+    (remote, clone)
+}
+
+/// Another clone pushes `file` with `content` to the remote.
+fn push_from_elsewhere(remote: &ScratchRepo, name: &str, file: &str, content: &str) {
+    let other = ScratchRepo::new(name);
+    std::fs::remove_dir_all(&other.0).unwrap();
+    let out = std::process::Command::new("git")
+        .args(["clone", "-q"]).arg(&remote.0).arg(&other.0).output().unwrap();
+    assert!(out.status.success());
+    other.git(&["config", "user.email", "t@t"]);
+    other.git(&["config", "user.name", "t"]);
+    other.write(file, content);
+    other.git(&["commit", "-qam", "elsewhere"]);
+    other.git(&["push", "-q", "origin", "main"]);
+}
+
+#[test]
+fn test_pull_and_push_stops_at_a_conflict() {
+    // The pull after committing hit a conflict: a rebase is left in progress
+    // with HEAD detached. It used to push regardless, failing in a cascade of
+    // errors that never said "conflict", and exit 0. It must stop, push
+    // nothing, and leave the commit to be finished by hand.
+    use crate::fop_git::{pull_and_push, PushOutcome, GIT};
+    let (remote, clone) = remote_and_clone("pp-conflict");
+    clone.write("list.txt", "! Title: t\n||a.com^\n||b.com^\n||c.com^\n");
+    clone.git(&["commit", "-qam", "mine"]);
+    push_from_elsewhere(&remote, "pp-conflict-other", "list.txt", "! Title: t\n||a.com^\n||b.com^\n||z.org^\n");
+    let before = remote.git(&["rev-parse", "main"]);
+
+    assert!(matches!(pull_and_push(&clone.cmd(), &GIT, true, true), PushOutcome::Stopped));
+    assert_eq!(remote.git(&["rev-parse", "main"]), before, "something was pushed");
+    assert!(!clone.git(&["diff", "--name-only", "--diff-filter=U"]).is_empty(), "no conflict left to resolve");
+    // The commit is intact, waiting on the rebase
+    assert!(clone.git(&["log", "--all", "--format=%s"]).lines().any(|s| s == "mine"));
+}
+
+#[test]
+fn test_pull_and_push_rebases_onto_a_clean_change() {
+    // The usual case: someone pushed an unrelated change. The pull rebases
+    // over it and the push lands on top.
+    use crate::fop_git::{pull_and_push, PushOutcome, GIT};
+    let (remote, clone) = remote_and_clone("pp-clean");
+    clone.write("list.txt", "! Title: t\n||a.com^\n||b.com^\n||c.com^\n");
+    clone.git(&["commit", "-qam", "mine"]);
+    push_from_elsewhere(&remote, "pp-clean-other", "other.txt", "y\n");
+
+    assert!(matches!(pull_and_push(&clone.cmd(), &GIT, true, true), PushOutcome::Pushed));
+    assert_eq!(remote.git(&["log", "--format=%s", "main"]).lines().collect::<Vec<_>>(), ["mine", "elsewhere", "init"]);
+}
+
 #[test]
 fn test_regex_pseudo_arguments_kept() {
     // Their arguments are regexes, where `+` and `>` are not combinators:

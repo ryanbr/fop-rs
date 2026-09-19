@@ -3108,6 +3108,7 @@ fn main() {
                 eprintln!("Error writing diff file: {}", e);
             }
         }
+        fop_git::exit_if_unpublished();
         return;
     }
 
@@ -3251,4 +3252,7 @@ fn main() {
 
     // Flush any buffered warnings to file
     flush_warnings();
+
+    // A commit that could not be published exits 1, now the rest is done
+    fop_git::exit_if_unpublished();
 }
