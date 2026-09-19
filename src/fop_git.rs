@@ -1610,7 +1610,7 @@ fn report_unresolved_merge(base_cmd: &[String]) -> ! {
 
 /// Push attempts after the first fails, each after a fresh rebase. More than
 /// one, since on a busy repository the retry can lose the same race again.
-const PUSH_RETRIES: usize = 3;
+const PUSH_RETRIES: usize = 5;
 
 /// Attempt rebase and retry push after initial push failure. Whether the
 /// commit was published.
