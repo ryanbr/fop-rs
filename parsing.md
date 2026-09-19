@@ -1,214 +1,418 @@
 # FOP Filter Parsing Reference
 
-## Network Filter Options
+What FOP recognises, rewrites, merges and leaves alone, across Adblock Plus
+(eyeo), uBlock Origin and AdGuard syntax.
 
-### Recognised Options
+The **ABP / uBO / AdGuard** columns say which blocker documents the syntax.
+The **Lists** column says which snapshot in [`test-lists/`](test-lists) uses
+it: **A** = AdGuard filters, **E** = eyeo's lists (the Eyeo folder), **U** =
+uBlock filters (uAssets). The **FOP** column says what FOP does with it.
+Snapshot usage was surveyed in September 2026.
 
-| Option | ABP | uBO | AdGuard | Notes |
-|--------|-----|-----|---------|-------|
-| `script` | Yes | Yes | Yes | |
-| `image` | Yes | Yes | Yes | |
-| `stylesheet` | Yes | Yes | Yes | |
-| `font` | Yes | Yes | Yes | |
-| `media` | Yes | Yes | Yes | |
-| `popup` | Yes | Yes | Yes | |
-| `document` | Yes | Yes | Yes | |
-| `subdocument` | Yes | Yes | Yes | |
-| `xmlhttprequest` | Yes | Yes | Yes | |
-| `websocket` | Yes | Yes | Yes | |
-| `webrtc` | Yes | Yes | Yes | |
-| `ping` | Yes | Yes | Yes | |
-| `object` | Yes | Yes | Yes | |
-| `object-subrequest` | Yes | - | - | Legacy |
-| `other` | Yes | Yes | Yes | |
-| `third-party` | Yes | Yes | Yes | |
-| `match-case` | Yes | Yes | Yes | |
-| `collapse` | Yes | Yes | - | |
-| `elemhide` | Yes | Yes | Yes | |
-| `generichide` | Yes | Yes | Yes | |
-| `genericblock` | Yes | - | - | |
-| `important` | - | Yes | Yes | |
-| `badfilter` | - | Yes | Yes | |
-| `all` | - | Yes | Yes | |
-| `popunder` | - | - | Yes | |
-| `empty` | - | Yes | - | |
-| `cname` | - | Yes | - | |
-| `inline-script` | - | Yes | - | |
-| `network` | - | - | Yes | |
-| `content` | - | - | Yes | |
-| `extension` | - | - | Yes | |
-| `jsinject` | - | - | Yes | |
-| `stealth` | - | - | Yes | |
-| `cookie` | - | - | Yes | |
+- [How FOP reads a line](#how-fop-reads-a-line)
+- [Network filter options](#network-filter-options)
+- [Option conversion](#option-conversion)
+- [Cosmetic rule separators](#cosmetic-rule-separators)
+- [Pseudo-classes](#pseudo-classes)
+- [Scriptlets, snippets and injection](#scriptlets-snippets-and-injection)
+- [Domains](#domains)
+- [Directives and hints](#directives-and-hints)
+- [Whitespace](#whitespace)
+- [Sorting and merging](#sorting-and-merging)
+- [Rules removed with a warning](#rules-removed-with-a-warning)
+- [Typo detection and fixing](#typo-detection-and-fixing)
+- [Checks on added rules](#checks-on-added-rules)
+- [Known limitations](#known-limitations)
 
-### Recognised Options with Values
+## How FOP reads a line
 
-| Option | ABP | uBO | AdGuard | Notes |
-|--------|-----|-----|---------|-------|
-| `domain=` | Yes | Yes | Yes | Pipe-separated domains |
-| `csp=` | Yes | Yes | Yes | Content Security Policy |
-| `redirect=` | - | Yes | Yes | |
-| `redirect-rule=` | - | Yes | - | |
-| `rewrite=` | Yes | - | - | ABP resource rewrite |
-| `replace=` | - | - | Yes | |
-| `removeparam=` | - | Yes | Yes | |
-| `removeheader=` | - | Yes | Yes | |
-| `addheader=` | - | - | Yes | |
-| `responseheader=` | - | Yes | - | |
-| `header=` | - | Yes | - | |
-| `permissions=` | - | Yes | - | |
-| `referrerpolicy=` | - | Yes | - | |
-| `jsonprune=` | - | - | Yes | Commas in value preserved |
-| `denyallow=` | - | Yes | Yes | |
-| `to=` | - | Yes | - | |
-| `from=` | - | Yes | - | Converted to `domain=` |
-| `method=` | - | Yes | Yes | |
-| `sitekey=` | Yes | - | Yes | |
-| `app=` | - | - | Yes | |
-| `ipaddress=` | - | - | Yes | |
-| `urltransform=` | - | Yes | - | |
-| `uritransform=` | - | Yes | - | |
-| `urlskip=` | - | Yes | - | |
-| `reason=` | - | - | Yes | |
-| `cookie=` | - | - | Yes | |
+| Line | Treated as | Notes |
+|------|-----------|-------|
+| `! ...` | Comment | Kept in place, and ends the section above it. Only the rules between two comments are sorted together. |
+| `[Adblock Plus 2.0]` | Header | Kept in place; ends a section |
+| `%include file` | Include directive | Kept in place; ends a section |
+| `!#if`, `!#else`, `!#endif`, `!#include`, `!#safari_cb_affinity` | Comment | Rules never cross a directive. See [Directives and hints](#directives-and-hints). |
+| `!+ NOT_OPTIMIZED`, `!+ PLATFORM(...)` | Comment | See [Known limitations](#known-limitations). |
+| `domains##selector` and the other separators | Cosmetic rule | Domains lowercased and sorted, selector tidied, then merged. Which separators qualify depends on the mode; see [Cosmetic rule separators](#cosmetic-rule-separators). |
+| Cosmetic rule the mode does not cover | Left as written | Sorted in place like a network rule, but its text is untouched. The option tidying never touches a line containing a cosmetic separator. |
+| `/regex/##selector` (uBO regex domain) | Left as written | |
+| `[$path=...]domain##selector` | Left as written | AdGuard's cosmetic modifiers |
+| `/regex/` or `/regex/$options` | Regex network rule | The pattern is left as written, spaces included |
+| `0.0.0.0 host` / `127.0.0.1 host` | Hosts entry | With `--localhost`: sorted by host, left as written |
+| Anything else | Network rule | Options sorted and normalised |
+| Empty line | Removed | Unless `--keep-empty-lines`, where it also ends a section |
 
-## uBO Short Option Conversion
+Windows line endings (CRLF) are converted to LF, with a warning.
 
-When `--convert-ubo` is enabled (default), short options are expanded:
+## Network filter options
 
-| uBO Short | Converts To |
-|-----------|-------------|
-| `xhr` | `xmlhttprequest` |
+Recognised options pass the [checks on added rules](#checks-on-added-rules).
+An option FOP does not know gives a warning while sorting. Under
+`--check-rules-on-add` it is reported as a defect, and
+`--remove-bad-rules` deletes the rule.
+
+### Content types
+
+| Option | ABP | uBO | AdGuard | Lists | FOP |
+|--------|-----|-----|---------|-------|-----|
+| `script` | Yes | Yes | Yes | A E U | |
+| `image` | Yes | Yes | Yes | A E U | |
+| `stylesheet` | Yes | Yes | Yes | A E U | `css` converts to it |
+| `font` | Yes | Yes | Yes | A E | |
+| `media` | Yes | Yes | Yes | A E U | |
+| `object` | Yes | Yes | Yes | A E U | |
+| `subdocument` | Yes | Yes | Yes | A E U | `frame` and `iframe` convert to it |
+| `xmlhttprequest` | Yes | Yes | Yes | A E U | `xhr` and `xml` convert to it |
+| `websocket` | Yes | Yes | Yes | A | |
+| `ping` | Yes | Yes | Yes | E U | |
+| `popup` | Yes | Yes | Yes | A E U | |
+| `document` | Yes | Yes | Yes | A E U | `doc` converts to it |
+| `other` | Yes | Yes | Yes | A E U | |
+| `webrtc` | Yes | - | Removed | | Recognised |
+| `object-subrequest` | Removed | - | Removed | | Recognised (legacy) |
+| `webbundle` | - | - | - | | Recognised (a Web Bundle request type) |
+| `popunder` | - | Yes | - | U | |
+| `inline-script` | - | Yes | Yes | U | |
+| `inline-font` | - | Yes | Yes | | |
+| `beacon` | - | - | - | | Recognised |
+| `all` | - | Yes | Yes | A U | |
+
+### Party and matching
+
+| Option | ABP | uBO | AdGuard | Lists | FOP |
+|--------|-----|-----|---------|-------|-----|
+| `third-party` | Yes | Yes | Yes | A E U | `3p` converts to it |
+| `~third-party` | Yes | Yes | Yes | A E U | `1p` converts to it |
+| `first-party` | - | Yes | - | A | Recognised; not converted |
+| `1p` / `3p` | - | Yes | Alias | A U | Converted (see [below](#option-conversion)) |
+| `strict1p` / `strict3p` | - | Yes | - | U | |
+| `strict-first-party` / `strict-third-party` | - | - | Yes | | AdGuard's names for `strict1p` / `strict3p` |
+| `match-case` | Yes | Yes | Yes | A E U | |
+| `important` | - | Yes | Yes | A U | |
+| `badfilter` | - | Yes | Yes | A U | |
+| `cname` | - | Yes | - | U | |
+| `network` | - | - | Yes | A | |
+| `_` (`_____`, any length) | - | Yes | Yes | A U | The no-op modifier; recognised by shape |
+| `noop` | - | - | Yes | | |
+| `collapse` | Legacy | - | - | | Recognised |
+
+### Exception and hiding switches
+
+| Option | ABP | uBO | AdGuard | Lists | FOP |
+|--------|-----|-----|---------|-------|-----|
+| `elemhide` | Yes | Yes | Yes | A E | |
+| `generichide` | Yes | Yes | Yes | A E U | `ghide` converts to it |
+| `genericblock` | Yes | - | Yes | A E | |
+| `specifichide` | - | Yes | Yes | | |
+| `ehide` / `shide` | - | Yes | Alias | U | Recognised; not converted |
+| `jsinject` | - | - | Yes | A | |
+| `content` | - | - | Yes | A | |
+| `extension` | - | - | Yes | A | Bare form. For the value form see `extension=`. |
+| `stealth` | - | - | Yes | A | Bare form. For the value form see `stealth=`. |
+| `urlblock` | - | - | Yes | A | Only on an `@@` exception |
+| `empty` | - | Deprecated | Deprecated | | Recognised |
+| `mp4` | - | Deprecated | Deprecated | | Recognised |
+
+Some modifiers are valid **bare only on an `@@` exception**, where they switch
+off every rule of that kind for the site. On a blocking rule the bare word is
+missing its value, so it stays unknown there:
+`urlblock`, `removeheader`, `replace`, `redirect`, `permissions`,
+`urltransform`, `uritransform`, `urlskip`, `hls`, `jsonprune`, `xmlprune`,
+`referrerpolicy`, `dnsrewrite`.
+
+### Options with values
+
+**Spaces kept** means FOP leaves whitespace in the value alone. For every
+other network rule, FOP strips whitespace.
+
+| Option | ABP | uBO | AdGuard | Lists | FOP |
+|--------|-----|-----|---------|-------|-----|
+| `domain=` | Yes | Yes | Yes | A E U | Entries sorted; `\|`-separated |
+| `from=` | - | Yes | - | U | Converted to `domain=` |
+| `to=` | - | Yes | Yes | A U | |
+| `denyallow=` | - | Yes | Yes | A U | |
+| `sitekey=` | Yes | - | - | E | |
+| `csp=` | Yes | Yes | Yes | A E U | Spaces kept. Bare `csp` is recognised too. |
+| `rewrite=` | Yes | - | - | E | `abp-resource:` values |
+| `redirect=` | - | Yes | Yes | A U | |
+| `redirect-rule=` | - | Yes | Yes | A U | |
+| `removeparam=` | - | Yes | Yes | A U | Spaces kept; a `/regex/` value is left as written |
+| `queryprune=` | - | Deprecated | - | | Old name for `removeparam=` |
+| `removeheader=` | - | - | Yes | | |
+| `replace=` | - | Yes | Yes | A U | Spaces kept |
+| `header=` | Yes | Yes | Yes | A E U | Spaces kept |
+| `addheader=` | Yes | - | - | E | Spaces kept |
+| `requestheader=` | - | Yes | - | U | Spaces kept |
+| `responseheader=` | - | - | - | | Recognised; spaces kept |
+| `permissions=` | - | Yes | Yes | A U | Spaces kept |
+| `referrerpolicy=` | - | - | Yes | A | |
+| `method=` | - | Yes | Yes | A U | |
+| `ipaddress=` | - | Yes | - | U | |
+| `reason=` | - | Yes | Yes | U | |
+| `urlskip=` | - | Yes | - | U | Spaces kept |
+| `uritransform=` | - | Yes | - | U | |
+| `urltransform=` | - | Renamed | Yes | A | uBO calls it `uritransform=` |
+| `jsonprune=` | - | - | Yes | | Spaces kept |
+| `xmlprune=` | - | - | Yes | A | Spaces kept |
+| `hls=` | - | - | Yes | A | |
+| `cookie=` | - | - | Yes | A | Bare `cookie` is recognised too |
+| `stealth=` | - | - | Yes | A | |
+| `extension=` | - | - | Yes | A | Spaces kept, because the value names a userscript exactly (`'AdGuard Assistant'`) |
+| `app=` | - | - | Yes | A | |
+| `dnsrewrite=`, `dnstype=`, `client=`, `ctag=` | - | - | Yes (DNS) | | |
+| `tag=` | - | - | - | | Recognised |
+
+An escaped comma (`\,`) is part of an option's value, so FOP never splits an
+option there. `$permissions=sync-xhr=()\,camera=()` is one option.
+
+## Option conversion
+
+uBO's short options are expanded by default. `--no-ubo-convert` turns this off.
+
+| uBO | Converts to |
+|-----|-------------|
+| `xhr`, `xml` | `xmlhttprequest` |
 | `css` | `stylesheet` |
-| `1p` | `~third-party` |
-| `3p` | `third-party` |
-| `frame` | `subdocument` |
-| `iframe` | `subdocument` |
+| `frame`, `iframe` | `subdocument` |
 | `doc` | `document` |
 | `ghide` | `generichide` |
-| `xml` | `xmlhttprequest` |
+| `3p` | `third-party` |
+| `1p` | `~third-party` |
+| `~1p` | `third-party` |
 | `from=` | `domain=` |
 
-Negation (`~`) is preserved (e.g., `~xhr` becomes `~xmlhttprequest`).
+Negation is kept: `~xhr` becomes `~xmlhttprequest`. `first-party`,
+`strict1p`, `strict3p`, `ehide`, `shide` and `all` are left as written.
 
-## ABP Conversion
+### Selector and scriptlet conversion (opt-in)
 
-When `--abp-convert` is enabled:
+| Flag | Converts | Notes |
+|------|----------|-------|
+| `--abp-convert` | `:-abp-has()` to `:has()`; `:-abp-contains()` to `:has-text()` | Separators are not touched. `:-abp-properties()` has no equivalent and is kept. |
+| `--adguard-convert` | A `:has-text()` rule's `##` to `#?#`, and `#@#` to `#@?#` | AdGuard's spellings, so use it only for lists AdGuard reads. uBO HTML filters (`##^`) are skipped. |
+| `--convert-trusted` | `trusted-set-cookie`, `trusted-set-local-storage-item` and `trusted-set-session-storage-item` to their non-trusted forms | Only when the value is one the non-trusted scriptlet accepts: a known keyword, or a number up to 32767. Covers uBO `+js()` and AdGuard `//scriptlet()`. |
 
-| ABP Syntax | Converts To |
-|-----------|-------------|
-| `:-abp-has()` | `:has()` |
-| `:-abp-contains()` | `:has-text()` |
-| `#?#` (with `:-abp-has` only) | `##` |
+## Cosmetic rule separators
 
-`:-abp-properties()` is preserved (no equivalent).
+**Default**, **`--parse-adguard`** and **`--alt-sort`** say whether FOP
+treats the rule as cosmetic in that mode: domains sorted, selector tidied,
+rules merged. A rule its mode does not cover is still sorted in place, but its
+text is left as written.
 
-## Cosmetic Rule Separators
+| Separator | Purpose | ABP | uBO | AdGuard | Lists | Default | `--parse-adguard` | `--alt-sort` |
+|-----------|---------|-----|-----|---------|-------|---------|-------------------|--------------|
+| `##` | Element hiding | Yes | Yes | Yes | A E U | Yes | Yes | Yes |
+| `#@#` | Element hiding exception | Yes | Yes | Yes | A E U | Yes | Yes | Yes |
+| `#?#` | Extended CSS selectors | Yes | Yes | Yes | A E U | Yes | Yes | Yes |
+| `#@?#` | Extended CSS exception | - | Yes | Yes | A U | Yes | Yes | Yes |
+| `#$#` | ABP snippet, or AdGuard CSS injection | Snippets | - | CSS injection | A E | Yes* | Yes | Yes |
+| `#@$#` | CSS injection exception | - | - | Yes | A | Yes* | Yes | Yes |
+| `#%#` | JavaScript injection (AdGuard scriptlets) | - | - | Yes | A U | Yes* | Yes | Yes |
+| `#@%#` | JavaScript injection exception | - | - | Yes | A | Yes* | Yes | Yes |
+| `#$?#` | Extended CSS injection | - | - | Yes | A | - | Yes | - |
+| `#@$?#` | Extended CSS injection exception | - | - | Yes | | - | Yes | - |
+| `$$` | HTML filtering | - | - | Yes | A | - | Yes | - |
+| `$@$` | HTML filtering exception | - | - | Yes | A | - | Yes | - |
+| `##^` | HTML filtering (uBO) | - | Yes | - | U | Yes | Yes | Yes |
 
-| Separator | Source | Parsed | Sorted | Notes |
-|-----------|--------|--------|--------|-------|
-| `##` | ABP/uBO/AdGuard | Yes | Yes | Standard element hiding |
-| `#@#` | ABP/uBO/AdGuard | Yes | Yes | Element hiding exception |
-| `#?#` | uBO/AdGuard | Yes | Yes | Extended CSS selectors |
-| `#@?#` | uBO/AdGuard | Yes | Yes | Extended CSS exception |
-| `#$#` | AdGuard | Yes | Yes | CSS injection / scriptlet |
-| `#@$#` | AdGuard | Yes | Yes | CSS injection exception |
-| `#$?#` | AdGuard | Yes | Yes | Extended CSS injection |
-| `#@$?#` | AdGuard | Yes | Yes | Extended CSS injection exception |
-| `#%#` | AdGuard | Yes | Yes | JavaScript injection |
-| `#@%#` | AdGuard | Yes | Yes | JavaScript injection exception |
-| `$$` | AdGuard | Yes* | Yes* | HTML filtering (*requires `--parse-adguard`) |
-| `$@$` | AdGuard | Yes* | Yes* | HTML filtering exception (*requires `--parse-adguard`) |
+\* Default mode skips a rule with `{` or `}` after the separator, such as
+AdGuard's CSS injection (`#$#body { overflow: auto; }`), and leaves it as
+written. The addition checks tell the two `#$#` forms apart the same way: a
+CSS injection carries a ` { ... }` block, and an ABP snippet does not.
 
-## Extended CSS Pseudo-Classes
+`$$` counts as a separator only when the text before it could be a domain
+list. So `$$` inside a URL (`/ad$$`) or after a network option is not one.
 
-These pseudo-classes are recognised and preserved without modification:
+## Pseudo-classes
 
-| Pseudo-Class | Source | Notes |
-|-------------|--------|-------|
-| `:has()` | CSS/uBO/AdGuard | Native CSS, preserved |
-| `:not()` | CSS/uBO/AdGuard | Native CSS, preserved |
-| `:is()` | CSS | Native CSS, preserved |
-| `:where()` | CSS | Native CSS, preserved |
-| `:has-text()` | uBO/AdGuard | Text content matching |
-| `:style()` | uBO/AdGuard | Inline style injection |
-| `:remove()` | uBO | Element removal |
-| `:remove-attr()` | uBO/AdGuard | Attribute removal |
-| `:remove-class()` | uBO/AdGuard | Class removal |
-| `:matches-path()` | uBO | URL path matching |
-| `:matches-css()` | uBO/AdGuard | CSS property matching |
-| `:matches-css-before()` | uBO/AdGuard | ::before CSS matching |
-| `:matches-css-after()` | uBO/AdGuard | ::after CSS matching |
-| `:matches-media()` | uBO | Media query matching |
-| `:matches-prop()` | uBO | CSS property pattern |
-| `:upward()` | uBO/AdGuard | Ancestor selection |
-| `:xpath()` | uBO/AdGuard | XPath selection |
-| `:watch-attr()` | uBO | Attribute observer |
-| `:min-text-length()` | uBO/AdGuard | Minimum text length |
-| `:-abp-has()` | ABP | ABP has matching |
-| `:-abp-contains()` | ABP | ABP text matching |
-| `:-abp-properties()` | ABP | ABP CSS property |
+**Argument kept** means FOP leaves everything inside the parentheses alone.
+Other pseudo-classes are tidied like any selector: spaces around `>`, `+` and
+`~`, and pseudo-class names lowercased. An escaped colon (`\:`) or a regex
+group (`(?:`) is never lowercased.
 
-## Procedural / Scriptlet Syntax
+| Pseudo-class | ABP | uBO | AdGuard | Lists | FOP |
+|--------------|-----|-----|---------|-------|-----|
+| `:has()` | Yes | Yes | Yes | A E U | Argument kept |
+| `:not()` | CSS | CSS | CSS | A E U | Tidied (its argument is a selector) |
+| `:is()` | CSS | CSS | Yes | A E U | Tidied |
+| `:has-text()` | Yes | Yes | Yes | E U | Argument kept; [merged](#sorting-and-merging) |
+| `:contains()` | - | - | Yes | A | Argument kept |
+| `:-abp-has()` | Yes | - | Yes | A E | Argument kept |
+| `:-abp-contains()` | Yes | - | Yes | E | Argument kept |
+| `:-abp-properties()` | Yes | - | - | | Argument kept |
+| `:xpath()` | Yes | Yes | Yes | E U | Argument kept |
+| `:upward()` | - | Yes | Yes | A U | Argument kept |
+| `:matches-css()` | - | Yes | Yes | A U | Argument kept |
+| `:matches-css-before()` / `:matches-css-after()` | - | Yes | - | U | Tidied. See [Known limitations](#known-limitations). |
+| `:matches-attr()` | - | Yes | Yes | U | Argument kept |
+| `:matches-property()` | - | - | Yes | A | Tidied. See [Known limitations](#known-limitations). |
+| `:matches-path()` | - | Yes | - | U | Argument kept |
+| `:matches-media()` | - | Yes | - | | Argument kept |
+| `:matches-prop()` | - | Yes | - | | Argument kept |
+| `:min-text-length()` | - | Yes | - | | Argument kept |
+| `:watch-attr()` | - | Yes | - | | Argument kept |
+| `:others()` | - | Yes | - | U | Argument kept |
+| `:nth-ancestor()` | - | - | Yes | | Tidied (a number, so nothing changes) |
+| `:shadow()` | - | - | - | U | Tidied (its argument is a selector) |
+| `:style()` | - | Yes | - | U | Argument kept |
+| `:remove()` | - | Yes | Yes | U | Argument kept |
+| `:remove-attr()` | - | Yes | - | U | Argument kept |
+| `:remove-class()` | - | Yes | - | U | Argument kept |
 
-| Syntax | Source | Handled |
-|--------|--------|---------|
-| `+js(scriptlet, args)` | uBO/AdGuard | Preserved, spacing normalised |
-| `//scriptlet(name, args)` | AdGuard | Preserved |
-| `[$path=/regex/]domain##selector` | AdGuard | Passed through unchanged |
+## Scriptlets, snippets and injection
 
-## Rules Ignored / Skipped
+| Syntax | Source | Lists | FOP |
+|--------|--------|-------|-----|
+| `##+js(name, args)` | uBO | U | One space after each comma: `+js(set,a,1)` becomes `+js(set, a, 1)`. An empty argument `,,` becomes `, ,`, which uBO reads the same because it trims arguments. |
+| `#%#//scriptlet('name', 'args')` | AdGuard | A | Left as written |
+| `#%#` raw JavaScript | AdGuard | A | Left as written |
+| `#$#snippet args; snippet args` | ABP | E | Left as written. Brackets inside a snippet's arguments are data, not selector syntax. |
+| `#$#selector { style }` | AdGuard | A | Selector sorted as a cosmetic rule |
+| `##^script:has-text(...)` | uBO | U | HTML filter; `:has-text()` merging applies |
+| `##^responseheader(name)` | uBO | U | Left as written |
+| `$$script[tag-content="..."]` | AdGuard | A | See [separators](#cosmetic-rule-separators) |
+| `[$path=/regex/]domain##selector` | AdGuard | | Left as written |
 
-| Rule Type | Behaviour |
-|-----------|-----------|
-| Comments (`!`) | Preserved, not sorted |
-| Section headers (`[...]`) | Preserved, not sorted |
-| `%include` directives | Preserved, not sorted |
-| Lines < 3 characters | Skipped |
-| `[$path=...]` cosmetic modifiers | Passed through unchanged |
-| Regex value options (`=/.../ `) | Returned unchanged |
-| Empty lines | Removed (unless `--keep-empty-lines`) |
+Arguments that match literal text keep quotes, braces and parentheses that do
+not balance. This applies to `+js()`, `:has-text()`, `:contains()`,
+`:-abp-contains()`, `:-abp-properties()`, `:matches-*()`, `:xpath()` and
+`:watch-attr()`, and the bracket check does not flag them.
 
-## Rules Removed with Warning
+## Domains
 
-| Pattern | Example | Reason |
-|---------|---------|--------|
-| TLD-only rules | `\|\|.com^`, `.net` | Overly broad |
-| Domain without dot | `\|\|click^$script` | Invalid domain (unless `--ignore-dot-domains`) |
+| Form | Example | FOP |
+|------|---------|-----|
+| Plain list | `b.com,a.com##.ad` | Lowercased and sorted: `a.com,b.com##.ad` |
+| Exclusion | `~a.com` | Sorted beside its name, after the inclusion |
+| Entity | `example.*` | Kept |
+| uBO regex domain | `/^foo\.(?:com\|net)$/##.ad` | Kept. A regex ending `$/` is not an option marker. |
+| Network `domain=` | `$domain=b.com\|a.com` | Sorted: `$domain=a.com\|b.com` |
 
-## Typo Detection and Fixing
+## Directives and hints
 
-When `--fix-typos` is enabled:
+| Line | Source | Lists | FOP |
+|------|--------|-------|-----|
+| `!#if condition` / `!#else` / `!#endif` | uBO, AdGuard | A U | Comment. Rules are never sorted across it, so a block keeps its rules. |
+| `!#include file` | uBO, AdGuard | A U | Comment |
+| `!#safari_cb_affinity(...)` | AdGuard | A | Comment |
+| `%include file` | ABP | | Kept; ends a section |
+| `!+ NOT_OPTIMIZED` | AdGuard | A | Comment. See [Known limitations](#known-limitations). |
+| `!+ PLATFORM(...)` / `!+ NOT_PLATFORM(...)` | AdGuard | A | Comment. See [Known limitations](#known-limitations). |
+| `!+ NOT_VALIDATE` | AdGuard | A | Comment |
 
-### Network Rule Typos
+## Whitespace
 
-| Typo | Example | Corrected To |
-|------|---------|-------------|
-| Triple `$` | `\|\|ex.com$$$script` | `\|\|ex.com$script` |
-| Double `$` | `\|\|ex.com$$script` | `\|\|ex.com$script` |
+Whitespace is stripped from network rules, except:
+
+- values of the options marked **Spaces kept** above;
+- regex patterns (`/.../`), with or without options. `[^&=? ]` excludes a
+  space; `[^&=?]` does not.
+
+Cosmetic rules are trimmed at both ends, and selector combinators are spaced
+(`a>b` becomes `a > b`) except inside an argument FOP keeps.
+
+## Sorting and merging
+
+A section is the run of rules between comments. Its first ten rules decide
+how it is sorted: as cosmetic when more of them are cosmetic than network,
+and as network otherwise (a tie counts as network). Only rules of the
+section's kind are merged.
+
+| Feature | What happens |
+|---------|--------------|
+| Duplicate removal | Identical rules within a section are removed |
+| Option sorting | Network options sorted alphabetically (ignoring `~`), `domain=` last; its entries sorted. `$1p,xhr,from=b.com` becomes `$~third-party,xmlhttprequest,domain=b.com`. |
+| Domain merging | Rules identical apart from their domains are merged: `a.com##.ad` + `b.com##.ad` becomes `a.com,b.com##.ad`. The same applies to network rules with `$domain=`. A list of exclusions only (`~a.com`) never merges with one that includes a domain, because that would change what it matches. |
+| `:has-text()` merging | `##` rules with the same domains and base selector are merged into one regex: `:has-text(a)` + `:has-text(b)` becomes `:has-text(/a\|b/)`. This also covers uBO HTML filters (`##^`). |
+| `:has-text()` regex flags | One flag set is kept: `/a/i` + `/b/i` or plain `b` becomes `/a\|b/i`. Two different flag sets are not merged. Neither is an empty alternative (`/foo\|/`), which would match everything. |
+| Exceptions and other separators | `#@#`, `#@?#`, `#?#`, `#$#` and `#%#` rules are never `:has-text()`-merged. An exception cancels a rule by matching its exact text, so merging two would leave neither text to match. |
+| `--pr-show-changes` | Lists the first 40 merges in the PR description and counts the rest |
+
+Files are sorted in parallel, and a large merge group, such as one of
+eyeo's Acceptable Ads rules with thousands of domains, is merged in one pass.
+
+## Rules removed with a warning
+
+| Rule | Example | Why |
+|------|---------|-----|
+| TLD only | `\|\|.com^`, `.net` | Blocks a whole top-level domain |
+| Network rule whose domain has no dot | `\|\|click^$script` | Unless `--ignore-dot-domains`. Skips valid uBO rules too; see [Known limitations](#known-limitations). |
+| Line starting with `"`, `)`, `]` or `}` | `"])` | Debris from a truncated rule; no valid rule starts this way |
+| Line under 3 characters | `a` | Counted in characters, not bytes. Unless `--ignore-line-minimum`. |
+
+## Typo detection and fixing
+
+Always on:
+
+| Typo | Example | Fixed to |
+|------|---------|----------|
+| `.` between options | `$third-party.script` | `$script,third-party` (network rules only, never a line with a cosmetic separator) |
+
+With `--fix-typos` (every line of every file), or `--fix-typos-on-add` (only
+the lines a commit adds, fixed at a prompt or automatically with
+`--auto-fix`):
+
+| Typo | Example | Fixed to |
+|------|---------|----------|
+| Triple `$` | `\|\|ex.com$$$domain=a.com` | `\|\|ex.com$domain=a.com` |
+| Double `$` | `\|\|ex.com$$domain=a.com` | `\|\|ex.com$domain=a.com` |
 | Missing `$` | `\|\|ex.js^domain=a.com` | `\|\|ex.js^$domain=a.com` |
 | Wrong domain separator | `domain=a.com,b.com` | `domain=a.com\|b.com` |
-
-### Cosmetic Rule Typos
-
-| Typo | Example | Corrected To |
-|------|---------|-------------|
-| Extra `#` | `domain###.ad` | `domain##.ad` |
-| Single `#` | `domain#.ad` | `domain##.ad` |
+| Extra `#` | `a.com###.ad` | `a.com##.ad` |
+| Single `#` | `a.com#.ad` | `a.com##.ad` |
 | Double dot | `##..ad` | `##.ad` |
-| Double/triple comma | `a,,b##.ad` | `a,b##.ad` |
+| Double comma | `a,,b##.ad` | `a,b##.ad` |
 | Trailing comma | `a.com,##.ad` | `a.com##.ad` |
 | Leading comma | `,a.com##.ad` | `a.com##.ad` |
 | Space after comma | `a.com, b.com##.ad` | `a.com,b.com##.ad` |
 | Wrong cosmetic separator | `a\|b##.ad` | `a,b##.ad` |
 
-Typos are fixed iteratively (up to 9 passes) to handle cascading corrections.
+Fixes repeat (up to 9 passes) to catch typos revealed by an earlier fix.
 
-## Rule Merging
+## Checks on added rules
 
-| Feature | Description |
-|---------|-------------|
-| `:has-text()` merging | Rules with same base selector and domain combined into regex: `a,b` becomes `/a\|b/` |
-| Duplicate removal | Identical rules within a section are deduplicated |
-| Domain sorting | Domains in `domain=` and cosmetic domain lists sorted alphabetically |
-| Option sorting | Network filter options sorted alphabetically |
+`--check-rules-on-add` checks the rules a commit adds. Defects fail `--ci`,
+and `--remove-bad-rules` deletes them. Advice is only reported, because the
+rule is legal as written.
+
+| Finding | Kind | Example |
+|---------|------|---------|
+| Unknown option | Defect (with a suggestion) | `$scirpt` → did you mean `script`? A value-only option written bare (`$requestheader`) counts as unknown too. |
+| Option with no value | Defect | `$domain=` |
+| Empty option / option marker with nothing after it | Defect | `\|\|a.com^$script,`, `\|\|a.com^$` |
+| Empty entry in an option value | Defect | `$domain=a.com\|\|b.com` |
+| Separator with no selector | Defect | `a.com##` |
+| Malformed domain list | Defect | `a.com,,b.com##.ad` |
+| Unbalanced brackets in a selector | Defect | `##div[class="x"` (not checked in arguments that match text, or in ABP snippets) |
+| Selector starts with a combinator | Defect | `##> .ad` |
+| Space in the pattern | Advice | `\|\|exa mple.com^`. The sort removes the space anyway. |
+| Bare domain | Advice | `example.com`. Did you mean `\|\|example.com^`? |
+| Host rule with no `\|\|` anchor | Advice | `rbush.shop^`, which also matches `lampedburbush.shop` |
+| Unanchored text that reads as nothing | Advice | `fdfdgfgdgfd^` |
+
+## Known limitations
+
+Found while checking the September 2026 snapshots:
+
+- **AdGuard hints can end up over a different rule.** A `!+ PLATFORM(...)`
+  or `!+ NOT_OPTIMIZED` hint applies to the next line only. The hint is a
+  comment, so the rules below it form a section that FOP sorts, and a
+  different rule can move directly under the hint. In AdGuard's lists, 30 of
+  2,515 hints end up over a different rule. For example, an iOS/Safari-only
+  exception for `gpt.js` moves to `pagead/managed/`.
+- **`:matches-property()`, `:matches-css-before()` and
+  `:matches-css-after()` arguments are tidied as selectors.** A regex argument
+  such as `/__adv+/` becomes `/__adv + /`. No rule in the snapshots is
+  affected today.
+- **uBO rules whose domain has no dot are skipped** unless
+  `--ignore-dot-domains` is used. 11 valid uAssets rules, such as
+  `||de/*/ad_bomb/*`, are affected.
+- **Without `--parse-adguard`, `$$` rules are read as network rules.** They
+  are left as written, but the part after `$$` can trigger an
+  unknown-option warning (`$$amp-consent`).
+- **A merged domain list can grow very long.** In eyeo's
+  `exceptionrules.txt`, lines kept under 20,000 characters merge into lines
+  of up to 586k characters. Merging does not change what the rules match.
+- **Sorting sections that mix network and cosmetic rules is not
+  idempotent.** A second pass can reorder rules or merge further, but never
+  changes what they match.
