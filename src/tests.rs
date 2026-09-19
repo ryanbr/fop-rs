@@ -3364,6 +3364,65 @@ fn test_sort_timestamp_keeps_rules_with_the_text() {
 }
 
 #[test]
+fn test_sort_keeps_adguard_hint_targets() {
+    // An AdGuard hint applies to the line after it. That rule is a section of
+    // its own -- processed like any rule, but not sorted or merged -- while
+    // the rest of its section is sorted as usual. Sorting used to move another rule under the hint: 30
+    // of AdGuard's 2,515 moved, an iOS-only exception among them.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-hints-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("list.txt");
+    std::fs::write(&file, [
+        "! Title: pin",
+        // Sorting would put a.com first; merging would fold b.com in
+        "!+ PLATFORM(ios)", "z.com##.x", "b.com##.ad", "a.com##.ad",
+        // A chain of hints targets the first rule after it, which is not
+        // merged with its twin below
+        "!+ NOT_OPTIMIZED", "!+ PLATFORM(ios)", "b.com##.ad", "a.com##.ad",
+        // A blank line does not end the hint
+        "!+ PLATFORM(ios)", "", "z.com##.y", "a.com##.y",
+        // Any other comment does
+        "!+ PLATFORM(ios)", "! plain", "z.com##.w", "a.com##.w",
+        // The target is still tidied
+        "!+ PLATFORM(ios)", "||a.com^$xhr,3p", "||0.com^",
+        // and still checked like any rule: one removed as TLD-only leaves the
+        // hint over whichever rule now follows it, which stays put in turn
+        "!+ PLATFORM(ios)", ".com", "z.com##.v", "a.com##.v",
+    ].join("\n") + "\n").unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let result = std::fs::read_to_string(&file).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(result.lines().collect::<Vec<_>>(), vec![
+        "! Title: pin",
+        "!+ PLATFORM(ios)", "z.com##.x", "a.com,b.com##.ad",
+        "!+ NOT_OPTIMIZED", "!+ PLATFORM(ios)", "b.com##.ad", "a.com##.ad",
+        "!+ PLATFORM(ios)", "z.com##.y", "a.com##.y",
+        "!+ PLATFORM(ios)", "! plain", "a.com,z.com##.w",
+        "!+ PLATFORM(ios)", "||a.com^$third-party,xmlhttprequest", "||0.com^",
+        "!+ PLATFORM(ios)", "z.com##.v", "a.com##.v",
+    ]);
+}
+
+#[test]
+fn test_regex_pseudo_arguments_kept() {
+    // Their arguments are regexes, where `+` and `>` are not combinators:
+    // tidied as a selector, `/__adv+/` became `/__adv + /`.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    for rule in [
+        "a.com##div:matches-property(/__adv+/)",
+        "a.com#?#div:matches-property(\"__vue__.adv\")",
+        "a.com#?#div:matches-css-before(content: /a+b/)",
+        "a.com##div:matches-css-after(content:/^ad>x/)",
+    ] {
+        assert_eq!(crate::fop_sort::tidy_rule(rule, &config), rule);
+    }
+}
+
+#[test]
 fn test_combine_filters_through_the_sort() {
     // The same, end to end through fop_sort, which sorts rules together
     // before merging. A rewrite may move logic between the two, so both are

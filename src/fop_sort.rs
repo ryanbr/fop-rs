@@ -861,7 +861,7 @@ fn not_a_pseudo_class(bytes: &[u8], colon: usize) -> bool {
 ///
 /// `:contains(` is AdGuard and ABP's name for `:has-text(`; leaving it out let
 /// selector tidying rewrite its argument, padding a regex `+` into ` + `.
-pub(crate) const EXTENDED_PSEUDO: [&str; 20] = [
+pub(crate) const EXTENDED_PSEUDO: [&str; 23] = [
     ":style(",
     ":has-text(",
     ":has(",
@@ -882,6 +882,11 @@ pub(crate) const EXTENDED_PSEUDO: [&str; 20] = [
     ":matches-attr(",
     ":-abp-properties(",
     ":others(",
+    // AdGuard's DOM-property match, and uBO's pseudo-element CSS matches:
+    // their arguments are regexes, where `+` and `>` are not combinators
+    ":matches-property(",
+    ":matches-css-before(",
+    ":matches-css-after(",
 ];
 
 /// Sort domains and clean element hiding rules
@@ -2007,6 +2012,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
     let mut section: Vec<String> = Vec::with_capacity(2000);
     let mut lines_checked: usize = 1;
+    // Set by an AdGuard hint (`!+ PLATFORM(...)`, `!+ NOT_OPTIMIZED`), which
+    // applies to the line after it: that rule must stay where it is.
+    let mut hint_pending = false;
     let mut filter_lines: usize = 0;
     let mut element_lines: usize = 0;
 
@@ -2100,6 +2108,29 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         let line_owned = line?;
         let line = line_owned.trim();
 
+        // The rule an AdGuard hint applies to is a section of its own: it goes
+        // through every step any rule does, but sorting could move another
+        // rule under the hint, and merging would widen it to other rules'
+        // domains. The hint closed the section above it, so once that rule is
+        // in, close this one. Should the rule be dropped instead, the hint
+        // stays with whichever rule now follows it.
+        if hint_pending && !section.is_empty() {
+            write_filters(
+                &mut section,
+                &mut output,
+                element_lines,
+                filter_lines,
+                config.no_sort,
+                config.alt_sort,
+                config.localhost,
+                config.parse_adguard,
+            )?;
+            lines_checked = 1;
+            filter_lines = 0;
+            element_lines = 0;
+            hint_pending = false;
+        }
+
         // Update timestamp if enabled and within first 10 lines
         let updated_line;
         let line = if config.add_timestamp && lines_checked <= CHECK_LINES {
@@ -2163,6 +2194,9 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 element_lines = 0;
             }
             write!(output, "{}\n", line)?;
+            // A chain of hints still targets the first rule after it; any
+            // other comment ends it
+            hint_pending = line.starts_with("!+");
             continue;
         }
 

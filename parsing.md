@@ -32,7 +32,7 @@ Snapshot usage was surveyed in September 2026.
 | `[Adblock Plus 2.0]` | Header | Kept in place; ends a section |
 | `%include file` | Include directive | Kept in place; ends a section |
 | `!#if`, `!#else`, `!#endif`, `!#include`, `!#safari_cb_affinity` | Comment | Rules never cross a directive. See [Directives and hints](#directives-and-hints). |
-| `!+ NOT_OPTIMIZED`, `!+ PLATFORM(...)` | Comment | See [Known limitations](#known-limitations). |
+| `!+ NOT_OPTIMIZED`, `!+ PLATFORM(...)` | AdGuard hint | The rule after it stays in place: tidied, never sorted or merged. See [Directives and hints](#directives-and-hints). |
 | `domains##selector` and the other separators | Cosmetic rule | Domains lowercased and sorted, selector tidied, then merged. Which separators qualify depends on the mode; see [Cosmetic rule separators](#cosmetic-rule-separators). |
 | Cosmetic rule the mode does not cover | Left as written | Sorted in place like a network rule, but its text is untouched. The option tidying never touches a line containing a cosmetic separator. |
 | `/regex/##selector` (uBO regex domain) | Left as written | |
@@ -243,9 +243,9 @@ group (`(?:`) is never lowercased.
 | `:xpath()` | Yes | Yes | Yes | E U | Argument kept |
 | `:upward()` | - | Yes | Yes | A U | Argument kept |
 | `:matches-css()` | - | Yes | Yes | A U | Argument kept |
-| `:matches-css-before()` / `:matches-css-after()` | - | Yes | - | U | Tidied. See [Known limitations](#known-limitations). |
+| `:matches-css-before()` / `:matches-css-after()` | - | Yes | - | U | Argument kept |
 | `:matches-attr()` | - | Yes | Yes | U | Argument kept |
-| `:matches-property()` | - | - | Yes | A | Tidied. See [Known limitations](#known-limitations). |
+| `:matches-property()` | - | - | Yes | A | Argument kept |
 | `:matches-path()` | - | Yes | - | U | Argument kept |
 | `:matches-media()` | - | Yes | - | | Argument kept |
 | `:matches-prop()` | - | Yes | - | | Argument kept |
@@ -296,9 +296,18 @@ not balance. This applies to `+js()`, `:has-text()`, `:contains()`,
 | `!#include file` | uBO, AdGuard | A U | Comment |
 | `!#safari_cb_affinity(...)` | AdGuard | A | Comment |
 | `%include file` | ABP | | Kept; ends a section |
-| `!+ NOT_OPTIMIZED` | AdGuard | A | Comment. See [Known limitations](#known-limitations). |
-| `!+ PLATFORM(...)` / `!+ NOT_PLATFORM(...)` | AdGuard | A | Comment. See [Known limitations](#known-limitations). |
-| `!+ NOT_VALIDATE` | AdGuard | A | Comment |
+| `!+ NOT_OPTIMIZED` | AdGuard | A | Hint: the rule after it stays in place |
+| `!+ PLATFORM(...)` / `!+ NOT_PLATFORM(...)` | AdGuard | A | Hint: the rule after it stays in place |
+| `!+ NOT_VALIDATE` | AdGuard | A | Hint: the rule after it stays in place |
+
+A hint applies to the next rule only, so FOP keeps that rule directly below
+it. The rule is tidied like any other, but it is not sorted with its section
+or merged with its neighbours. Sorting would move a different rule under the
+hint, and merging would widen the hint to other rules' domains. A chain of
+hints, or a blank line after one, still targets the next rule. Any other
+comment ends the hint. If FOP removes the hinted rule (a TLD-only rule, say),
+the hint stays with whichever rule now follows it, and that rule is kept in
+place instead.
 
 ## Whitespace
 
@@ -394,16 +403,6 @@ rule is legal as written.
 
 Found while checking the September 2026 snapshots:
 
-- **AdGuard hints can end up over a different rule.** A `!+ PLATFORM(...)`
-  or `!+ NOT_OPTIMIZED` hint applies to the next line only. The hint is a
-  comment, so the rules below it form a section that FOP sorts, and a
-  different rule can move directly under the hint. In AdGuard's lists, 30 of
-  2,515 hints end up over a different rule. For example, an iOS/Safari-only
-  exception for `gpt.js` moves to `pagead/managed/`.
-- **`:matches-property()`, `:matches-css-before()` and
-  `:matches-css-after()` arguments are tidied as selectors.** A regex argument
-  such as `/__adv+/` becomes `/__adv + /`. No rule in the snapshots is
-  affected today.
 - **uBO rules whose domain has no dot are skipped** unless
   `--ignore-dot-domains` is used. 11 valid uAssets rules, such as
   `||de/*/ad_bomb/*`, are affected.
