@@ -221,4 +221,127 @@ mod tests {
         assert!(!is_checksum_line("# \u{4f8b}\u{4f8b}\u{4f8b}"));
         assert!(!is_checksum_line("! \u{1f600}\u{1f600}\u{1f600}"));
     }
+
+    /// A list file in the temp dir, removed on drop.
+    struct TempList(std::path::PathBuf);
+
+    impl TempList {
+        fn new(name: &str, content: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("fop-test-checksum-{}-{}", std::process::id(), name));
+            fs::write(&path, content).unwrap();
+            TempList(path)
+        }
+
+        fn read(&self) -> String {
+            fs::read_to_string(&self.0).unwrap()
+        }
+    }
+
+    impl Drop for TempList {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    // Expected values come from an independent implementation of the ABP
+    // algorithm (Python: strip \r, collapse \n+, MD5, Base64, strip `=`),
+    // not from this code.
+    const TEST_LIST: &str = "[Adblock Plus 2.0]\n! Title: Test\n||example.com^\n##.ad\n";
+    const TEST_LIST_CHECKSUM: &str = "VcaUCVKDkdNs7YZ5nP756Q";
+
+    #[test]
+    fn test_calculate_checksum_known_answers() {
+        assert_eq!(calculate_checksum(""), "1B2M2Y8AsgTpgAmY7PhCfg");
+        assert_eq!(calculate_checksum("abc\n"), "C+6JsHokjifIP8PVlRITwQ");
+        assert_eq!(calculate_checksum(TEST_LIST), TEST_LIST_CHECKSUM);
+        // Hashed as UTF-8 bytes
+        assert_eq!(calculate_checksum("! Titel: \u{dc}bersicht\n||b\u{fc}cher.de^\n"),
+                   "ml87H+wtk36O23mwspnPaQ");
+    }
+
+    #[test]
+    fn test_calculate_checksum_normalization() {
+        // \r is dropped and blank lines collapse, so line endings and
+        // blank-line edits never change the checksum
+        let crlf = "[Adblock Plus 2.0]\r\n! Title: Test\r\n||example.com^\r\n##.ad\r\n";
+        let blanks = "[Adblock Plus 2.0]\n\n\n! Title: Test\n||example.com^\n\r\n\n##.ad\n\n";
+        assert_eq!(calculate_checksum(crlf), TEST_LIST_CHECKSUM);
+        assert_eq!(calculate_checksum(blanks), TEST_LIST_CHECKSUM);
+        // Any other change does
+        assert_ne!(calculate_checksum("[Adblock Plus 2.0]\n! Title: Test\n||example.com^\n##.ads\n"),
+                   TEST_LIST_CHECKSUM);
+        // Unpadded: MD5 is 16 bytes, so Base64 would end in `==`
+        assert_eq!(TEST_LIST_CHECKSUM.len(), 22);
+    }
+
+    #[test]
+    fn test_add_checksum_inserts_after_header() {
+        let list = TempList::new("insert", TEST_LIST);
+        assert_eq!(add_checksum(&list.0, false, true, true).unwrap(),
+                   Some(TEST_LIST_CHECKSUM.to_string()));
+        assert_eq!(list.read(), format!(
+            "[Adblock Plus 2.0]\n! Checksum: {}\n! Title: Test\n||example.com^\n##.ad\n",
+            TEST_LIST_CHECKSUM));
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
+
+        // Idempotent: a correct checksum leaves the file alone
+        let before = list.read();
+        assert_eq!(add_checksum(&list.0, false, true, true).unwrap(), None);
+        assert_eq!(list.read(), before);
+    }
+
+    #[test]
+    fn test_add_checksum_replaces_stale_in_place() {
+        let list = TempList::new("stale",
+            "[Adblock Plus 2.0]\n! Title: Test\n! Checksum: staleValue\n||example.com^\n##.ad\n");
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Invalid {
+            expected: TEST_LIST_CHECKSUM.to_string(),
+            found: "staleValue".to_string(),
+        });
+        assert_eq!(add_checksum(&list.0, false, true, true).unwrap(),
+                   Some(TEST_LIST_CHECKSUM.to_string()));
+        // Same position, not moved to line 2
+        assert_eq!(list.read(), format!(
+            "[Adblock Plus 2.0]\n! Title: Test\n! Checksum: {}\n||example.com^\n##.ad\n",
+            TEST_LIST_CHECKSUM));
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
+    }
+
+    #[test]
+    fn test_add_checksum_keeps_line_endings_and_prefix() {
+        // CRLF file, hosts-style `#` prefix, no trailing newline
+        let list = TempList::new("crlf", "# Title: Hosts\r\n127.0.0.1 ads.example.com");
+        let checksum = add_checksum(&list.0, true, true, true).unwrap().unwrap();
+        assert_eq!(checksum, calculate_checksum("# Title: Hosts\n127.0.0.1 ads.example.com\n"));
+        assert_eq!(list.read(),
+                   format!("# Title: Hosts\r\n# Checksum: {}\r\n127.0.0.1 ads.example.com", checksum));
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
+    }
+
+    #[test]
+    fn test_verify_checksum_detects_edits() {
+        let list = TempList::new("edit", TEST_LIST);
+        add_checksum(&list.0, false, true, true).unwrap();
+        fs::write(&list.0, list.read().replace("##.ad", "##.ads")).unwrap();
+        assert!(matches!(verify_checksum(&list.0).unwrap(),
+                         ChecksumResult::Invalid { found, .. } if found == TEST_LIST_CHECKSUM));
+
+        // Blank-line and line-ending changes are not edits
+        fs::write(&list.0, format!(
+            "[Adblock Plus 2.0]\r\n! Checksum: {}\r\n\r\n! Title: Test\r\n||example.com^\r\n##.ad\r\n",
+            TEST_LIST_CHECKSUM)).unwrap();
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
+    }
+
+    #[test]
+    fn test_checksum_missing_and_empty() {
+        let list = TempList::new("missing", TEST_LIST);
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Missing);
+
+        let empty = TempList::new("empty", "");
+        assert_eq!(verify_checksum(&empty.0).unwrap(), ChecksumResult::Missing);
+        assert_eq!(add_checksum(&empty.0, false, true, true).unwrap(), None);
+        assert_eq!(empty.read(), "");
+    }
 }
