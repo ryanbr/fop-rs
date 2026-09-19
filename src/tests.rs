@@ -2975,47 +2975,88 @@ fn test_combine_filters_network_pinned() {
 
 #[test]
 fn test_combine_filters_records_each_pairwise_step() {
-    // Every merge step is recorded for the PR description, pairwise: merging
-    // three rules records two steps, the second holding the first's result.
-    // A linear rewrite would naturally record one; this pins two.
-    use crate::fop_sort::{combine_filters, SORT_CHANGES, TRACK_CHANGES};
-    TRACK_CHANGES.store(true, std::sync::atomic::Ordering::Relaxed);
+    // Merge steps are recorded for the PR description pairwise: merging three
+    // rules records two steps, the second holding the first's result.
+    use crate::fop_sort::{combine_filters_recorded, CombineRecord};
     let el = &*crate::ELEMENT_DOMAIN_PATTERN;
-    // Marker domains, since the record is shared with every other test.
-    let ours = |rules: &[String]| rules.iter().any(|r| r.ends_with("pin7.test##.step"));
-    let out = combine_filters(pinned(&["c.pin7.test##.step", "a.pin7.test##.step", "b.pin7.test##.step"]), el, ",");
+    let record_of = |group: Vec<String>, room: usize| {
+        let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
+        let out = combine_filters_recorded(group, el, ",", &mut record);
+        (out, record)
+    };
+    let (out, record) = record_of(pinned(&["c.pin7.test##.step", "a.pin7.test##.step", "b.pin7.test##.step"]), 40);
     assert_eq!(out, pinned(&["a.pin7.test,b.pin7.test,c.pin7.test##.step"]));
-    let steps: Vec<(Vec<String>, String)> = SORT_CHANGES
-        .lock()
-        .unwrap()
-        .domains_combined
-        .iter()
-        .filter(|(originals, _)| ours(originals))
-        .cloned()
-        .collect();
     assert_eq!(
-        steps,
+        record.steps,
         vec![
             (pinned(&["c.pin7.test##.step", "a.pin7.test##.step"]), "a.pin7.test,c.pin7.test##.step".to_string()),
             (pinned(&["a.pin7.test,c.pin7.test##.step", "b.pin7.test##.step"]), "a.pin7.test,b.pin7.test,c.pin7.test##.step".to_string()),
         ]
     );
+    assert_eq!(record.count, 2);
 
-    // A large group: one line, and one recorded step per merge.
+    // A large group: one line and 49 steps, of which only as many as the PR
+    // description will list are kept in full; the rest are counted.
     let group: Vec<String> = (0..50).map(|i| format!("d{:02}.pin8.test##.big", 49 - i)).collect();
-    let out = combine_filters(group, el, ",");
     let domains: Vec<String> = (0..50).map(|i| format!("d{:02}.pin8.test", i)).collect();
-    assert_eq!(out, vec![format!("{}##.big", domains.join(","))]);
-    let recorded = SORT_CHANGES
-        .lock()
-        .unwrap()
-        .domains_combined
-        .iter()
-        .filter(|(originals, _)| originals.iter().any(|r| r.ends_with("pin8.test##.big")))
-        .count();
-    // Back to the untracked path for tests that run after this one
-    TRACK_CHANGES.store(false, std::sync::atomic::Ordering::Relaxed);
-    assert_eq!(recorded, 49);
+    let (full_out, full) = record_of(group.clone(), usize::MAX);
+    assert_eq!(full_out, vec![format!("{}##.big", domains.join(","))]);
+    assert_eq!((full.steps.len(), full.count), (49, 49));
+    for room in [0, 1, 5, 40, 48, 49] {
+        let (out, record) = record_of(group.clone(), room);
+        assert_eq!(out, full_out, "room {}", room);
+        assert_eq!(record.count, 49, "room {}", room);
+        // The first steps, exactly as the uncapped record has them
+        assert_eq!(record.steps[..], full.steps[..room], "room {}", room);
+    }
+}
+
+/// Held by the tests that read or replace the global change record, so one
+/// cannot see the other's swap.
+static SORT_CHANGES_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn test_combine_filters_tracking_is_capped() {
+    // Through the global record, as --pr-show-changes uses it. Other tests
+    // may merge while tracking is on, but together they can only add steps:
+    // the list stops at what the description shows, and the count at least
+    // holds this group's 49.
+    use crate::fop_sort::{combine_filters, PR_CHANGES_SHOWN, SORT_CHANGES, TRACK_CHANGES};
+    use std::sync::atomic::Ordering::Relaxed;
+    let _guard = SORT_CHANGES_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let el = &*crate::ELEMENT_DOMAIN_PATTERN;
+    TRACK_CHANGES.store(true, Relaxed);
+    let group: Vec<String> = (0..50).map(|i| format!("d{:02}.pin9.test##.cap", 49 - i)).collect();
+    let out = combine_filters(group, el, ",");
+    TRACK_CHANGES.store(false, Relaxed);
+    let domains: Vec<String> = (0..50).map(|i| format!("d{:02}.pin9.test", i)).collect();
+    assert_eq!(out, vec![format!("{}##.cap", domains.join(","))]);
+    let changes = SORT_CHANGES.lock().unwrap();
+    assert_eq!(changes.domains_combined.len(), PR_CHANGES_SHOWN);
+    assert!(changes.domains_combined_count >= 49, "{}", changes.domains_combined_count);
+}
+
+#[test]
+fn test_pr_changes_counts_unlisted_merges() {
+    // The description lists the recorded steps and counts the rest from the
+    // total, since only the listed ones are kept.
+    use crate::fop_sort::{SortChanges, SORT_CHANGES};
+    let _guard = SORT_CHANGES_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let body = {
+        let mut changes = SORT_CHANGES.lock().unwrap();
+        let saved = std::mem::take(&mut *changes);
+        *changes = SortChanges {
+            domains_combined: (0..40).map(|i| (pinned(&["a##.x", "b##.x"]), format!("r{}", i))).collect(),
+            domains_combined_count: 45,
+            ..SortChanges::default()
+        };
+        drop(changes);
+        let body = crate::fop_git::format_pr_changes();
+        *SORT_CHANGES.lock().unwrap() = saved;
+        body
+    };
+    assert!(body.contains("## Domains Combined"), "{}", body);
+    assert!(body.contains("- ... and 5 more"), "{}", body);
 }
 
 /// combine_filters as it stood before the linear rewrite, verbatim apart
@@ -3209,7 +3250,7 @@ fn fuzz_network_rule(rng: &mut Xorshift) -> String {
 
 #[test]
 fn test_combine_filters_linear_matches_reference() {
-    use crate::fop_sort::{combine_filters_linear, combine_filters_stepwise};
+    use crate::fop_sort::{combine_filters_linear, combine_filters_recorded, CombineRecord};
     type FuzzCase<'a> = (&'a regex::Regex, &'a str, fn(&mut Xorshift) -> String);
     let patterns: [FuzzCase; 3] = [
         (&crate::ELEMENT_DOMAIN_PATTERN, ",", fuzz_element_rule),
@@ -3249,7 +3290,13 @@ fn test_combine_filters_linear_matches_reference() {
             let expected = combine_filters_reference(group.clone(), pattern, separator);
             merged_groups += usize::from(expected.len() < group.len());
             assert_eq!(combine_filters_linear(group.clone(), pattern, separator), expected, "linear: {:?}", group);
-            assert_eq!(combine_filters_stepwise(group.clone(), pattern, separator), expected, "stepwise: {:?}", group);
+            // The tracked path, recording some or all of its steps
+            let room = [0, 1, 2, usize::MAX][case % 4];
+            let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
+            let recorded = combine_filters_recorded(group.clone(), pattern, separator, &mut record);
+            assert_eq!(recorded, expected, "recorded, room {}: {:?}", room, group);
+            assert_eq!(record.count, group.len() - expected.len(), "count, room {}: {:?}", room, group);
+            assert_eq!(record.steps.len(), room.min(record.count), "steps, room {}: {:?}", room, group);
         }
     }
     // The fuzz must actually exercise merging, not just pass through

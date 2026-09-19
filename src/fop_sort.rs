@@ -230,7 +230,8 @@ pub struct SortConfig<'a> {
 #[derive(Default, Clone)]
 pub struct SortChanges {
     pub typos_fixed: Vec<(String, String, String)>,       // (before, after, reason)
-    pub domains_combined: Vec<(Vec<String>, String)>,     // (original rules, combined rule)
+    pub domains_combined: Vec<(Vec<String>, String)>,     // (original rules, combined rule), the first PR_CHANGES_SHOWN
+    pub domains_combined_count: usize,                    // every merge step, recorded in full or not
     pub has_text_merged: Vec<(Vec<String>, String)>,      // (original rules, merged rule)
     pub duplicates_removed: ahash::AHashSet<String>,      // removed duplicate rules (deduped)
     pub banned_domains_found: Vec<(String, String, String)>,  // (domain, rule, file)
@@ -241,6 +242,9 @@ use std::sync::Mutex;
 /// Global change tracker for aggregating across files
 pub static SORT_CHANGES: LazyLock<Mutex<SortChanges>> = 
     LazyLock::new(|| Mutex::new(SortChanges::default()));
+
+/// Items of each kind the PR description lists; the rest it only counts.
+pub const PR_CHANGES_SHOWN: usize = 40;
 
 /// Enable/disable change tracking (for --pr-show-changes)
 pub static TRACK_CHANGES: std::sync::atomic::AtomicBool = 
@@ -1503,10 +1507,11 @@ pub(crate) fn convert_selectors(rule: &str, abp: bool, adguard: bool) -> String 
 /// deduplicated and sorted. Merging chains: each rule is tried against the
 /// result so far, so a run of mergeable neighbours becomes one line.
 ///
-/// With change tracking on (`--pr-show-changes`) every pairwise step is
-/// recorded, intermediate lines included, so that path merges step by step.
-/// Otherwise a run is merged in one pass, which is what keeps a group of
-/// thousands of domains from being re-parsed and re-sorted at every step.
+/// A run is merged in one pass, which is what keeps a group of thousands of
+/// domains from being re-parsed and re-sorted at every step. With change
+/// tracking on (`--pr-show-changes`) the steps the PR description will list
+/// are taken pairwise, so each can be recorded with its intermediate line;
+/// once it has all it can show, the rest is merged in one pass and counted.
 pub(crate) fn combine_filters(
     uncombined: Vec<String>,
     domain_pattern: &Regex,
@@ -1516,29 +1521,59 @@ pub(crate) fn combine_filters(
     if uncombined.len() <= 1 {
         return uncombined;
     }
-    if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
-        combine_filters_stepwise(uncombined, domain_pattern, separator)
-    } else {
-        combine_filters_linear(uncombined, domain_pattern, separator)
+    if !TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+        return combine_filters_linear(uncombined, domain_pattern, separator);
     }
+    // Recorded locally and handed over once: one lock per call, not per step
+    let room = SORT_CHANGES
+        .lock()
+        .map_or(0, |changes| PR_CHANGES_SHOWN.saturating_sub(changes.domains_combined.len()));
+    let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
+    let combined = combine_filters_recorded(uncombined, domain_pattern, separator, &mut record);
+    if record.count > 0 {
+        with_tracked_changes(|changes| {
+            // Other files may have filled it since
+            let room = PR_CHANGES_SHOWN.saturating_sub(changes.domains_combined.len());
+            changes.domains_combined.extend(record.steps.into_iter().take(room));
+            changes.domains_combined_count += record.count;
+        });
+    }
+    combined
 }
 
-/// Merge pairwise, recording each step.
-pub(crate) fn combine_filters_stepwise(
+/// The merge steps one combine_filters call records.
+pub(crate) struct CombineRecord {
+    /// (the two rules, the merged line), at most `room` of them
+    pub steps: Vec<(Vec<String>, String)>,
+    pub room: usize,
+    /// Every merge step, recorded or not
+    pub count: usize,
+}
+
+/// Merge as combine_filters does, recording steps in full while `record`
+/// has room and only counting them after.
+pub(crate) fn combine_filters_recorded(
     mut uncombined: Vec<String>,
     domain_pattern: &Regex,
     separator: &str,
+    record: &mut CombineRecord,
 ) -> Vec<String> {
     let mut combined: Vec<String> = Vec::with_capacity(uncombined.len());
     for i in 0..uncombined.len() {
+        if record.steps.len() >= record.room {
+            // Nothing more will be listed: merge the rest in one pass. A chain
+            // takes one step per rule merged away, so that is the count.
+            let rest: Vec<String> = uncombined.drain(i..).collect();
+            let rest_len = rest.len();
+            let merged = combine_filters_linear(rest, domain_pattern, separator);
+            record.count += rest_len - merged.len();
+            combined.extend(merged);
+            break;
+        }
         if i + 1 < uncombined.len() {
             if let Some(merged) = combine_pair(&uncombined[i], &uncombined[i + 1], domain_pattern, separator) {
-                with_tracked_changes(|changes| {
-                    changes.domains_combined.push((
-                        vec![uncombined[i].clone(), uncombined[i + 1].clone()],
-                        merged.clone(),
-                    ));
-                });
+                record.count += 1;
+                record.steps.push((vec![uncombined[i].clone(), uncombined[i + 1].clone()], merged.clone()));
                 // The merged rule is tried against the next one in turn
                 uncombined[i + 1] = merged;
                 continue;
@@ -1782,7 +1817,7 @@ enum MergeState<'a> {
     Line(MergedLine),
 }
 
-/// Merge as combine_filters_stepwise does, producing the same lines, but in
+/// Merge as chaining combine_pair does, producing the same lines, but in
 /// one pass: a run of mergeable rules collects its domains in a set, sorted
 /// and joined once at the end, instead of every step re-parsing, re-sorting
 /// and rebuilding the line so far. A rule whose domains could make the

@@ -39,7 +39,7 @@ fn read_input(prompt: &str, history: &[String]) -> String {
 
 /// Format changes for PR body
 pub fn format_pr_changes() -> String {
-    const MAX_ITEMS: usize = 40; // Limit to avoid huge PR bodies
+    const MAX_ITEMS: usize = crate::fop_sort::PR_CHANGES_SHOWN; // Limit to avoid huge PR bodies
     const MAX_BODY_LEN: usize = 1700;  // Leave room for base URL
     use std::fmt::Write as _;
     
@@ -66,8 +66,10 @@ pub fn format_pr_changes() -> String {
             for (originals, combined) in changes.domains_combined.iter().take(MAX_ITEMS) {
                 let _ = writeln!(body, "- `{}` -> `{}`", originals.join("` + `"), combined);
             }
-            if changes.domains_combined.len() > MAX_ITEMS {
-                let _ = writeln!(body, "- ... and {} more", changes.domains_combined.len() - MAX_ITEMS);
+            // Only the listed steps are kept; the count covers them all
+            let shown = changes.domains_combined.len().min(MAX_ITEMS);
+            if changes.domains_combined_count > shown {
+                let _ = writeln!(body, "- ... and {} more", changes.domains_combined_count - shown);
             }
             body.push('\n');
         }
