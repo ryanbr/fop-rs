@@ -1430,6 +1430,16 @@ fn print_rebase_conflict_help() {
     eprintln!("  Or abandon the rebase:  git rebase --abort");
 }
 
+/// A git command whose messages FOP reads to decide what happened: `(fetch
+/// first)`, `CONFLICT`, `no upstream branch` and the rest are translated under
+/// a non-English locale, where none of them would match and a lost push race
+/// would read as some other failure. The C locale keeps them in English.
+fn git_command(base_cmd: &[String]) -> Command {
+    let mut cmd = Command::new(&base_cmd[0]);
+    cmd.args(&base_cmd[1..]).env("LC_ALL", "C");
+    cmd
+}
+
 /// Execute pull and push.
 #[inline]
 pub(crate) fn pull_and_push(
@@ -1443,10 +1453,7 @@ pub(crate) fn pull_and_push(
 ) -> PushOutcome {
     let mut outcome = PushOutcome::Pushed;
     for (i, op) in [repo.pull, repo.push].iter().enumerate() {
-        let output = Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
-            .args(*op)
-            .output();
+        let output = git_command(base_cmd).args(*op).output();
 
         match output {
             Ok(out) if out.status.success() => {
@@ -1630,8 +1637,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
         }
     }
     for attempt in 1..=PUSH_RETRIES {
-        let Ok(output) = Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
+        let Ok(output) = git_command(base_cmd)
             .args(["pull", "--rebase", "--autostash"])
             .output() else {
             eprintln!("Rebase failed to execute. Run manually:");
@@ -1678,8 +1684,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
             return false;
         }
 
-        let Ok(retry) = Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
+        let Ok(retry) = git_command(base_cmd)
             .args(repo.push)
             .output() else {
             eprintln!("Push failed to execute. Retry manually: git push");
