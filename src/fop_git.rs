@@ -1389,7 +1389,9 @@ pub fn create_pull_request(
 // Commit Operations
 // =============================================================================
 
-/// Execute pull and push, return true if push failed
+/// Execute pull and push. `Some(stderr)` if the push failed, left unprinted
+/// for the caller: when a retry will follow, git's raw rejection is not what
+/// should be shown.
 #[inline]
 fn pull_and_push(
     base_cmd: &[String],
@@ -1399,8 +1401,8 @@ fn pull_and_push(
     // --limited-quiet only suppresses the directory listing, so it must not
     // swallow the actionable pull-failure advice.
     quiet: bool,
-) -> bool {
-    let mut push_failed = false;
+) -> Option<String> {
+    let mut push_error = None;
     for (i, op) in [repo.pull, repo.push].iter().enumerate() {
         let output = Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
@@ -1418,24 +1420,58 @@ fn pull_and_push(
             }
             Ok(out) => {
                 let stderr_text = String::from_utf8_lossy(&out.stderr);
+                if i == 1 {
+                    push_error = Some(stderr_text.into_owned());
+                    continue;
+                }
                 if !stderr_text.is_empty() {
                     eprint!("{}", stderr_text);
                 }
-                if i == 0 {
-                    // Pull failed — surface a suggested fix without blocking the push,
-                    // since in many cases (leftover rebase state, no upstream changes)
-                    // the push still goes through fine.
-                    diagnose_pull_failure(&stderr_text, quiet);
-                }
-                if i == 1 { push_failed = true; }
+                // Pull failed — surface a suggested fix without blocking the push,
+                // since in many cases (leftover rebase state, no upstream changes)
+                // the push still goes through fine.
+                diagnose_pull_failure(&stderr_text, quiet);
             }
             Err(e) => {
                 eprintln!("Git command failed: {}", e);
-                if i == 1 { push_failed = true; }
+                if i == 1 { push_error = Some(String::new()); }
             }
         }
     }
-    push_failed
+    push_error
+}
+
+/// Whether a failed push was rejected only because the remote branch moved on
+/// since our pull -- another push landed first -- which a rebase and a retry
+/// fix. `cannot lock ref` and `incorrect old value provided` are the same race
+/// lost at the last moment, while the server updates the branch.
+pub(crate) fn remote_moved_on(push_error: &str) -> bool {
+    push_error.contains("fetch first")
+        || push_error.contains("non-fast-forward")
+        || push_error.contains("cannot lock ref")
+        || push_error.contains("incorrect old value provided")
+        || push_error.contains("Updates were rejected")
+}
+
+/// Handle a failed push: rebase and retry when enabled, else say what to run.
+#[allow(clippy::too_many_arguments)]
+fn handle_push_failure(
+    push_error: &str,
+    rebase_on_fail: bool,
+    base_cmd: &[String],
+    repo: &RepoDefinition,
+    quiet: bool,
+    comment: Option<&str>,
+    no_color: bool,
+    is_masked: bool,
+    commit_url_template: Option<&str>,
+) {
+    if rebase_on_fail {
+        rebase_and_retry_push(base_cmd, repo, quiet, push_error, comment, no_color, is_masked, commit_url_template);
+    } else {
+        eprint!("{}", push_error);
+        eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
+    }
 }
 
 /// Print an actionable suggested fix for a failed `git pull`.
@@ -1519,114 +1555,137 @@ fn report_unresolved_merge(base_cmd: &[String]) -> ! {
     std::process::exit(1);
 }
 
-/// Attempt rebase and retry push after initial push failure
-#[inline]
-fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, comment: Option<&str>, no_color: bool, is_masked: bool, commit_url_template: Option<&str>) {
-    if !quiet {
-        eprintln!("Push failed. Attempting rebase...");
-    }
-    let Ok(output) = Command::new(&base_cmd[0])
-        .args(&base_cmd[1..])
-        .args(["pull", "--rebase", "--autostash"])
-        .output() else {
-        eprintln!("Rebase failed to execute. Run manually:");
-        eprintln!("    git pull --rebase --autostash && git push");
-        return;
-    };
+/// Push attempts after the first fails, each after a fresh rebase. More than
+/// one, since on a busy repository the retry can lose the same race again.
+const PUSH_RETRIES: usize = 3;
 
-    if !output.status.success() {
-        let stderr_text = String::from_utf8_lossy(&output.stderr);
+/// Attempt rebase and retry push after initial push failure
+#[allow(clippy::too_many_arguments)]
+fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool, first_error: &str, comment: Option<&str>, no_color: bool, is_masked: bool, commit_url_template: Option<&str>) {
+    // The usual cause is benign -- someone else pushed first -- and git's raw
+    // "! [remote rejected] ... failed to push" reads as if the commit were
+    // lost, so say what is happening instead. Anything else, git says best.
+    if remote_moved_on(first_error) {
+        if !quiet {
+            eprintln!("Push rejected: the remote branch moved on (another push landed first). Rebasing and retrying...");
+        }
+    } else {
+        eprint!("{}", first_error);
+        if !quiet {
+            eprintln!("Push failed. Attempting rebase...");
+        }
+    }
+    for attempt in 1..=PUSH_RETRIES {
+        let Ok(output) = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(["pull", "--rebase", "--autostash"])
+            .output() else {
+            eprintln!("Rebase failed to execute. Run manually:");
+            eprintln!("    git pull --rebase --autostash && git push");
+            return;
+        };
+
+        if !output.status.success() {
+            let stderr_text = String::from_utf8_lossy(&output.stderr);
+            if !stderr_text.is_empty() {
+                eprint!("{}", stderr_text);
+            }
+            let has_conflict = stderr_text.contains("CONFLICT")
+                || stderr_text.contains("could not apply")
+                || stderr_text.contains("Merge conflict");
+            let no_upstream = stderr_text.contains("no upstream branch")
+                || stderr_text.contains("no tracking information");
+            eprintln!("\nRebase failed. Suggested fix:");
+            if no_upstream {
+                let branch = current_branch_name(base_cmd).unwrap_or_else(|| "<branch>".to_string());
+                let head = get_head_short_hash(base_cmd).unwrap_or_else(|| "<sha>".to_string());
+                eprintln!("  Current branch '{}' has no upstream — your commit was NOT published.", branch);
+                print_no_upstream_advice(base_cmd, &branch, &head, "  ");
+            } else if has_conflict {
+                eprintln!("  Merge conflict detected. To resolve:");
+                eprintln!("    1. git status                  # see conflicted files");
+                eprintln!("    2. <edit files to resolve>");
+                eprintln!("    3. git add <files>");
+                eprintln!("    4. git rebase --continue");
+                eprintln!("    5. git push");
+                eprintln!("  Or abandon the rebase:  git rebase --abort");
+            } else {
+                eprintln!("    git rebase --abort           # restore pre-rebase state");
+                eprintln!("    git pull --rebase --autostash");
+                eprintln!("    git push");
+            }
+            return;
+        }
+
+        // Same trap as the pre-commit pull: the rebase above exits 0 with the
+        // stash pop conflicted. Pushing now would publish whatever the rebase
+        // produced and report success.
+        if has_unmerged_paths(base_cmd) {
+            report_unresolved_merge(base_cmd);
+        }
+
+        let Ok(retry) = Command::new(&base_cmd[0])
+            .args(&base_cmd[1..])
+            .args(repo.push)
+            .output() else {
+            eprintln!("Push failed to execute. Retry manually: git push");
+            return;
+        };
+
+        if retry.status.success() {
+            if !quiet {
+                use owo_colors::OwoColorize;
+                println!("Push succeeded after rebase.");
+                let commit_url = get_commit_url(base_cmd, commit_url_template).unwrap_or_default();
+                let label = if is_masked { "Commit message (masked):" } else { "Commit message:" };
+                if no_color {
+                    if let Some(c) = comment {
+                        println!("{}   {}", label, c);
+                    }
+                    if !commit_url.is_empty() {
+                        println!("Commit successful:  {}", commit_url);
+                    }
+                } else {
+                    if let Some(c) = comment {
+                        println!("{}  {}",
+                            label.purple().bold(),
+                            c.white().bold()
+                        );
+                    }
+                    if !commit_url.is_empty() {
+                        println!("{}  {}",
+                            "Commit successful:".purple().bold(),
+                            commit_url.white().bold()
+                        );
+                    }
+                }
+            }
+            return;
+        }
+
+        let stderr_text = String::from_utf8_lossy(&retry.stderr);
+        if remote_moved_on(&stderr_text) && attempt < PUSH_RETRIES {
+            if !quiet {
+                eprintln!("The remote moved on again. Retrying ({}/{})...", attempt + 1, PUSH_RETRIES);
+            }
+            continue;
+        }
         if !stderr_text.is_empty() {
             eprint!("{}", stderr_text);
         }
-        let has_conflict = stderr_text.contains("CONFLICT")
-            || stderr_text.contains("could not apply")
-            || stderr_text.contains("Merge conflict");
         let no_upstream = stderr_text.contains("no upstream branch")
-            || stderr_text.contains("no tracking information");
-        eprintln!("\nRebase failed. Suggested fix:");
+            || stderr_text.contains("has no upstream branch");
         if no_upstream {
             let branch = current_branch_name(base_cmd).unwrap_or_else(|| "<branch>".to_string());
             let head = get_head_short_hash(base_cmd).unwrap_or_else(|| "<sha>".to_string());
-            eprintln!("  Current branch '{}' has no upstream — your commit was NOT published.", branch);
-            print_no_upstream_advice(base_cmd, &branch, &head, "  ");
-        } else if has_conflict {
-            eprintln!("  Merge conflict detected. To resolve:");
-            eprintln!("    1. git status                  # see conflicted files");
-            eprintln!("    2. <edit files to resolve>");
-            eprintln!("    3. git add <files>");
-            eprintln!("    4. git rebase --continue");
-            eprintln!("    5. git push");
-            eprintln!("  Or abandon the rebase:  git rebase --abort");
+            eprintln!("\nPush failed: branch '{}' has no upstream — your commit was NOT published.", branch);
+            print_no_upstream_advice(base_cmd, &branch, &head, "");
         } else {
-            eprintln!("    git rebase --abort           # restore pre-rebase state");
+            eprintln!("\nPush still failed after rebasing ({} of {} retries used). Suggested fix:", attempt, PUSH_RETRIES);
             eprintln!("    git pull --rebase --autostash");
             eprintln!("    git push");
         }
         return;
-    }
-
-    // Same trap as the pre-commit pull: the rebase above exits 0 with the
-    // stash pop conflicted. Pushing now would publish whatever the rebase
-    // produced and report success.
-    if has_unmerged_paths(base_cmd) {
-        report_unresolved_merge(base_cmd);
-    }
-
-    let Ok(retry) = Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
-            .args(repo.push)
-        .output() else {
-        eprintln!("Push failed to execute. Retry manually: git push");
-        return;
-    };
-
-    if retry.status.success() {
-        if !quiet {
-            use owo_colors::OwoColorize;
-            println!("Push succeeded after rebase.");
-            let commit_url = get_commit_url(base_cmd, commit_url_template).unwrap_or_default();
-            let label = if is_masked { "Commit message (masked):" } else { "Commit message:" };
-            if no_color {
-                if let Some(c) = comment {
-                    println!("{}   {}", label, c);
-                }
-                if !commit_url.is_empty() {
-                    println!("Commit successful:  {}", commit_url);
-                }
-            } else {
-                if let Some(c) = comment {
-                    println!("{}  {}",
-                        label.purple().bold(),
-                        c.white().bold()
-                    );
-                }
-                if !commit_url.is_empty() {
-                    println!("{}  {}",
-                        "Commit successful:".purple().bold(),
-                        commit_url.white().bold()
-                    );
-                }
-            }
-        }
-        return;
-    }
-
-    let stderr_text = String::from_utf8_lossy(&retry.stderr);
-    if !stderr_text.is_empty() {
-        eprint!("{}", stderr_text);
-    }
-    let no_upstream = stderr_text.contains("no upstream branch")
-        || stderr_text.contains("has no upstream branch");
-    if no_upstream {
-        let branch = current_branch_name(base_cmd).unwrap_or_else(|| "<branch>".to_string());
-        let head = get_head_short_hash(base_cmd).unwrap_or_else(|| "<sha>".to_string());
-        eprintln!("\nPush failed: branch '{}' has no upstream — your commit was NOT published.", branch);
-        print_no_upstream_advice(base_cmd, &branch, &head, "");
-    } else {
-        eprintln!("\nPush still failed (likely another concurrent commit). Suggested fix:");
-        eprintln!("    git pull --rebase --autostash");
-        eprintln!("    git push");
     }
 }
 
@@ -1723,12 +1782,8 @@ pub fn commit_changes(
             .arg(masked.as_ref())
             .status()?;
 
-        if pull_and_push(base_cmd, repo, git_quiet, quiet) {
-            if rebase_on_fail {
-                rebase_and_retry_push(base_cmd, repo, git_quiet, Some(masked.as_ref()), no_color, is_masked, commit_url_template);
-            } else {
-                eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
-            }
+        if let Some(push_error) = pull_and_push(base_cmd, repo, git_quiet, quiet) {
+            handle_push_failure(&push_error, rebase_on_fail, base_cmd, repo, quiet, Some(masked.as_ref()), no_color, is_masked, commit_url_template);
         } else if !quiet {
             let commit_url = get_commit_url(base_cmd, commit_url_template).unwrap_or_default();
             if no_color {
@@ -1855,15 +1910,11 @@ pub fn commit_changes(
                 io::stdout().flush().ok();
             }
 
-            if pull_and_push(base_cmd, repo, git_quiet, quiet) {
+            if let Some(push_error) = pull_and_push(base_cmd, repo, git_quiet, quiet) {
                 if !quiet {
                     println!(); // finish the "Connecting" line
                 }
-                if rebase_on_fail {
-                    rebase_and_retry_push(base_cmd, repo, git_quiet, Some(&masked_comment), no_color, is_masked, commit_url_template);
-                } else {
-                    eprintln!("Push failed. Run 'git pull --rebase' then 'git push'.");
-                }
+                handle_push_failure(&push_error, rebase_on_fail, base_cmd, repo, quiet, Some(&masked_comment), no_color, is_masked, commit_url_template);
             } else if !quiet {
                 // Overwrite "Connecting to server..." with commit message + URL
                 let commit_url = get_commit_url(base_cmd, commit_url_template).unwrap_or_default();

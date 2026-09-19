@@ -3509,6 +3509,30 @@ fn test_benchmark_sort_leaves_the_file() {
 }
 
 #[test]
+fn test_remote_moved_on() {
+    // A push that lost the race with another push is retried after a rebase;
+    // anything else is shown as git reported it. The first message is the
+    // one GitHub gave easylist when two pushes crossed.
+    use crate::fop_git::remote_moved_on;
+    for raced in [
+        " ! [remote rejected]         master -> master (cannot lock ref 'refs/heads/master': is at 0168719f39364c18d68b886ef2963f86474a347d but expected 0cc160a18091b05ebe5eb8151d062d9f63cb3a4d)\nerror: failed to push some refs to 'github.com:easylist/easylist.git'",
+        " ! [rejected]        master -> master (fetch first)\nerror: failed to push some refs to 'origin'\nhint: Updates were rejected because the remote contains work that you do not\nhint: have locally.",
+        " ! [rejected]        master -> master (non-fast-forward)\nerror: failed to push some refs to 'origin'",
+        " ! [remote rejected] master -> master (incorrect old value provided)\nerror: failed to push some refs to 'origin'",
+    ] {
+        assert!(remote_moved_on(raced), "{}", raced);
+    }
+    for other in [
+        "remote: Permission to easylist/easylist.git denied to someone.\nfatal: unable to access 'https://github.com/easylist/easylist.git/': The requested URL returned error: 403",
+        "fatal: The current branch topic has no upstream branch.",
+        " ! [remote rejected] master -> master (protected branch hook declined)\nerror: failed to push some refs to 'origin'",
+        "",
+    ] {
+        assert!(!remote_moved_on(other), "{}", other);
+    }
+}
+
+#[test]
 fn test_regex_pseudo_arguments_kept() {
     // Their arguments are regexes, where `+` and `>` are not combinators:
     // tidied as a selector, `/__adv+/` became `/__adv + /`.
