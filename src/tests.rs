@@ -3064,3 +3064,19 @@ fn test_combine_filters_through_the_sort() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn test_extension_value_keeps_its_spaces() {
+    // AdGuard's `$extension=` names a userscript exactly. Stripped of spaces,
+    // the name matched nothing and the exception stopped applying -- seven
+    // rules in AdGuard's allowlist, silently.
+    for rule in [
+        "@@||usanetwork.com^$extension='AdGuard Assistant'",
+        "@@||euroauto.ru^$extension='AdGuard Popup Blocker'|'AdGuard Popup Blocker (Beta)'",
+    ] {
+        assert_eq!(filter_tidy(rule, true), rule, "value altered: {}", rule);
+    }
+    // A pattern that merely contains the text is not an extension option, so
+    // its spaces are still tidied as before.
+    assert_eq!(filter_tidy("||x.com/extension=a b^", true), "||x.com/extension=ab^");
+}
+

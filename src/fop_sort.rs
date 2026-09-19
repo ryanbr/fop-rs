@@ -610,17 +610,21 @@ fn restore_cleared_wildcard(original: &str, tidied: String) -> String {
 /// Whether the rule carries an option whose value may legitimately hold spaces.
 ///
 /// Header values carry them as a matter of course --
-/// `content-type:text/html; charset=utf-8` -- as do `permissions=` policies and
-/// `addheader=` cookie attributes, so stripping whitespace from a rule bearing
-/// one changes what it matches.
+/// `content-type:text/html; charset=utf-8` -- as do `permissions=` policies,
+/// `addheader=` cookie attributes and AdGuard's `extension=`, which names a
+/// userscript exactly: `$extension='AdGuard Assistant'` stripped to
+/// `'AdGuardAssistant'` names nothing, and the exception silently stopped
+/// applying -- seven rules in AdGuard's allowlist. Stripping whitespace from a
+/// rule bearing one changes what it matches.
 ///
 /// Matched by scanning for the name and testing the byte before it, rather than
 /// by building `"$name"` and `",name"` to search for: that allocated two
 /// Strings per name, twenty-two per rule, to test for one byte.
 fn carries_space_valued_option(filter_in: &str) -> bool {
-    const SPACE_VALUED: [&str; 11] = [
+    const SPACE_VALUED: [&str; 12] = [
         "csp=", "replace=", "urlskip=", "removeparam=", "jsonprune=", "xmlprune=",
         "header=", "responseheader=", "requestheader=", "permissions=", "addheader=",
+        "extension=",
     ];
     let bytes = filter_in.as_bytes();
     SPACE_VALUED.iter().any(|name| {
