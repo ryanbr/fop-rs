@@ -58,6 +58,20 @@ fn calculate_checksum(data: &str) -> String {
     encoded
 }
 
+/// The text a checksum is taken over: every line but the checksum line, with
+/// a final newline only if the file has one. ABP's reference script hashes
+/// the file as it stands, so a list that does not end in a newline must not
+/// gain one here: always appending one made FOP compute a different checksum
+/// from every other validator for such a file. (A file FOP has sorted always
+/// ends in one, so this bites when checking a list FOP did not write.)
+fn hash_input(content: &str, lines: &[&str]) -> String {
+    let mut data = lines.iter().copied().filter(|line| !is_checksum_line(line)).collect::<Vec<_>>().join("\n");
+    if content.ends_with('\n') {
+        data.push('\n');
+    }
+    data
+}
+
 /// Result of checksum verification
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChecksumResult {
@@ -90,13 +104,7 @@ pub fn verify_checksum(filename: &Path) -> io::Result<ChecksumResult> {
     };
 
     // Calculate expected checksum
-    let data_for_hash: String = lines.iter()
-        .filter(|line| !is_checksum_line(line))
-        .copied()
-        .collect::<Vec<_>>()
-        .join("\n") + "\n";
-
-    let expected = calculate_checksum(&data_for_hash);
+    let expected = calculate_checksum(&hash_input(&content, &lines));
 
     if expected == found {
         Ok(ChecksumResult::Valid)
@@ -138,8 +146,7 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
         .copied()
         .filter(|line| !is_checksum_line(line)));
 
-    let data_for_hash = without_checksum.join("\n") + "\n";
-    let checksum = calculate_checksum(&data_for_hash);
+    let checksum = calculate_checksum(&hash_input(&content, &lines));
     let checksum_line = format!("{} Checksum: {}", prefix, checksum);
 
     // Check if checksum would be unchanged
@@ -313,9 +320,31 @@ mod tests {
         // CRLF file, hosts-style `#` prefix, no trailing newline
         let list = TempList::new("crlf", "# Title: Hosts\r\n127.0.0.1 ads.example.com");
         let checksum = add_checksum(&list.0, true, true, true).unwrap().unwrap();
-        assert_eq!(checksum, calculate_checksum("# Title: Hosts\n127.0.0.1 ads.example.com\n"));
+        // Hashed as it stands, with no final newline added: the value ABP's
+        // reference script gives (computed independently, in Python)
+        assert_eq!(checksum, "opaLG1lG3vOLJjQn+N7r3w");
         assert_eq!(list.read(),
                    format!("# Title: Hosts\r\n# Checksum: {}\r\n127.0.0.1 ads.example.com", checksum));
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
+    }
+
+    #[test]
+    fn test_checksum_without_final_newline() {
+        // A list that does not end in a newline is hashed without one, as
+        // ABP's reference script hashes it. FOP used to add one, and so
+        // computed a different checksum from every other validator for such
+        // a list -- eyeo's end this way.
+        const NO_NEWLINE: &str = "[Adblock Plus 2.0]\n! Title: Test\n||example.com^\n##.ad";
+        const EXPECTED: &str = "yArEfXVS5Hk0RGpWNLHs4Q"; // independent Python oracle
+        assert_ne!(EXPECTED, TEST_LIST_CHECKSUM, "the final newline must count");
+
+        let list = TempList::new("nonewline-verify", &format!(
+            "[Adblock Plus 2.0]\n! Checksum: {}\n! Title: Test\n||example.com^\n##.ad", EXPECTED));
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
+
+        let list = TempList::new("nonewline-add", NO_NEWLINE);
+        assert_eq!(add_checksum(&list.0, false, true, true).unwrap(), Some(EXPECTED.to_string()));
+        assert!(!list.read().ends_with('\n'), "final newline added");
         assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
     }
 
