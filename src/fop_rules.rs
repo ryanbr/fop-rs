@@ -54,8 +54,14 @@ fn split_cosmetic(line: &str) -> Option<(&str, &str, &str)> {
 /// `+js(nostif, '0x)` and `:has-text(}(window);)` carry quotes, braces and
 /// parens that are ordinary characters -- balancing them flags valid rules, so
 /// a selector containing any of these is left unbalanced-checked.
-const LITERAL_ARG_CONSTRUCTS: [&str; 6] = [
-    "+js(", ":has-text(", ":contains(", ":matches-", ":xpath(", ":watch-attr(",
+///
+/// The text-matching subset of `fop_sort::EXTENDED_PSEUDO`, and it must stay
+/// that: `:-abp-contains(` was missing, so `div:-abp-contains(Don't miss)` read
+/// its apostrophe as an unclosed quote and was deleted as "unbalanced". A test
+/// now fails if a text-matching entry is added there and not here.
+pub(crate) const LITERAL_ARG_CONSTRUCTS: [&str; 8] = [
+    "+js(", ":has-text(", ":contains(", ":-abp-contains(", ":-abp-properties(",
+    ":matches-", ":xpath(", ":watch-attr(",
 ];
 
 /// Whether the selector's brackets, parens and braces balance.
@@ -304,7 +310,7 @@ pub(crate) fn split_options(line: &str) -> Option<(&str, &str)> {
         }
         // Every option must be shaped like one, or this `$` was not the
         // marker: a shell `$PATH:/usr/bin` has a `:` no option key may carry.
-        let shaped = options.split(',').all(|option| {
+        let shaped = crate::fop_sort::split_unescaped_commas(options).into_iter().all(|option| {
             let option = option.strip_prefix('~').unwrap_or(option);
             let (key, value) = match option.split_once('=') {
                 Some((k, v)) => (k, Some(v)),
@@ -437,7 +443,7 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         }
         // A rule with no `$` at all has no option list to be malformed.
         if let (true, Some((_, tail))) = (anchored, line.rsplit_once('$')) {
-            for option in tail.split(',') {
+            for option in crate::fop_sort::split_unescaped_commas(tail) {
                 if option.is_empty() {
                     return Some(RuleProblem::new("empty option", tail));
                 }
@@ -458,6 +464,9 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
             ..RuleProblem::new(SPACE_REASON, "")
         });
     }
+    // Some modifiers are valid bare only on an exception, where they switch off
+    // every rule of that kind for the site (`@@||site^$removeheader`).
+    let exception = line.starts_with("@@");
     // Commas inside a `jsonprune=`/`xmlprune=` value are part of the value.
     for option in crate::fop_sort::split_filter_options(options) {
         let option = option.trim();
@@ -466,7 +475,9 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
             if value.is_empty() {
                 return Some(RuleProblem::new("option with no value", option));
             }
-            if !crate::is_known_option(stripped) && !crate::is_known_option(key) {
+            if !crate::is_known_option_in(stripped, exception)
+                && !crate::is_known_option_in(key, exception)
+            {
                 return Some(RuleProblem {
                     suggestion: crate::suggest_option(key),
                     ..RuleProblem::new("unknown option", option)
@@ -475,7 +486,7 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
             if PIPE_VALUED.contains(&key) && !pipe_values_ok(value) {
                 return Some(RuleProblem::new("empty entry in option value", option));
             }
-        } else if !crate::is_known_option(stripped) {
+        } else if !crate::is_known_option_in(stripped, exception) {
             return Some(RuleProblem {
                 suggestion: crate::suggest_option(stripped),
                 ..RuleProblem::new("unknown option", option)
@@ -490,8 +501,8 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
     // anti-circumvention list publishes 13 such rules
     // (`billboard.com^$csp=script-src-attr \'none\'` and friends) and uAssets
     // another in `host-cdn.net^$image,redirect-rule=32x32.png,...`; all were
-    // flagged, and since `--remove-bad-rules` deletes advice along with
-    // defects, all were deleted. The bare forms this was meant to catch --
+    // flagged, and `--remove-bad-rules` then deleted advice along with
+    // defects, so all were deleted. It now deletes defects only. The bare forms this was meant to catch --
     // `example.com^`, `exa mple.com^` -- carry no options and are still caught
     // where the whole line is the pattern. Mash stays flagged either way: a
     // dotless, vowel-less token is not a deliberate choice in any list.

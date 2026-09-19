@@ -528,11 +528,34 @@ fn find_option_separator(filter: &str) -> Option<usize> {
     None
 }
 
+/// Split on the commas that separate options, not the escaped ones.
+///
+/// `\,` is a comma inside a value: `$permissions=sync-xhr=()\,camera=()` is one
+/// option. Splitting on every comma cut it in two, so the sorter reordered the
+/// halves into `$camera=(),permissions=sync-xhr=()\` -- a dangling backslash
+/// and a broken rule on every sort -- and the rule checker judged `camera=()`
+/// as an option of its own, called it unknown, and deleted the line.
+#[inline]
+pub(crate) fn split_unescaped_commas(s: &str) -> Vec<&str> {
+    let bytes = s.as_bytes();
+    let mut parts = Vec::with_capacity(4);
+    let mut start = 0;
+    for (i, &b) in bytes.iter().enumerate() {
+        // `,` is ASCII, so every split point is a char boundary.
+        if b == b',' && (i == 0 || bytes[i - 1] != b'\\') {
+            parts.push(&s[start..i]);
+            start = i + 1;
+        }
+    }
+    parts.push(&s[start..]);
+    parts
+}
+
 /// Split filter options on commas, keeping values intact for options like
 /// `jsonprune=`/`xmlprune=` where commas are part of the value syntax.
 #[inline]
 pub(crate) fn split_filter_options(options: &str) -> Vec<&str> {
-    let parts: Vec<&str> = options.split(',').collect();
+    let parts: Vec<&str> = split_unescaped_commas(options);
     if parts.len() <= 1 {
         return parts;
     }
@@ -745,7 +768,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                     remove_entries.insert(option.clone());
                 } else {
                     let stripped = option.trim_start_matches('~');
-                    let is_known = crate::is_known_option(stripped);
+                    let is_known = crate::is_known_option_in(stripped, filter_in.starts_with("@@"));
                     if !is_known {
                         write_warning(&format!(
                             "Warning: The option \"{}\" used on the filter \"{}\" is not recognised by FOP",
@@ -823,7 +846,7 @@ fn not_a_pseudo_class(bytes: &[u8], colon: usize) -> bool {
 ///
 /// `:contains(` is AdGuard and ABP's name for `:has-text(`; leaving it out let
 /// selector tidying rewrite its argument, padding a regex `+` into ` + `.
-const EXTENDED_PSEUDO: [&str; 20] = [
+pub(crate) const EXTENDED_PSEUDO: [&str; 20] = [
     ":style(",
     ":has-text(",
     ":has(",
@@ -1121,7 +1144,15 @@ fn regex_flags(arg: &str) -> Option<&str> {
     }
     let close = arg[1..].rfind('/')? + 1;
     let flags = &arg[close + 1..];
-    (!flags.is_empty() && flags.bytes().all(|b| b.is_ascii_alphabetic())).then_some(flags)
+    // Only flags a JavaScript regex accepts, each at most once. Any trailing
+    // letters used to count, so the plain text `/path/to` read as `/path/`
+    // with flags `to`; merged, that became `/path|Sponsored/to`, which uBO
+    // cannot compile as a regex and so matches as literal text -- nothing.
+    let valid = !flags.is_empty()
+        && flags.bytes().enumerate().all(|(i, b)| {
+            b"dgimsuyv".contains(&b) && !flags.as_bytes()[..i].contains(&b)
+        });
+    valid.then_some(flags)
 }
 
 /// The body of a regex argument, without its slashes or flags.

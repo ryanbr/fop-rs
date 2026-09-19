@@ -1057,10 +1057,45 @@ pub fn get_added_lines_against(
     Some(parse_added_lines(&String::from_utf8(output.stdout).ok()?))
 }
 
-/// Added lines in the working tree, as `--fix-typos-on-add` sees them.
-#[inline]
+/// The empty tree's id, as this repository spells it.
+///
+/// Asked of git rather than hard-coded: `4b825dc6...` is the SHA-1 id, and in a
+/// repository using SHA-256 object ids it does not exist, so the diff failed
+/// and the add-time checks silently did not run. Hashing empty input on stdin
+/// rather than `/dev/null` keeps it working on Windows.
+fn empty_tree(base_cmd: &[String]) -> Option<String> {
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["hash-object", "-t", "tree", "--stdin"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let id = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (!id.is_empty()).then_some(id)
+}
+
+/// Added lines the next commit will carry, as the add-time checks see them.
+///
+/// Against HEAD, not the index. The commit is `commit -a`, which takes staged
+/// and unstaged changes alike, but a bare `git diff` shows only the unstaged
+/// half -- so a rule already `git add`ed was invisible to every check here and
+/// was then committed unexamined. On an unborn branch there is no HEAD; the
+/// empty tree stands in, making every tracked line an addition.
 pub fn get_added_lines(base_cmd: &[String]) -> Option<Vec<crate::fop_typos::Addition>> {
-    get_added_lines_against(base_cmd, None)
+    let has_head = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["rev-parse", "--verify", "--quiet", "HEAD"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if has_head {
+        get_added_lines_against(base_cmd, Some("HEAD"))
+    } else {
+        get_added_lines_against(base_cmd, Some(&empty_tree(base_cmd)?))
+    }
 }
 
 /// Parse `git diff -U0` output into the lines it adds.

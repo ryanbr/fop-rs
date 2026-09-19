@@ -24,8 +24,11 @@ const MAX_WORKERS: usize = 8;
 /// Shared so `--show-config` reports the pool that will actually be built
 /// rather than re-deriving it and disagreeing.
 fn resolve_workers(explicit: Option<usize>) -> (usize, &'static str) {
+    // Clamped here rather than at each source: the CLI and the environment
+    // both clamped, `.fopconfig` did not, and a typo there -- where one lives
+    // longest -- asked rayon for a pool of that size.
     if let Some(n) = explicit {
-        return (n, "set");
+        return (n.min(MAX_THREADS), "set");
     }
     // Only claim the variable as the source when its value was actually usable:
     // an empty or malformed one falls through to the machine, and saying
@@ -892,7 +895,7 @@ impl Args {
         println!("        --fix-typos      Fix cosmetic rule typos in all files");
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
         println!("        --check-rules-on-add  Check git additions for rules that cannot work");
-        println!("        --remove-bad-rules    Delete those lines instead of reporting them");
+        println!("        --remove-bad-rules    Delete defective lines instead of reporting them (advice is kept)");
         println!("        --ignore-line-minimum  Keep rules under 3 chars instead of dropping them");
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("        --threads=N         Worker threads (default: cores, capped at 8; overrides RAYON_NUM_THREADS)");
@@ -1226,8 +1229,22 @@ pub(crate) static KNOWN_OPTIONS: LazyLock<HashSet<&'static str>> = LazyLock::new
 /// prefix, so the two sets deliberately overlap.
 /// Options `KNOWN_OPTIONS` omitted. Harmless while an unknown option was only
 /// a warning; with the addition checks it would delete a valid rule.
-pub(crate) static EXTRA_KNOWN_OPTIONS: [&str; 5] =
-    ["inline-font", "beacon", "mp4", "noop", "queryprune"];
+pub(crate) static EXTRA_KNOWN_OPTIONS: [&str; 7] = [
+    "inline-font", "beacon", "mp4", "noop", "queryprune",
+    // AdGuard's spelling of uBO's strict1p / strict3p.
+    "strict-first-party", "strict-third-party",
+];
+
+/// Modifiers valid bare only on an exception rule, where they switch off every
+/// rule of that kind for the site: `@@||site^$removeheader`, `@@||site^$urlblock`.
+/// On a blocking rule the bare word is missing its value, so there it stays
+/// unknown. Missing entirely, these were flagged "unknown option" and deleted
+/// under `--remove-bad-rules`.
+pub(crate) static EXCEPTION_BARE_OPTIONS: [&str; 13] = [
+    "urlblock", "removeheader", "replace", "redirect", "permissions",
+    "urltransform", "uritransform", "urlskip", "hls", "jsonprune", "xmlprune",
+    "referrerpolicy", "dnsrewrite",
+];
 
 pub(crate) static KNOWN_OPTION_PREFIXES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
@@ -1237,6 +1254,8 @@ pub(crate) static KNOWN_OPTION_PREFIXES: LazyLock<HashSet<&'static str>> = LazyL
         "removeparam", "replace", "requestheader", "responseheader", "rewrite",
         "sitekey", "stealth", "tag", "to", "uritransform", "urlskip",
         "urltransform", "xmlprune",
+        // AdGuard DNS filtering, and uBO's deprecated removeparam alias.
+        "dnsrewrite", "dnstype", "client", "ctag", "queryprune",
     ]
     .into_iter()
     .collect()
@@ -1326,6 +1345,12 @@ pub(crate) fn is_known_option(stripped: &str) -> bool {
         || stripped
             .split_once('=')
             .is_some_and(|(key, _)| KNOWN_OPTION_PREFIXES.contains(key))
+}
+
+/// `is_known_option`, for a rule that may be an exception (`@@`).
+#[inline]
+pub(crate) fn is_known_option_in(stripped: &str, exception: bool) -> bool {
+    is_known_option(stripped) || (exception && EXCEPTION_BARE_OPTIONS.contains(&stripped))
 }
 
 /// uBO to ABP option conversions
@@ -1486,8 +1511,6 @@ fn ci_diff_base(base_cmd: &[String]) -> Option<String> {
     // The default branch is read from the remote rather than assumed to be
     // `master`: on a `main` repository the assumed ref does not resolve, the
     // diff fails, and an audit built on it reports nothing wrong.
-    let default = fop_git::get_default_branch(base_cmd, "origin")?;
-    let upstream = format!("origin/{}", default);
     let resolves = |r: &str| {
         std::process::Command::new(&base_cmd[0])
             .args(&base_cmd[1..])
@@ -1496,8 +1519,16 @@ fn ci_diff_base(base_cmd: &[String]) -> Option<String> {
             .map(|o| o.status.success())
             .unwrap_or(false)
     };
+    let last_commit = || resolves("HEAD~1").then(|| "HEAD~1".to_string());
+    // No default branch at all -- a shallow PR checkout fetches only the merge
+    // ref -- still leaves the last commit, which is what arrived. A `?` here
+    // returned before this fallback could run, and the audit failed the build.
+    let Some(default) = fop_git::get_default_branch(base_cmd, "origin") else {
+        return last_commit();
+    };
+    let upstream = format!("origin/{}", default);
     if !resolves(&upstream) {
-        return resolves("HEAD~1").then(|| "HEAD~1".to_string());
+        return last_commit();
     }
     // HEAD already matching the upstream means this is a push to the branch
     // itself, so what arrived is the last commit.
@@ -1508,10 +1539,22 @@ fn ci_diff_base(base_cmd: &[String]) -> Option<String> {
         .map(|s| s.success())
         .unwrap_or(false);
     if same {
-        resolves("HEAD~1").then(|| "HEAD~1".to_string())
-    } else {
-        Some(upstream)
+        return last_commit();
     }
+    // From the fork point, not the tip: diffing against the tip made every rule
+    // the default branch deleted since the fork show up as a `+` on a branch
+    // that is behind, and the audit failed on lines its author never wrote. A
+    // shallow clone may not reach the fork point; the tip is the fallback.
+    let merge_base = std::process::Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["merge-base", "HEAD", &upstream])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    Some(merge_base.unwrap_or(upstream))
 }
 
 /// `git -C <location>`, so a CI audit inspects the repository it was pointed
@@ -1583,21 +1626,23 @@ fn run_rule_checks(
         println!("Dry run: the flagged lines were left in place.");
     }
     if remove_bad_rules && !dry_run {
-        // Every flagged line goes, advice included, so what remains is only
-        // what passed. Nothing is rewritten in place: a rule the author wrote
-        // is either right or it is not, and a silent correction is harder to
-        // notice than a deletion. A bare hostname is legal in a plain
-        // domain-list file, so exclude such files with `ignorefiles` if fop is
-        // pointed at a repository holding them.
+        // Defects go; advice stays. `removable` exists to draw exactly that
+        // line -- a bare hostname or an unanchored host rule is legal syntax,
+        // and in a plain domain-list file it is what belongs there -- and the
+        // CI audit already honoured it by failing only on defects. Deleting
+        // advice too, with a note afterwards, removed 1062 deliberate entries
+        // from one such file in a single run. Nothing is rewritten in place: a
+        // silent correction is harder to notice than a deletion.
         let advice = problems.iter().filter(|(_, p)| !p.removable).count();
-        let targets: Vec<&fop_typos::Addition> = problems.iter().map(|(add, _)| *add).collect();
+        let targets: Vec<&fop_typos::Addition> =
+            problems.iter().filter(|(_, p)| p.removable).map(|(add, _)| *add).collect();
         match remove_flagged_lines(&targets, base_cmd) {
             Ok(n) => {
                 println!("Removed {} line(s).", n);
                 if advice > 0 {
                     println!(
-                        "{} of those were advice rather than a defect -- \
-                         check they were not deliberate.",
+                        "Kept {} line(s) flagged as advice rather than a defect -- \
+                         review them, but they are legal as written.",
                         advice
                     );
                 }
@@ -1614,7 +1659,12 @@ fn run_rule_checks(
             eprintln!("Warning: could not re-read the diff after removing lines.");
             return !interactive;
         };
-        let left = fop_rules::check_additions(&after).len();
+        // Only a defect still present is a failure; the advice was kept on
+        // purpose above.
+        let left = fop_rules::check_additions(&after)
+            .iter()
+            .filter(|(_, p)| p.removable)
+            .count();
         if left > 0 {
             if interactive {
                 eprintln!("{} rule(s) could not be removed; stopping rather than committing them.", left);

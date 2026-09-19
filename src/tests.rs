@@ -2288,11 +2288,269 @@ fn test_resolve_workers_precedence() {
     assert_eq!(resolve_workers(Some(64)), (64, "set"));
     // With nothing set, the machine decides, held to the default cap.
     let (n, source) = resolve_workers(None);
-    assert!(n >= 1 && n <= MAX_WORKERS, "auto gave {}", n);
+    assert!((1..=MAX_WORKERS).contains(&n), "auto gave {}", n);
     // The environment is only credited when it was actually usable; this test
     // does not set it, so the source here is whatever the environment running
     // the suite provides.
     assert!(source == "auto" || source == "RAYON_NUM_THREADS");
     // The ceiling is a guard against a typo, not a limit on what may be asked.
-    assert!(MAX_THREADS > MAX_WORKERS);
+    const { assert!(MAX_THREADS > MAX_WORKERS) };
+    // ...and it guards every source, `.fopconfig` included, which reaches here
+    // as an explicit setting.
+    assert_eq!(resolve_workers(Some(99_999)), (MAX_THREADS, "set"));
+}
+
+// =============================================================================
+// Review fixes since 5.5.0
+// =============================================================================
+
+#[test]
+fn test_check_rule_never_flags_valid_modifiers() {
+    use crate::fop_rules::check_rule as f;
+    // Every one of these was flagged as a defect, so `--remove-bad-rules`
+    // deleted it and `--ci` failed the build on it. 5.5.0 flagged none.
+    for rule in [
+        // Literal-argument pseudo-class: the apostrophe is text, not a quote.
+        "example.com#?#div:-abp-contains(Don't miss)",
+        "example.com#?#div:-abp-properties(content: \"(\")",
+        // Bare modifiers that switch a whole class off, valid on exceptions.
+        "@@||site.com^$urlblock",
+        "@@||site.com^$removeheader",
+        "@@||site.com^$replace",
+        "@@||site.com^$redirect",
+        "@@||site.com^$permissions",
+        "@@||site.com^$dnsrewrite",
+        // AdGuard DNS modifiers, and the strict-party spellings.
+        "||site.com^$dnsrewrite=1.2.3.4",
+        "||site.com^$dnstype=AAAA",
+        "||site.com^$client=127.0.0.1",
+        "||site.com^$ctag=device_phone",
+        "||site.com^$strict-third-party",
+        // An escaped comma is part of the value, not a second option.
+        "||example.org^$permissions=sync-xhr=()\\,camera=()",
+    ] {
+        assert!(f(rule).is_none(), "valid rule flagged: {}", rule);
+    }
+    // The exception-only forms are still wrong on a blocking rule, where the
+    // bare word is missing its value -- and a real typo is still caught.
+    assert!(f("||site.com^$removeheader").is_some());
+    assert!(f("||site.com^$urlblock").is_some());
+    assert!(f("||site.com^$thrid-party").is_some());
+}
+
+#[test]
+fn test_literal_arg_constructs_cover_text_matching_pseudos() {
+    use crate::fop_rules::{check_rule, LITERAL_ARG_CONSTRUCTS};
+    use crate::fop_sort::EXTENDED_PSEUDO;
+    // The two lists drifted once: `:-abp-contains(` was in the sorter's list
+    // and not the checker's, and rules using it were deleted. Every pseudo
+    // whose argument is text must be treated as literal by the checker.
+    let text_matching = |p: &str| {
+        ["contains", "has-text", "matches-", "xpath", "properties", "watch-attr"]
+            .iter()
+            .any(|w| p.contains(w))
+    };
+    for pseudo in EXTENDED_PSEUDO.iter().filter(|p| text_matching(p)) {
+        assert!(
+            LITERAL_ARG_CONSTRUCTS.iter().any(|lit| pseudo.starts_with(lit)),
+            "{} is text-matching but missing from LITERAL_ARG_CONSTRUCTS",
+            pseudo
+        );
+        let rule = format!("example.com#?#div{}Don't miss)", pseudo);
+        assert!(check_rule(&rule).is_none(), "flagged: {}", rule);
+    }
+}
+
+#[test]
+fn test_escaped_comma_survives_sorting() {
+    use crate::fop_sort::split_unescaped_commas;
+    assert_eq!(split_unescaped_commas("a,b\\,c,d"), vec!["a", "b\\,c", "d"]);
+    assert_eq!(split_unescaped_commas("a"), vec!["a"]);
+    assert_eq!(split_unescaped_commas(""), vec![""]);
+    // The sorter split this in two, reordered the halves and left a dangling
+    // backslash: `$camera=(),permissions=sync-xhr=()\`.
+    let rule = "||example.org^$permissions=sync-xhr=()\\,camera=()";
+    assert_eq!(filter_tidy(rule, false), rule);
+    // Real separators still sort.
+    assert_eq!(
+        filter_tidy("||example.org^$third-party,permissions=a=()\\,b=(),script", false),
+        "||example.org^$permissions=a=()\\,b=(),script,third-party"
+    );
+}
+
+#[test]
+fn test_has_text_trailing_letters_are_not_regex_flags() {
+    use crate::fop_sort::combine_has_text_rules;
+    // `/path/to` is plain text: `to` is not a set of JavaScript regex flags.
+    // Reading it as flags merged to `/path|Sponsored/to`, which uBO cannot
+    // compile and so matches as literal text -- that is, nothing.
+    let merged = combine_has_text_rules(vec![
+        "example.com##div:has-text(/path/to)".to_string(),
+        "example.com##div:has-text(Sponsored)".to_string(),
+    ]);
+    assert_eq!(merged.len(), 1, "{:?}", merged);
+    assert!(!merged[0].ends_with("/to)"), "text read as flags: {}", merged[0]);
+    assert!(merged[0].contains("path/to"), "{}", merged[0]);
+    // Real flags are still recognised: the group takes `i`, by design (see
+    // the note in has_text_merge -- plain text joins a flagged regex under it).
+    let merged = combine_has_text_rules(vec![
+        "example.com##div:has-text(/Ad/i)".to_string(),
+        "example.com##div:has-text(Sponsored)".to_string(),
+    ]);
+    assert_eq!(merged, vec!["example.com##div:has-text(/Ad|Sponsored/i)".to_string()]);
+    // A repeated flag is not a flag set JavaScript accepts, so it is text too.
+    let dup = combine_has_text_rules(vec![
+        "example.com##div:has-text(/a/ii)".to_string(),
+        "example.com##div:has-text(b)".to_string(),
+    ]);
+    assert!(!dup[0].ends_with("/ii)"), "{:?}", dup);
+}
+
+/// A throwaway repository, removed when dropped.
+struct ScratchRepo(std::path::PathBuf);
+
+impl ScratchRepo {
+    fn new(name: &str) -> Self {
+        let dir = std::env::temp_dir()
+            .join(format!("fop-test-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = ScratchRepo(dir);
+        repo.git(&["init", "-q", "-b", "main"]);
+        repo.git(&["config", "user.email", "t@t"]);
+        repo.git(&["config", "user.name", "t"]);
+        repo
+    }
+    fn git(&self, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&self.0)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {:?}: {}", args, String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+    fn write(&self, file: &str, content: &str) {
+        std::fs::write(self.0.join(file), content).unwrap();
+    }
+    fn cmd(&self) -> Vec<String> {
+        vec!["git".into(), "-C".into(), self.0.display().to_string()]
+    }
+}
+
+impl Drop for ScratchRepo {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+fn test_added_lines_include_staged_rules() {
+    let repo = ScratchRepo::new("staged");
+    repo.write("a.txt", "||a.com^\n");
+    repo.git(&["add", "a.txt"]);
+    repo.git(&["commit", "-q", "-m", "one"]);
+    repo.write("a.txt", "||a.com^\n||staged.com^\n");
+    repo.git(&["add", "a.txt"]);
+    repo.write("a.txt", "||a.com^\n||staged.com^\n||unstaged.com^\n");
+    // `commit -a` carries both; a bare `git diff` showed only the unstaged one,
+    // so a staged bad rule escaped every check and was committed.
+    let added: Vec<String> = crate::fop_git::get_added_lines(&repo.cmd())
+        .unwrap()
+        .into_iter()
+        .map(|a| a.content)
+        .collect();
+    assert!(added.contains(&"||staged.com^".to_string()), "{:?}", added);
+    assert!(added.contains(&"||unstaged.com^".to_string()), "{:?}", added);
+    assert!(!added.contains(&"||a.com^".to_string()), "{:?}", added);
+}
+
+#[test]
+fn test_added_lines_on_an_unborn_branch() {
+    let repo = ScratchRepo::new("unborn");
+    repo.write("a.txt", "||first.com^\n");
+    repo.git(&["add", "a.txt"]);
+    let added = crate::fop_git::get_added_lines(&repo.cmd()).unwrap();
+    assert_eq!(added.len(), 1);
+    assert_eq!(added[0].content, "||first.com^");
+}
+
+#[test]
+fn test_added_lines_on_an_unborn_sha256_branch() {
+    // The empty tree has a different id under SHA-256; a hard-coded SHA-1 one
+    // does not exist there, the diff failed, and the checks did not run.
+    let dir = std::env::temp_dir().join(format!("fop-test-sha256-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let repo = ScratchRepo(dir);
+    let init = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo.0)
+        .args(["init", "-q", "--object-format=sha256"])
+        .output()
+        .unwrap();
+    if !init.status.success() {
+        // A git too old for SHA-256 repositories has nothing to test here.
+        return;
+    }
+    repo.write("a.txt", "||first.com^\n");
+    repo.git(&["add", "a.txt"]);
+    let added = crate::fop_git::get_added_lines(&repo.cmd()).expect("diff failed");
+    assert_eq!(added.len(), 1);
+    assert_eq!(added[0].content, "||first.com^");
+}
+
+#[test]
+fn test_ci_diff_base_falls_back_without_a_default_branch() {
+    // The shape of a shallow PR checkout: detached, no remote, two commits.
+    let repo = ScratchRepo::new("nodefault");
+    repo.write("a.txt", "||a.com^\n");
+    repo.git(&["add", "a.txt"]);
+    repo.git(&["commit", "-q", "-m", "one"]);
+    repo.write("a.txt", "||a.com^\n||b.com^\n");
+    repo.git(&["commit", "-q", "-am", "two"]);
+    repo.git(&["checkout", "-q", "--detach"]);
+    repo.git(&["branch", "-q", "-D", "main"]);
+    // `get_default_branch(...)?` returned None here before the `HEAD~1`
+    // fallback ran, and the audit failed the build.
+    assert_eq!(crate::ci_diff_base(&repo.cmd()).as_deref(), Some("HEAD~1"));
+}
+
+#[test]
+fn test_ci_diff_base_uses_the_fork_point() {
+    let upstream = ScratchRepo::new("upstream");
+    upstream.write("a.txt", "||keep.com^\n||deleted-upstream.com^\n");
+    upstream.git(&["add", "a.txt"]);
+    upstream.git(&["commit", "-q", "-m", "base"]);
+
+    let clone = ScratchRepo(std::env::temp_dir()
+        .join(format!("fop-test-clone-{}", std::process::id())));
+    let _ = std::fs::remove_dir_all(&clone.0);
+    let out = std::process::Command::new("git")
+        .args(["clone", "-q"])
+        .arg(&upstream.0)
+        .arg(&clone.0)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    clone.git(&["config", "user.email", "t@t"]);
+    clone.git(&["config", "user.name", "t"]);
+    clone.git(&["checkout", "-q", "-b", "feature"]);
+    clone.write("a.txt", "||keep.com^\n||deleted-upstream.com^\n||mine.com^\n");
+    clone.git(&["commit", "-q", "-am", "mine"]);
+
+    // Upstream moves on and deletes a rule the branch still carries.
+    upstream.write("a.txt", "||keep.com^\n");
+    upstream.git(&["commit", "-q", "-am", "delete"]);
+    clone.git(&["fetch", "-q"]);
+
+    let base = crate::ci_diff_base(&clone.cmd()).unwrap();
+    let added: Vec<String> = crate::fop_git::get_added_lines_against(&clone.cmd(), Some(&base))
+        .unwrap()
+        .into_iter()
+        .map(|a| a.content)
+        .collect();
+    // Against the tip, upstream's deletion showed up here as an addition.
+    assert_eq!(added, vec!["||mine.com^".to_string()], "base {}", base);
 }
