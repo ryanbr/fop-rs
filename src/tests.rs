@@ -9,7 +9,7 @@
 
 use crate::fop_git::{apply_commit_url_template, check_comment, default_template_for_base, mask_urls_in_message, mask_urls_in_message_ext, valid_url};
 use crate::fop_sort::is_tld_only;
-use crate::fop_datestamp::is_version_line;
+use crate::fop_datestamp::{is_timestamp_line, is_version_line};
 
 use crate::fop_sort::{
     convert_ubo_options, filter_tidy, is_localhost_entry, localhost_domain,
@@ -3014,6 +3014,37 @@ fn test_combine_filters_records_each_pairwise_step() {
         .filter(|(originals, _)| originals.iter().any(|r| r.ends_with("pin8.test##.big")))
         .count();
     assert_eq!(recorded, 49);
+}
+
+#[test]
+fn test_sort_timestamp_keeps_rules_with_the_text() {
+    // With add-timestamp on, the sort refreshes timestamp lines in the first
+    // lines of every section. Rules carrying the text used to be replaced by
+    // a `! Last updated:` comment and lost; only the header comment updates.
+    let chars = vec!["!".to_string()];
+    let mut config = test_sort_config(&chars);
+    config.add_timestamp = true;
+    let dir = std::env::temp_dir().join(format!("fop-test-timestamp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("list.txt");
+    let rules = [
+        "##.x:-abp-contains(Last modified:)",
+        "example.com##div:has-text(Last updated:)",
+        "||example.com/last-updated:^",
+    ];
+    std::fs::write(&file, format!(
+        "! Title: pin\n! Last modified: 1 Jan 2020 00:00 UTC\n{}\n! Section\n{}\n",
+        rules.join("\n"), rules.join("\n"))).unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let result = std::fs::read_to_string(&file).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let lines: Vec<&str> = result.lines().collect();
+    assert!(lines[1].starts_with("! Last modified: ") && !lines[1].contains("2020"), "{:?}", lines[1]);
+    for rule in rules {
+        assert_eq!(lines.iter().filter(|l| **l == rule).count(), 2, "{} lost: {:?}", rule, lines);
+    }
+    assert_eq!(lines.iter().filter(|l| is_timestamp_line(l)).count(), 1, "{:?}", lines);
 }
 
 #[test]

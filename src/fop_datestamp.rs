@@ -12,13 +12,43 @@ use owo_colors::OwoColorize;
 // Timestamp Detection
 // =============================================================================
 
-/// Check if line is a timestamp line (Last modified/Last updated)
+/// The text of a comment line, or `None` for a rule.
+///
+/// `!` opens a comment, as does `#` in hosts files, but `#` followed by `#`,
+/// `@`, `?`, `$` or `%` opens a cosmetic rule with no domain (`##.ad`,
+/// `#@#.ad`, `#?#`, `#$#`, `#%#`).
+#[inline]
+fn comment_body(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    if let Some(rest) = line.strip_prefix('!') {
+        return Some(rest);
+    }
+    let rest = line.strip_prefix('#')?;
+    (!rest.starts_with(['#', '@', '?', '$', '%'])).then_some(rest)
+}
+
+/// Check if line is a timestamp line (Last modified/Last updated).
+///
+/// Only comments qualify: a rule carrying the text, such as
+/// `example.com##div:has-text(Last updated:)`, would otherwise be replaced
+/// by a fresh timestamp and lost.
+///
+/// A hosts-style banner comment (`## Last updated: ...`) opens like a
+/// cosmetic rule, so it qualifies only when the timestamp comes first: no
+/// rule's selector starts with `Last updated:`.
 #[inline]
 pub fn is_timestamp_line(line: &str) -> bool {
-    let line = line.as_bytes();
-    // Look for "last modified:" or "last updated:" case-insensitively
-    line.windows(14).any(|w| w.eq_ignore_ascii_case(b"last modified:"))
-        || line.windows(13).any(|w| w.eq_ignore_ascii_case(b"last updated:"))
+    if let Some(body) = comment_body(line) {
+        let body = body.as_bytes();
+        // Look for "last modified:" or "last updated:" case-insensitively
+        return body.windows(14).any(|w| w.eq_ignore_ascii_case(b"last modified:"))
+            || body.windows(13).any(|w| w.eq_ignore_ascii_case(b"last updated:"));
+    }
+    let Some(banner) = line.trim_start().strip_prefix("##") else { return false };
+    let text = banner.trim_start_matches('#').trim_start().as_bytes();
+    [&b"last modified:"[..], b"last updated:"]
+        .iter()
+        .any(|k| text.len() >= k.len() && text[..k.len()].eq_ignore_ascii_case(k))
 }
 
 /// Check if line is a version line
@@ -90,10 +120,10 @@ fn is_leap_year(year: u64) -> bool {
 /// Update timestamp in header line (returns updated line or None if not a timestamp line)
 #[inline]
 pub fn update_timestamp_line(line: &str) -> Option<String> {
-    let lower = line.to_ascii_lowercase();
-    if !lower.contains("last modified:") && !lower.contains("last updated:") {
+    if !is_timestamp_line(line) {
         return None;
     }
+    let lower = line.to_ascii_lowercase();
     let prefix = if line.trim_start().starts_with('#') { "#" } else { "!" };
     let keyword = if lower.contains("last modified:") { "Last modified" } else { "Last updated" };
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -274,6 +304,38 @@ mod tests {
         assert!(!is_timestamp_line("! Last modified 1 Jan 2026"));
         assert!(!is_timestamp_line("! Title: EasyList"));
         assert!(!is_timestamp_line("! \u{65e5}\u{672c}\u{8a9e}\u{3067}\u{3059}"));
+        // Rules carrying the text are not timestamp lines
+        for rule in [
+            "example.com##div:has-text(Last updated:)",
+            "##.x:-abp-contains(Last modified:)",
+            "#@#p:has-text(last updated:)",
+            "#?#p:-abp-contains(Last modified:)",
+            "#$#abort-on-property-read last-modified:",
+            "#%#//scriptlet('log', 'Last updated:')",
+            "||example.com/last-updated:^",
+            "/last modified:/",
+            "127.0.0.1 last-updated:.example.com",
+        ] {
+            assert!(!is_timestamp_line(rule), "{}", rule);
+        }
+        assert!(is_timestamp_line("#Last modified: 1 Jan 2026"));
+        // Hosts banner comments, with the timestamp first
+        assert!(is_timestamp_line("## Last updated: 1 Jan 2026"));
+        assert!(is_timestamp_line("#### last modified: 1 Jan 2026"));
+        assert!(!is_timestamp_line("## Title: x, last updated: 1 Jan 2026"));
+        assert!(!is_timestamp_line("##"));
+        assert!(is_timestamp_line("  ! Last modified: 1 Jan 2026"));
+    }
+
+    #[test]
+    fn test_comment_body() {
+        assert_eq!(comment_body("! Title: x"), Some(" Title: x"));
+        assert_eq!(comment_body("# hosts comment"), Some(" hosts comment"));
+        assert_eq!(comment_body("#comment"), Some("comment"));
+        for rule in ["##.ad", "#@#.ad", "#?#.ad", "#$#.ad { display: none }", "#%#//scriptlet('x')",
+                     "example.com##.ad", "||example.com^", ""] {
+            assert_eq!(comment_body(rule), None, "{}", rule);
+        }
     }
 
     /// Now, as `update_*` and `add_timestamp` see it: they read the clock
@@ -285,10 +347,13 @@ mod tests {
     #[test]
     fn test_update_timestamp_line() {
         assert_eq!(update_timestamp_line("! Title: EasyList"), None);
+        assert_eq!(update_timestamp_line("example.com##div:has-text(Last updated:)"), None);
+        assert_eq!(update_timestamp_line("##.x:-abp-contains(Last modified:)"), None);
         for (line, prefix, keyword) in [
             ("! Last modified: 1 Jan 2020 00:00 UTC", "!", "Last modified"),
             ("# last updated: yesterday", "#", "Last updated"),
             ("  !Last Modified:", "!", "Last modified"),
+            ("## Last updated: 1 Jan 2020", "#", "Last updated"),
         ] {
             let before = now_secs();
             let updated = update_timestamp_line(line).unwrap();
@@ -341,6 +406,17 @@ mod tests {
         assert!(modified);
         assert!(stamps.iter().any(|s| result == format!(
             "[Adblock Plus 2.0]\n! Title: Test\n! Last updated: {}\n||example.com^\n", s)), "{:?}", result);
+    }
+
+    #[test]
+    fn test_add_timestamp_skips_rules_with_the_text() {
+        // No timestamp header: one is inserted, and the rule survives
+        let rule = "example.com##div:has-text(Last updated:)";
+        let (modified, result, stamps) = run_add_timestamp("rule",
+            &format!("[Adblock Plus 2.0]\n! Title: Test\n{}\n", rule), false);
+        assert!(modified);
+        assert!(stamps.iter().any(|s| result == format!(
+            "[Adblock Plus 2.0]\n! Last modified: {}\n! Title: Test\n{}\n", s, rule)), "{:?}", result);
     }
 
     #[test]
