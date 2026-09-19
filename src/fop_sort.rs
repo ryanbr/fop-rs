@@ -1497,9 +1497,18 @@ pub(crate) fn convert_selectors(rule: &str, abp: bool, adguard: bool) -> String 
     out
 }
 
-/// Combine filters with identical rules but different domains
+/// Combine filters with identical rules but different domains.
+///
+/// Rules that differ only in their domain list merge, the domains
+/// deduplicated and sorted. Merging chains: each rule is tried against the
+/// result so far, so a run of mergeable neighbours becomes one line.
+///
+/// With change tracking on (`--pr-show-changes`) every pairwise step is
+/// recorded, intermediate lines included, so that path merges step by step.
+/// Otherwise a run is merged in one pass, which is what keeps a group of
+/// thousands of domains from being re-parsed and re-sorted at every step.
 pub(crate) fn combine_filters(
-    mut uncombined: Vec<String>,
+    uncombined: Vec<String>,
     domain_pattern: &Regex,
     separator: &str,
 ) -> Vec<String> {
@@ -1507,137 +1516,332 @@ pub(crate) fn combine_filters(
     if uncombined.len() <= 1 {
         return uncombined;
     }
+    if TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
+        combine_filters_stepwise(uncombined, domain_pattern, separator)
+    } else {
+        combine_filters_linear(uncombined, domain_pattern, separator)
+    }
+}
+
+/// Merge pairwise, recording each step.
+pub(crate) fn combine_filters_stepwise(
+    mut uncombined: Vec<String>,
+    domain_pattern: &Regex,
+    separator: &str,
+) -> Vec<String> {
     let mut combined: Vec<String> = Vec::with_capacity(uncombined.len());
-
     for i in 0..uncombined.len() {
-        let domains1 = domain_pattern.captures(&uncombined[i]);
-
-        // Get domain info for current and next filter
-        let (domain1_str, domains1_full) = if i + 1 < uncombined.len() {
-            if let Some(ref caps) = domains1 {
-                (
-                    caps.get(1).map(|m| m.as_str()).unwrap_or(""),
-                    caps.get(0).map(|m| m.as_str()).unwrap_or(""),
-                )
-            } else {
-                ("", "")
+        if i + 1 < uncombined.len() {
+            if let Some(merged) = combine_pair(&uncombined[i], &uncombined[i + 1], domain_pattern, separator) {
+                with_tracked_changes(|changes| {
+                    changes.domains_combined.push((
+                        vec![uncombined[i].clone(), uncombined[i + 1].clone()],
+                        merged.clone(),
+                    ));
+                });
+                // The merged rule is tried against the next one in turn
+                uncombined[i + 1] = merged;
+                continue;
             }
-        } else {
-            ("", "")
-        };
-
-        let domains2 = if i + 1 < uncombined.len() {
-            domain_pattern.captures(&uncombined[i + 1])
-        } else {
-            None
-        };
-
-        // Check if we should just add current filter without combining
-        if domains1.is_none()
-            || i + 1 >= uncombined.len()
-            || domains2.is_none()
-            || domain1_str.is_empty()
-        {
-            combined.push(std::mem::take(&mut uncombined[i]));
-            continue;
         }
+        combined.push(std::mem::take(&mut uncombined[i]));
+    }
+    combined
+}
 
-        let domain2_str = domains2
-            .as_ref()
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str())
-            .unwrap_or("");
+/// Order of a merged domain list: by name, an exclusion after its inclusion.
+#[inline]
+fn cmp_domains(a: &str, b: &str) -> Ordering {
+    let (a_base, a_inv) = a.strip_prefix('~').map_or((a, false), |s| (s, true));
+    let (b_base, b_inv) = b.strip_prefix('~').map_or((b, false), |s| (s, true));
+    (a_base, a_inv).cmp(&(b_base, b_inv))
+}
 
-        if domain2_str.is_empty() {
-            combined.push(std::mem::take(&mut uncombined[i]));
-            continue;
-        }
+/// Merge `second` into `first` if they differ only in their domains.
+/// One step of the chain, and the definition the linear path reproduces.
+fn combine_pair(first: &str, second: &str, domain_pattern: &Regex, separator: &str) -> Option<String> {
+    let domains1 = domain_pattern.captures(first)?;
+    let domains2 = domain_pattern.captures(second)?;
+    let domain1_str = domains1.get(1).map_or("", |m| m.as_str());
+    let domains1_full = domains1.get(0).map_or("", |m| m.as_str());
+    if domain1_str.is_empty() {
+        return None;
+    }
+    let domain2_str = domains2.get(1).map_or("", |m| m.as_str());
+    if domain2_str.is_empty() {
+        return None;
+    }
+    let domains2_full = domains2.get(0).map_or("", |m| m.as_str());
 
-        let domains2_full = domains2
-            .as_ref()
-            .and_then(|c| c.get(0))
-            .map(|m| m.as_str())
-            .unwrap_or("");
-
-        // Check if domain patterns are compatible (same structure except domain list)
-        let pattern1_with_domain2 = domains1_full.replace(domain1_str, domain2_str);
-        if pattern1_with_domain2 != domains2_full {
-            combined.push(std::mem::take(&mut uncombined[i]));
-            continue;
-        }
-
-        // Check if filters are identical except for domains
-        let filter1_no_domain = domain_pattern.replace(&uncombined[i], "");
-        let filter2_no_domain = domain_pattern.replace(&uncombined[i + 1], "");
-
-        if filter1_no_domain != filter2_no_domain {
-            combined.push(std::mem::take(&mut uncombined[i]));
-            continue;
-        }
-
-        // Check for mixed include/exclude domains
-        let domain1_exclude_count = domain1_str.matches('~').count();
-        let domain1_total = domain1_str.split(separator).count();
-        let domain2_exclude_count = domain2_str.matches('~').count();
-        let domain2_total = domain2_str.split(separator).count();
-
-        let domain1_only_excludes = domain1_exclude_count == domain1_total;
-        let domain2_only_excludes = domain2_exclude_count == domain2_total;
-
-        if domain1_only_excludes != domain2_only_excludes {
-            combined.push(std::mem::take(&mut uncombined[i]));
-            continue;
-        }
-
-        // Combine domains
-        let mut new_domains: Vec<String> = domain1_str
-            .split(separator)
-            .chain(domain2_str.split(separator))
-            .map(String::from)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        new_domains
-            .sort_unstable_by(|a, b| {
-                let (a_base, a_inv) = a.strip_prefix('~').map(|s| (s, true)).unwrap_or((a.as_str(), false));
-                let (b_base, b_inv) = b.strip_prefix('~').map(|s| (s, true)).unwrap_or((b.as_str(), false));
-                (a_base, a_inv).cmp(&(b_base, b_inv))
-            });
-
-        let new_domain_str = new_domains.join(separator);
-
-        // Create the substitution pattern (full match with new domains)
-        let domains_substitute = domains1_full.replace(domain1_str, &new_domain_str);
-
-        // Escape $ for regex replacement ($ is special in replacement strings)
-        let escaped_substitute = if domains_substitute.contains('$') {
-            domains_substitute.replace("$", "$$")
-        } else {
-            domains_substitute
-        };
-
-        // Modify the next filter to be the combined version
-        // (using filter i as the base, replacing its domain pattern with the combined domains)
-
-        let combined_filter = domain_pattern
-            .replace(&uncombined[i], escaped_substitute.as_str())
-            .to_string();
-            
-        // Track combination
-        with_tracked_changes(|changes| {
-            changes.domains_combined.push((
-                vec![uncombined[i].clone(), uncombined[i + 1].clone()],
-                combined_filter.clone(),
-            ));
-        });
-
-        uncombined[i + 1] = combined_filter;
-
-        // Don't add current filter to combined - it will be processed as part of next iteration
+    // Check if domain patterns are compatible (same structure except domain list)
+    if domains1_full.replace(domain1_str, domain2_str) != domains2_full {
+        return None;
     }
 
-    combined
+    // Check if filters are identical except for domains
+    if domain_pattern.replace(first, "") != domain_pattern.replace(second, "") {
+        return None;
+    }
+
+    // Check for mixed include/exclude domains
+    let domain1_only_excludes = domain1_str.matches('~').count() == domain1_str.split(separator).count();
+    let domain2_only_excludes = domain2_str.matches('~').count() == domain2_str.split(separator).count();
+    if domain1_only_excludes != domain2_only_excludes {
+        return None;
+    }
+
+    // Combine domains
+    let mut new_domains: Vec<&str> = domain1_str
+        .split(separator)
+        .chain(domain2_str.split(separator))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    new_domains.sort_unstable_by(|a, b| cmp_domains(a, b));
+    let new_domain_str = new_domains.join(separator);
+
+    // Create the substitution pattern (full match with new domains)
+    let domains_substitute = domains1_full.replace(domain1_str, &new_domain_str);
+
+    // Escape $ for regex replacement ($ is special in replacement strings)
+    let escaped_substitute = if domains_substitute.contains('$') {
+        domains_substitute.replace("$", "$$")
+    } else {
+        domains_substitute
+    };
+
+    Some(domain_pattern.replace(first, escaped_substitute.as_str()).into_owned())
+}
+
+/// Bytes a domain must not hold for the linear path to take it. With none of
+/// them present the domain list is found at the same place however it
+/// grows, and occurs only once in the match, which is what lets the linear
+/// path skip re-parsing: `,` and `|` separate, `#`, `@`, `?`, `$` and `%`
+/// open a cosmetic separator, and `=` ends `domain=`.
+const UNSAFE_DOMAIN_BYTES: &[u8] = b",|#@?$%=";
+
+/// A rule taking part in a linear merge: the rule whose shape the merged line
+/// keeps, where its domain list sits, and the domains gathered so far.
+struct DomainRun<'a> {
+    idx: usize,
+    full: std::ops::Range<usize>,
+    dom: std::ops::Range<usize>,
+    /// None until something merges in; then the deduplicated domains
+    domains: Option<HashSet<&'a str>>,
+    /// Byte length of the domains in `domains`, separators excluded
+    domain_bytes: usize,
+    /// `~` count and entry count of the domain list as it stands, which is
+    /// how combine_pair tells an exclusion-only list
+    tildes: usize,
+    total: usize,
+}
+
+impl<'a> DomainRun<'a> {
+    /// Parse rule `idx`, or None when combine_pair's replacements could act
+    /// on more than the domain list, so the step-by-step path must decide.
+    fn parse(idx: usize, rules: &'a [String], domain_pattern: &Regex, separator: &str) -> Option<Self> {
+        let line = rules[idx].as_str();
+        let caps = domain_pattern.captures(line)?;
+        let full = caps.get(0)?.range();
+        let dom = caps.get(1)?.range();
+        let before = &line.as_bytes()[full.start..dom.start];
+        let after = &line.as_bytes()[dom.end..full.end];
+        // A domain list growing across what surrounds it could otherwise be
+        // found at a second place in the match
+        if before.last().is_some_and(|b| !UNSAFE_DOMAIN_BYTES.contains(b))
+            || !after.iter().all(|b| UNSAFE_DOMAIN_BYTES.contains(b))
+        {
+            return None;
+        }
+        let before = &line[full.start..dom.start];
+        let (mut tildes, mut total) = (0, 0);
+        for domain in line[dom.clone()].split(separator) {
+            if domain.is_empty()
+                || domain.bytes().any(|b| UNSAFE_DOMAIN_BYTES.contains(&b))
+                || (!before.is_empty() && before.contains(domain))
+            {
+                return None;
+            }
+            tildes += domain.bytes().filter(|&b| b == b'~').count();
+            total += 1;
+        }
+        // A merged list inside `before` would hold each of its domains there
+        // too, so checking them one by one covers every list they can form
+        Some(DomainRun { idx, full, dom, domains: None, domain_bytes: 0, tildes, total })
+    }
+
+    /// Merge `next` in if combine_pair would, without building the line.
+    /// None when only combine_pair can tell.
+    fn absorb(&mut self, next: &DomainRun<'a>, rules: &'a [String], separator: &str) -> Option<bool> {
+        let line = rules[self.idx].as_bytes();
+        let next_line = rules[next.idx].as_bytes();
+
+        let (before, after) = (&line[self.full.start..self.dom.start], &line[self.dom.end..self.full.end]);
+        // next's domains were vetted against its own lead-in; merged they sit
+        // behind ours. Split at a different point, only combine_pair can say
+        // whether the two matches agree.
+        if next.dom.start - next.full.start != before.len() {
+            return None;
+        }
+        // Same match with next's domains in place of ours: with the lead-ins
+        // the same length, the same lead-in and tail
+        let next_full = &next_line[next.full.clone()];
+        if next_full.len() != before.len() + next.dom.len() + after.len()
+            || !next_full.starts_with(before)
+            || !next_full.ends_with(after)
+        {
+            return Some(false);
+        }
+
+        // Same rule with the match removed
+        let (head, tail) = (&line[..self.full.start], &line[self.full.end..]);
+        let (next_head, next_tail) = (&next_line[..next.full.start], &next_line[next.full.end..]);
+        if head.len() + tail.len() != next_head.len() + next_tail.len()
+            || !head.iter().chain(tail).eq(next_head.iter().chain(next_tail))
+        {
+            return Some(false);
+        }
+
+        if (self.tildes == self.total) != (next.tildes == next.total) {
+            return Some(false);
+        }
+
+        let domains = match self.domains.as_mut() {
+            Some(domains) => domains,
+            None => {
+                let own = &rules[self.idx][self.dom.clone()];
+                let mut domains = HashSet::with_capacity(self.total + next.total);
+                let (mut tildes, mut bytes) = (0, 0);
+                for domain in own.split(separator) {
+                    if domains.insert(domain) {
+                        tildes += domain.bytes().filter(|&b| b == b'~').count();
+                        bytes += domain.len();
+                    }
+                }
+                self.tildes = tildes;
+                self.domain_bytes = bytes;
+                self.domains.insert(domains)
+            }
+        };
+        for domain in rules[next.idx][next.dom.clone()].split(separator) {
+            if domains.insert(domain) {
+                self.tildes += domain.bytes().filter(|&b| b == b'~').count();
+                self.domain_bytes += domain.len();
+            }
+        }
+        self.total = domains.len();
+        Some(true)
+    }
+
+    /// The finished line: the original rule, or the merged one.
+    fn finish(self, rules: &[String], domain_pattern: &Regex, separator: &str) -> MergedLine {
+        let Some(domains) = self.domains else {
+            return MergedLine::Original(self.idx);
+        };
+        let line = rules[self.idx].as_str();
+        let mut domains: Vec<&str> = domains.into_iter().collect();
+        domains.sort_unstable_by(|a, b| cmp_domains(a, b));
+        let list_len = self.domain_bytes + separator.len() * (domains.len() - 1);
+        let mut merged = String::with_capacity(line.len() - self.dom.len() + list_len);
+        merged.push_str(&line[..self.dom.start]);
+        for (i, domain) in domains.iter().enumerate() {
+            if i > 0 {
+                merged.push_str(separator);
+            }
+            merged.push_str(domain);
+        }
+        merged.push_str(&line[self.dom.end..]);
+        debug_assert_eq!(
+            domain_pattern.captures(&merged).and_then(|c| c.get(1)).map(|m| m.range()),
+            Some(self.dom.start..self.dom.start + list_len),
+            "merged domain list moved: {}", merged
+        );
+        MergedLine::New(merged)
+    }
+}
+
+/// An output line of the linear merge: an input rule untouched, or a new one.
+enum MergedLine {
+    Original(usize),
+    New(String),
+}
+
+impl MergedLine {
+    fn as_str<'b>(&'b self, rules: &'b [String]) -> &'b str {
+        match self {
+            MergedLine::Original(idx) => &rules[*idx],
+            MergedLine::New(line) => line,
+        }
+    }
+}
+
+/// Where the linear merge stands: a run it can extend itself, or a line
+/// only combine_pair can judge.
+enum MergeState<'a> {
+    Run(DomainRun<'a>),
+    Line(MergedLine),
+}
+
+/// Merge as combine_filters_stepwise does, producing the same lines, but in
+/// one pass: a run of mergeable rules collects its domains in a set, sorted
+/// and joined once at the end, instead of every step re-parsing, re-sorting
+/// and rebuilding the line so far. A rule whose domains could make the
+/// shortcut differ takes the pairwise step instead (DomainRun::parse).
+pub(crate) fn combine_filters_linear(
+    mut uncombined: Vec<String>,
+    domain_pattern: &Regex,
+    separator: &str,
+) -> Vec<String> {
+    let lines = {
+        let rules = uncombined.as_slice();
+        let state_of = |idx: usize| match DomainRun::parse(idx, rules, domain_pattern, separator) {
+            Some(run) => MergeState::Run(run),
+            None => MergeState::Line(MergedLine::Original(idx)),
+        };
+        let finish = |state: MergeState| match state {
+            MergeState::Run(run) => run.finish(rules, domain_pattern, separator),
+            MergeState::Line(line) => line,
+        };
+        let mut lines: Vec<MergedLine> = Vec::with_capacity(rules.len());
+        let mut state = state_of(0);
+        for idx in 1..rules.len() {
+            let next = state_of(idx);
+            // Extend the run where DomainRun can decide; otherwise settle the
+            // line so far and let combine_pair judge the step
+            let (current, next) = match (state, next) {
+                (MergeState::Run(mut run), MergeState::Run(next)) => match run.absorb(&next, rules, separator) {
+                    Some(true) => {
+                        state = MergeState::Run(run);
+                        continue;
+                    }
+                    Some(false) => {
+                        lines.push(run.finish(rules, domain_pattern, separator));
+                        state = MergeState::Run(next);
+                        continue;
+                    }
+                    None => (MergeState::Run(run), MergeState::Run(next)),
+                },
+                pair => pair,
+            };
+            let current = finish(current);
+            state = match combine_pair(current.as_str(rules), &rules[idx], domain_pattern, separator) {
+                Some(merged) => MergeState::Line(MergedLine::New(merged)),
+                None => {
+                    lines.push(current);
+                    next
+                }
+            };
+        }
+        lines.push(finish(state));
+        lines
+    };
+    lines
+        .into_iter()
+        .map(|line| match line {
+            MergedLine::Original(idx) => std::mem::take(&mut uncombined[idx]),
+            MergedLine::New(line) => line,
+        })
+        .collect()
 }
 
 // =============================================================================

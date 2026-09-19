@@ -3013,7 +3013,276 @@ fn test_combine_filters_records_each_pairwise_step() {
         .iter()
         .filter(|(originals, _)| originals.iter().any(|r| r.ends_with("pin8.test##.big")))
         .count();
+    // Back to the untracked path for tests that run after this one
+    TRACK_CHANGES.store(false, std::sync::atomic::Ordering::Relaxed);
     assert_eq!(recorded, 49);
+}
+
+/// combine_filters as it stood before the linear rewrite, verbatim apart
+/// from dropping the change record: the oracle both merge paths are held to.
+#[allow(clippy::all)]
+fn combine_filters_reference(
+    mut uncombined: Vec<String>,
+    domain_pattern: &regex::Regex,
+    separator: &str,
+) -> Vec<String> {
+    // No combining needed for single filter
+    if uncombined.len() <= 1 {
+        return uncombined;
+    }
+    let mut combined: Vec<String> = Vec::with_capacity(uncombined.len());
+
+    for i in 0..uncombined.len() {
+        let domains1 = domain_pattern.captures(&uncombined[i]);
+
+        // Get domain info for current and next filter
+        let (domain1_str, domains1_full) = if i + 1 < uncombined.len() {
+            if let Some(ref caps) = domains1 {
+                (
+                    caps.get(1).map(|m| m.as_str()).unwrap_or(""),
+                    caps.get(0).map(|m| m.as_str()).unwrap_or(""),
+                )
+            } else {
+                ("", "")
+            }
+        } else {
+            ("", "")
+        };
+
+        let domains2 = if i + 1 < uncombined.len() {
+            domain_pattern.captures(&uncombined[i + 1])
+        } else {
+            None
+        };
+
+        // Check if we should just add current filter without combining
+        if domains1.is_none()
+            || i + 1 >= uncombined.len()
+            || domains2.is_none()
+            || domain1_str.is_empty()
+        {
+            combined.push(std::mem::take(&mut uncombined[i]));
+            continue;
+        }
+
+        let domain2_str = domains2
+            .as_ref()
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str())
+            .unwrap_or("");
+
+        if domain2_str.is_empty() {
+            combined.push(std::mem::take(&mut uncombined[i]));
+            continue;
+        }
+
+        let domains2_full = domains2
+            .as_ref()
+            .and_then(|c| c.get(0))
+            .map(|m| m.as_str())
+            .unwrap_or("");
+
+        // Check if domain patterns are compatible (same structure except domain list)
+        let pattern1_with_domain2 = domains1_full.replace(domain1_str, domain2_str);
+        if pattern1_with_domain2 != domains2_full {
+            combined.push(std::mem::take(&mut uncombined[i]));
+            continue;
+        }
+
+        // Check if filters are identical except for domains
+        let filter1_no_domain = domain_pattern.replace(&uncombined[i], "");
+        let filter2_no_domain = domain_pattern.replace(&uncombined[i + 1], "");
+
+        if filter1_no_domain != filter2_no_domain {
+            combined.push(std::mem::take(&mut uncombined[i]));
+            continue;
+        }
+
+        // Check for mixed include/exclude domains
+        let domain1_exclude_count = domain1_str.matches('~').count();
+        let domain1_total = domain1_str.split(separator).count();
+        let domain2_exclude_count = domain2_str.matches('~').count();
+        let domain2_total = domain2_str.split(separator).count();
+
+        let domain1_only_excludes = domain1_exclude_count == domain1_total;
+        let domain2_only_excludes = domain2_exclude_count == domain2_total;
+
+        if domain1_only_excludes != domain2_only_excludes {
+            combined.push(std::mem::take(&mut uncombined[i]));
+            continue;
+        }
+
+        // Combine domains
+        let mut new_domains: Vec<String> = domain1_str
+            .split(separator)
+            .chain(domain2_str.split(separator))
+            .map(String::from)
+            .collect::<ahash::AHashSet<_>>()
+            .into_iter()
+            .collect();
+
+        new_domains
+            .sort_unstable_by(|a, b| {
+                let (a_base, a_inv) = a.strip_prefix('~').map(|s| (s, true)).unwrap_or((a.as_str(), false));
+                let (b_base, b_inv) = b.strip_prefix('~').map(|s| (s, true)).unwrap_or((b.as_str(), false));
+                (a_base, a_inv).cmp(&(b_base, b_inv))
+            });
+
+        let new_domain_str = new_domains.join(separator);
+
+        // Create the substitution pattern (full match with new domains)
+        let domains_substitute = domains1_full.replace(domain1_str, &new_domain_str);
+
+        // Escape $ for regex replacement ($ is special in replacement strings)
+        let escaped_substitute = if domains_substitute.contains('$') {
+            domains_substitute.replace("$", "$$")
+        } else {
+            domains_substitute
+        };
+
+        // Modify the next filter to be the combined version
+        // (using filter i as the base, replacing its domain pattern with the combined domains)
+
+        let combined_filter = domain_pattern
+            .replace(&uncombined[i], escaped_substitute.as_str())
+            .to_string();
+
+
+        uncombined[i + 1] = combined_filter;
+
+        // Don't add current filter to combined - it will be processed as part of next iteration
+    }
+
+    combined
+}
+
+/// Deterministic xorshift, so a failing case reproduces.
+struct Xorshift(u64);
+
+impl Xorshift {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    fn pick<'a>(&mut self, xs: &[&'a str]) -> &'a str {
+        xs[(self.next() % xs.len() as u64) as usize]
+    }
+}
+
+/// A domain list of 1-4 entries, mostly ordinary domains, sometimes the
+/// shapes that send a rule down the pairwise path: `#`, `$`, `=` and the
+/// other separator bytes, repeated `~`, an entry that is also option text,
+/// and empty entries.
+fn fuzz_domains(rng: &mut Xorshift, separator: &str) -> String {
+    const ORDINARY: [&str; 9] = ["a.com", "b.com", "c.org", "d.net", "a.com", "~a.com", "~b.com", "~c.org", "x"];
+    const AWKWARD: [&str; 11] = ["~~a.com", "a.com#", "a=b", "", "a$b", "~", "party", "script", "a?b", "a%b", "a@b"];
+    let n = 1 + rng.next() % 4;
+    (0..n)
+        .map(|_| if rng.next().is_multiple_of(8) { rng.pick(&AWKWARD) } else { rng.pick(&ORDINARY) })
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
+fn fuzz_element_rule(rng: &mut Xorshift) -> String {
+    const SEPARATORS: [&str; 8] = ["##", "##", "#@#", "#?#", "#$#", "#@?#", "$$", "$@$"];
+    const SELECTORS: [&str; 4] = [".ad", ".ad", "#banner", ".x > .y"];
+    let domains = if rng.next().is_multiple_of(8) { String::new() } else { fuzz_domains(rng, ",") };
+    format!("{}{}{}", domains, rng.pick(&SEPARATORS), rng.pick(&SELECTORS))
+}
+
+fn fuzz_network_rule(rng: &mut Xorshift) -> String {
+    const PATTERNS: [&str; 3] = ["||x.com^", "||x.com^", "/a$/"];
+    const OPTIONS: [&str; 7] = ["script", "third-party", "csp=a.com", "csp=a|b", "image", "domain=c.org", "~third-party"];
+    let mut options: Vec<String> = Vec::new();
+    for _ in 0..rng.next() % 3 {
+        options.push(rng.pick(&OPTIONS).to_string());
+    }
+    if !rng.next().is_multiple_of(6) {
+        let at = (rng.next() % (options.len() as u64 + 1)) as usize;
+        options.insert(at, format!("domain={}", fuzz_domains(rng, "|")));
+    }
+    format!("{}${}", rng.pick(&PATTERNS), options.join(","))
+}
+
+#[test]
+fn test_combine_filters_linear_matches_reference() {
+    use crate::fop_sort::{combine_filters_linear, combine_filters_stepwise};
+    type FuzzCase<'a> = (&'a regex::Regex, &'a str, fn(&mut Xorshift) -> String);
+    let patterns: [FuzzCase; 3] = [
+        (&crate::ELEMENT_DOMAIN_PATTERN, ",", fuzz_element_rule),
+        (&crate::ADGUARD_ELEMENT_DOMAIN_PATTERN, ",", fuzz_element_rule),
+        (&crate::FILTER_DOMAIN_PATTERN, "|", fuzz_network_rule),
+    ];
+    // Not one fop uses: its lead-in ends in an ordinary byte, so a domain
+    // list of `x`s can be found overlapping it. Holds the linear path to
+    // combine_pair for patterns beyond today's three.
+    let overlapping = regex::Regex::new(r"\$d:x([^,]+)").unwrap();
+    let overlap_rule: fn(&mut Xorshift) -> String = |rng| {
+        const DOMAINS: [&str; 5] = ["xx", "x", "xa.com", "a.com", "xxx"];
+        let n = 1 + rng.next() % 3;
+        let domains: Vec<&str> = (0..n).map(|_| rng.pick(&DOMAINS)).collect();
+        format!("r$d:x{}", domains.join(","))
+    };
+    // Nor this: its tail holds an ordinary byte, so a domain `x` is also
+    // found inside it
+    let tailing = regex::Regex::new(r"^([^#]*?)x##").unwrap();
+    let tail_rule: fn(&mut Xorshift) -> String = |rng| {
+        const DOMAINS: [&str; 4] = ["x", "a.com", "xa", "b.com"];
+        let n = 1 + rng.next() % 3;
+        let domains: Vec<&str> = (0..n).map(|_| rng.pick(&DOMAINS)).collect();
+        format!("{}x##.ad", domains.join(","))
+    };
+    let mut rng = Xorshift(0x9e37_79b9_7f4a_7c15);
+    let mut merged_groups = 0;
+    let made_up = [(&overlapping, ",", overlap_rule), (&tailing, ",", tail_rule)];
+    for (pattern, separator, rule) in patterns.into_iter().chain(made_up) {
+        for case in 0..5_000 {
+            let n = 1 + (rng.next() % 10) as usize;
+            let mut group: Vec<String> = (0..n).map(|_| rule(&mut rng)).collect();
+            // Half the groups sorted as the sorter would, so runs form
+            if case % 2 == 0 {
+                group.sort_by_cached_key(|s| pattern.replace(s, "").into_owned());
+            }
+            let expected = combine_filters_reference(group.clone(), pattern, separator);
+            merged_groups += usize::from(expected.len() < group.len());
+            assert_eq!(combine_filters_linear(group.clone(), pattern, separator), expected, "linear: {:?}", group);
+            assert_eq!(combine_filters_stepwise(group.clone(), pattern, separator), expected, "stepwise: {:?}", group);
+        }
+    }
+    // The fuzz must actually exercise merging, not just pass through
+    assert!(merged_groups > 2_000, "only {} groups merged", merged_groups);
+}
+
+#[test]
+fn test_combine_filters_linear_large_group() {
+    // One selector across thousands of domains, arriving in many rules with
+    // overlaps: the case the linear path exists for
+    use crate::fop_sort::combine_filters_linear;
+    let mut rng = Xorshift(42);
+    for (pattern, separator, shape) in [
+        (&*crate::ELEMENT_DOMAIN_PATTERN, ",", "{}##.ad"),
+        (&*crate::FILTER_DOMAIN_PATTERN, "|", "||x.com^$script,domain={}"),
+    ] {
+        let group: Vec<String> = (0..120)
+            .map(|_| {
+                let domains: Vec<String> = (0..1 + rng.next() % 30)
+                    .map(|_| {
+                        let d = rng.next() % 1500;
+                        if d.is_multiple_of(7) { format!("~d{}.test", d) } else { format!("d{}.test", d) }
+                    })
+                    .collect();
+                shape.replace("{}", &domains.join(separator))
+            })
+            .collect();
+        let expected = combine_filters_reference(group.clone(), pattern, separator);
+        // Rules with and without exclusions only merge among themselves,
+        // so a handful of lines, not one
+        assert!(expected.len() < 10, "{} lines", expected.len());
+        assert_eq!(combine_filters_linear(group, pattern, separator), expected);
+    }
 }
 
 #[test]
