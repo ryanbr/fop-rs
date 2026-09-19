@@ -160,9 +160,14 @@ impl Drop for SuppressWarnings {
     }
 }
 
+/// Set by `--benchmark` once its warm-up run has printed each warning, so the
+/// timed runs neither repeat them nor spend time writing them. Global rather
+/// than thread-local: the sort runs on rayon's workers.
+static WARNINGS_MUTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
-    if WARNINGS_SUPPRESSED.with(|s| s.get()) {
+    if WARNINGS_SUPPRESSED.with(|s| s.get()) || WARNINGS_MUTED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
     if !WARNING_TO_FILE.load(std::sync::atomic::Ordering::Relaxed) {
@@ -349,6 +354,8 @@ struct Args {
     git_binary: Option<String>,
     /// Benchmark mode - time processing and report metrics
     benchmark: bool,
+    /// Timed benchmark runs, after one untimed warm-up
+    benchmark_runs: usize,
     /// Per-file configuration overrides from [filename] sections in .fopconfig
     file_overrides: ahash::AHashMap<String, FileOverrides>,
 }
@@ -654,6 +661,7 @@ impl Args {
                 .unwrap_or_default(),
             git_binary: config.get("git-binary").cloned(),
             benchmark: false,
+            benchmark_runs: 5,
             file_overrides,
         };
 
@@ -819,6 +827,23 @@ impl Args {
                 "--limited-quiet" => args.limited_quiet = true,
                 "--ci" => args.ci = true,
                 "--benchmark" => args.benchmark = true,
+                _ if arg.starts_with("--benchmark=") => {
+                    let val = arg.trim_start_matches("--benchmark=").trim();
+                    match val.parse::<usize>() {
+                        Ok(n) if n >= 1 => {
+                            args.benchmark = true;
+                            args.benchmark_runs = n;
+                        }
+                        Ok(_) => {
+                            eprintln!("Error: --benchmark must be at least 1 (got '{}')", val);
+                            std::process::exit(2);
+                        }
+                        Err(_) => {
+                            eprintln!("Error: --benchmark must be a whole number (got '{}')", val);
+                            std::process::exit(2);
+                        }
+                    }
+                }
                 _ if arg.starts_with("--history=") => {
                     args.history = arg.trim_start_matches("--history=")
                         .split(',')
@@ -969,7 +994,7 @@ impl Args {
         println!("        --add-checksum=FILES   Add/update checksum for specific files (comma-separated)");
         println!("        --validate-checksum=FILES  Validate checksum for specific files (exit 1 on failure)");
         println!("        --validate-checksum-and-fix=FILES  Validate and fix invalid checksums");
-        println!("        --benchmark     Benchmark sorting performance (3 iterations, dry-run)");
+        println!("        --benchmark[=N] Time the sort: 1 warm-up, then N runs (default 5); no files changed");
         println!("        --show-config   Show applied configuration and exit");
         println!("        --git-binary=<path>    Path to git binary (default: git in PATH)");
         println!("    -h, --help          Show this help message");
@@ -2078,6 +2103,7 @@ fn process_location(
             dry_run: sort_config.dry_run,
             output_changed: sort_config.output_changed,
             add_timestamp: sort_config.add_timestamp,
+            benchmark: sort_config.benchmark,
         };
         // Apply per-file overrides from [filename] sections in .fopconfig
         if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
@@ -2212,8 +2238,10 @@ fn process_location(
     }
 
 
-    // Add timestamps to specified files (after sorting, before checksum)
-    if !add_timestamp.is_empty() {
+    // Add timestamps to specified files (after sorting, before checksum).
+    // Not in a dry run (--benchmark, --output-diff, --output), which promises
+    // to leave the files as they were.
+    if !sort_config.dry_run && !add_timestamp.is_empty() {
         for entry in &entries {
             if entry_is_file(entry) {
                 let path = entry.path();
@@ -2233,7 +2261,7 @@ fn process_location(
     }
 
     // Add checksums to specified files (after sorting, before commit)
-    if !add_checksum.is_empty() {
+    if !sort_config.dry_run && !add_checksum.is_empty() {
         for entry in &entries {
             if entry_is_file(entry) {
                 let path = entry.path();
@@ -2264,7 +2292,7 @@ fn process_location(
 
 
     // Validate and fix checksums (after sorting, before commit)
-    if !validate_checksum_and_fix.is_empty() {
+    if !sort_config.dry_run && !validate_checksum_and_fix.is_empty() {
         for entry in &entries {
             if entry_is_file(entry) {
                 let path = entry.path();
@@ -2507,6 +2535,43 @@ fn print_greeting(no_commit: bool, no_color: bool, config_path: Option<&str>, ba
     }
 }
 
+/// Print `--benchmark` results. `times` holds the timed runs, not the
+/// warm-up; throughput is taken from the median, which one slow run cannot
+/// drag the way it drags a mean.
+fn print_benchmark(times: &[std::time::Duration], files: usize, lines: usize, bytes: u64) {
+    let mut sorted = times.to_vec();
+    sorted.sort_unstable();
+    let n = sorted.len();
+    let median = if n % 2 == 1 { sorted[n / 2] } else { (sorted[n / 2 - 1] + sorted[n / 2]) / 2 };
+    let mb = bytes as f64 / 1_048_576.0;
+
+    println!();
+    println!("FOP Benchmark Results");
+    println!("=====================");
+    println!("Runs:          {} (after 1 warm-up)", n);
+    println!("Threads:       {}", rayon::current_num_threads());
+    println!("Files:         {}", files);
+    println!("Lines:         {}", lines);
+    println!("Size:          {:.5} MB", mb);
+    println!();
+    for (i, t) in times.iter().enumerate() {
+        println!("  Run {}: {:.5}s", i + 1, t.as_secs_f64());
+    }
+    println!();
+    println!("Median:        {:.5}s", median.as_secs_f64());
+    println!("Min:           {:.5}s", sorted[0].as_secs_f64());
+    println!("Max:           {:.5}s", sorted[n - 1].as_secs_f64());
+    println!();
+    let secs = median.as_secs_f64();
+    if secs > 0.0 {
+        println!("Throughput:    {:.5} lines/sec", lines as f64 / secs);
+        println!("               {:.5} MB/sec", mb / secs);
+        if files > 0 {
+            println!("               {:.5}ms/file", secs * 1000.0 / files as f64);
+        }
+    }
+}
+
 fn main() {
     let (mut args, config_path) = Args::parse();
 
@@ -2578,10 +2643,14 @@ fn main() {
         }
     }
 
-    // Benchmark mode: force dry-run, no-commit, quiet
+    // Benchmark mode: force dry-run, no-commit, quiet. The checks on git
+    // additions are not sorting, so they stay out of the timing.
     if args.benchmark {
         args.no_commit = true;
         args.quiet = true;
+        args.check_rules_on_add = false;
+        args.remove_bad_rules = false;
+        args.fix_typos_on_add = false;
     }
 
     // Load banned list early so we can show count in greeting
@@ -2644,6 +2713,7 @@ fn main() {
         dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed || args.benchmark,
         output_changed: args.output_changed,
         add_timestamp: !args.add_timestamp.is_empty(),
+        benchmark: args.benchmark,
     };
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -2942,14 +3012,12 @@ fn main() {
             (0, 0)
         };
 
-        let bench_iterations = if args.benchmark { 3 } else { 1 };
+        // One untimed warm-up run first: regex compilation and thread start-up
+        // are paid once, not by every sort
+        let bench_iterations = if args.benchmark { args.benchmark_runs + 1 } else { 1 };
         let mut bench_times: Vec<std::time::Duration> = Vec::with_capacity(bench_iterations);
 
         for iteration in 0..bench_iterations {
-            if args.benchmark && iteration > 0 {
-                diff_output.lock().unwrap().clear();
-            }
-
             let iter_start = std::time::Instant::now();
 
             match fop_sort::fop_sort(file_path, &check_file_config) {
@@ -2970,42 +3038,21 @@ fn main() {
             }
 
             let elapsed = iter_start.elapsed();
-            if args.benchmark {
+            if args.benchmark && iteration > 0 {
                 bench_times.push(elapsed);
+            }
+            if args.benchmark {
+                WARNINGS_MUTED.store(true, std::sync::atomic::Ordering::Relaxed);
             }
         }
 
         // Print benchmark results for --check-file
         if args.benchmark {
-            let min = bench_times.iter().min().unwrap();
-            let max = bench_times.iter().max().unwrap();
-            let avg = bench_times.iter().sum::<std::time::Duration>() / bench_times.len() as u32;
-
-            println!();
-            println!("FOP Benchmark Results");
-            println!("=====================");
-            println!("Iterations:    {}", bench_iterations);
-            println!("Files:         1");
-            println!("Lines:         {}", bench_lines);
-            println!("Size:          {:.5} MB", bench_bytes as f64 / 1_048_576.0);
-            println!();
-            for (i, t) in bench_times.iter().enumerate() {
-                println!("  Run {}: {:.5}s", i + 1, t.as_secs_f64());
-            }
-            println!();
-            println!("Min:           {:.5}s", min.as_secs_f64());
-            println!("Avg:           {:.5}s", avg.as_secs_f64());
-            println!("Max:           {:.5}s", max.as_secs_f64());
-            println!();
-            let avg_secs = avg.as_secs_f64();
-            if avg_secs > 0.0 {
-                println!("Throughput:    {:.5} lines/sec", bench_lines as f64 / avg_secs);
-                println!("               {:.5} MB/sec", (bench_bytes as f64 / 1_048_576.0) / avg_secs);
-            }
+            print_benchmark(&bench_times, 1, bench_lines, bench_bytes);
         }
 
-        // Add checksum if requested (skip during benchmark)
-        if !args.benchmark && !args.add_checksum.is_empty() {
+        // Add checksum if requested (not in a dry run)
+        if !check_file_config.dry_run && !args.add_checksum.is_empty() {
             let filename = file_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
@@ -3107,15 +3154,12 @@ fn main() {
         (0, 0, 0)
     };
 
-    let bench_iterations = if args.benchmark { 3 } else { 1 };
+    // One untimed warm-up run first: regex compilation and thread start-up
+    // are paid once, not by every sort
+    let bench_iterations = if args.benchmark { args.benchmark_runs + 1 } else { 1 };
     let mut bench_times: Vec<std::time::Duration> = Vec::with_capacity(bench_iterations);
 
     for iteration in 0..bench_iterations {
-        if args.benchmark && iteration > 0 {
-            // Clear diff output between iterations
-            diff_output.lock().unwrap().clear();
-        }
-
         let iter_start = std::time::Instant::now();
 
         // Process all locations
@@ -3176,41 +3220,17 @@ fn main() {
         }
 
         let elapsed = iter_start.elapsed();
-        if args.benchmark {
+        if args.benchmark && iteration > 0 {
             bench_times.push(elapsed);
+        }
+        if args.benchmark {
+            WARNINGS_MUTED.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
     // Print benchmark results
     if args.benchmark {
-        let min = bench_times.iter().min().unwrap();
-        let max = bench_times.iter().max().unwrap();
-        let avg = bench_times.iter().sum::<std::time::Duration>() / bench_times.len() as u32;
-
-        println!();
-        println!("FOP Benchmark Results");
-        println!("=====================");
-        println!("Iterations:    {}", bench_iterations);
-        println!("Files:         {}", bench_files);
-        println!("Lines:         {}", bench_lines);
-        println!("Size:          {:.5} MB", bench_bytes as f64 / 1_048_576.0);
-        println!();
-        for (i, t) in bench_times.iter().enumerate() {
-            println!("  Run {}: {:.5}s", i + 1, t.as_secs_f64());
-        }
-        println!();
-        println!("Min:           {:.5}s", min.as_secs_f64());
-        println!("Avg:           {:.5}s", avg.as_secs_f64());
-        println!("Max:           {:.5}s", max.as_secs_f64());
-        println!();
-        let avg_secs = avg.as_secs_f64();
-        if avg_secs > 0.0 {
-            println!("Throughput:    {:.5} lines/sec", bench_lines as f64 / avg_secs);
-            println!("               {:.5} MB/sec", (bench_bytes as f64 / 1_048_576.0) / avg_secs);
-            if bench_files > 0 {
-                println!("               {:.5}ms/file", (avg_secs * 1000.0) / bench_files as f64);
-            }
-        }
+        print_benchmark(&bench_times, bench_files, bench_lines, bench_bytes);
     }
 
     // Clear tracking data when done (free memory)

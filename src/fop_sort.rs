@@ -227,6 +227,8 @@ pub struct SortConfig<'a> {
     pub output_changed: bool,
     /// Update timestamp in file header
     pub add_timestamp: bool,
+    /// Timing the sort (`--benchmark`): nothing reads the result
+    pub benchmark: bool,
 }
 
 /// Track changes made during sorting
@@ -2387,6 +2389,14 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     }
 
     drop(output);
+
+    // A benchmark times the sort. Nothing reads the result, and comparing it
+    // or building a diff -- which on a heavily reordered list takes far longer
+    // than the sort -- is not what is being measured.
+    if config.benchmark {
+        fs::remove_file(&temp_file)?;
+        return Ok(None);
+    }
 
     // Compare files and replace if different
     let new_content = fs::read(&temp_file)?;

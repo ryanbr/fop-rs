@@ -137,7 +137,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--config-file=` | Custom config file path |
 | `--show-config` | Show applied configuration and exit |
 | `--git-binary=<path>` | Path to git binary (default: git in PATH) |
-| `--benchmark` | Benchmark sorting performance (3 iterations, dry-run) |
+| `--benchmark[=N]` | Time the sort: one untimed warm-up, then N runs (default 5), reporting the median, min and max. Files are left untouched: no diff is built, and timestamps and checksums are not written |
 | `--abp-convert` | Convert ABP extended selectors to uBO format |
 | `--adguard-convert` | Promote a `:has-text()` rule's separator to AdGuard's spelling (`##` → `#?#`, `#@#` → `#@?#`) |
 | `--convert-trusted` | Convert trusted scriptlets to non-trusted when value is safe |

@@ -2620,6 +2620,7 @@ fn test_sort_config(comment_chars: &[String]) -> crate::fop_sort::SortConfig<'_>
         dry_run: false,
         output_changed: false,
         add_timestamp: false,
+        benchmark: false,
     }
 }
 
@@ -3483,6 +3484,28 @@ fn test_scriptlet_escaped_comma_kept() {
         crate::fop_sort::tidy_rule(r"example.com##+js(trusted-set-cookie, a\\, true)", &config),
         r"example.com##+js(set-cookie, a\\, true)"
     );
+}
+
+#[test]
+fn test_benchmark_sort_leaves_the_file() {
+    // --benchmark times the sort alone: no comparison or diff (which on a
+    // heavily reordered list took far longer than the sort), no result, and
+    // the file and its directory exactly as they were.
+    let chars = vec!["!".to_string()];
+    let config = crate::fop_sort::SortConfig { benchmark: true, dry_run: true, ..test_sort_config(&chars) };
+    let dir = std::env::temp_dir().join(format!("fop-test-bench-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("list.txt");
+    let content = "! Title: t\n||b.com^\n||a.com^\nb.com##.ad\na.com##.ad\n";
+    std::fs::write(&file, content).unwrap();
+    let result = crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let after = std::fs::read_to_string(&file).unwrap();
+    let entries: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(result, None);
+    assert_eq!(after, content);
+    assert_eq!(entries, vec![std::ffi::OsString::from("list.txt")], "temp file left behind");
 }
 
 #[test]

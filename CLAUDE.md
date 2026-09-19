@@ -188,7 +188,7 @@ cargo build --release
 ```bash
 ./target/release/fop --benchmark /path/to/easylist
 ```
-Runs 3 iterations in dry-run mode, reports min/avg/max time, lines/sec, MB/sec, ms/file.
+One untimed warm-up, then 5 timed runs (`--benchmark=N` for N); reports median/min/max time and lines/sec, MB/sec, ms/file from the median, with the thread count. Times the sort only: no diff, and files are left untouched.
 
 ### CI simulation
 ```bash
