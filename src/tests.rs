@@ -345,29 +345,24 @@ fn test_filter_tidy_adguard_exception_forms_preserved() {
 }
 
 #[test]
-fn test_filter_tidy_network_rule_with_hash_or_dollars_in_path() {
-    // The cosmetic check that gates the `$option.option` fix is anchored, so a
-    // network rule whose URL path happens to contain `##` or `$$` is still a
-    // network rule and still gets its options normalised. A substring test
-    // read these as cosmetic and skipped the fix.
-    assert_eq!(
-        filter_tidy("||a.com/$$p^$third-party.script", false),
-        "||a.com/$$p^$script,third-party"
-    );
-    assert_eq!(
-        filter_tidy("||a.com/a##b^$third-party.script", false),
-        "||a.com/a##b^$script,third-party"
-    );
+fn test_typo_fix_touches_network_rules_only() {
+    // A line carrying `##` or `$$` is read as cosmetic by ABP, uBO and AdGuard
+    // alike, so the `$option.option` fix -- which rewrites network options --
+    // leaves it alone. These were once "repaired" on the theory that a network
+    // rule could hold `##` in its path; none can (a URL fragment is never part
+    // of a request) and none appears in 2.2M lines of real lists, while the
+    // narrower test that theory required corrupted a real uAssets scriptlet.
+    for line in ["||a.com/$$p^$third-party.script", "||a.com/a##b^$third-party.script"] {
+        assert_eq!(filter_tidy(line, false), line, "rewritten: {}", line);
+    }
     // A genuine cosmetic rule is still exempt.
     assert_eq!(
         filter_tidy("example.com##div[data-x=\"a.b$c.d\"]", false),
         "example.com##div[data-x=\"a.b$c.d\"]"
     );
 
-    // Regex-domain cosmetic rules too. ADGUARD_ELEMENT_PATTERN's domain group
-    // rejects a leading `/`, so these match only REGEX_ELEMENT_PATTERN -- and
-    // their host anchor ends in `$`, which reads as an option separator, so
-    // testing the AdGuard pattern alone let the typo fix corrupt them.
+    // Regex-domain cosmetic rules too: a regex host anchor ends in `$`, which
+    // reads as an option marker, but the separator makes the line cosmetic.
     for rule in [
         r"/^\w+\.example\.com$/##.ad",
         r"/ads\.example\.com$/#@#.ad",
@@ -3078,5 +3073,40 @@ fn test_extension_value_keeps_its_spaces() {
     // A pattern that merely contains the text is not an extension option, so
     // its spaces are still tidied as before.
     assert_eq!(filter_tidy("||x.com/extension=a b^", true), "||x.com/extension=ab^");
+}
+
+#[test]
+fn test_regex_pattern_keeps_its_spaces_with_options() {
+    // A space in a regex is part of what it matches: `[^&=? ]` excludes spaces
+    // and `[^&=?]` does not. Only an option-less regex was recognised, so this
+    // AdGuard rule had its character class rewritten, broadening the match.
+    let rule = "/^https:\\/\\/[a-z]+\\.com\\/en\\/[a-z]+\\?([a-z]+=[^&=? ]*&)*id=[12][0-9]/$script,third-party,match-case";
+    let tidied = filter_tidy(rule, true);
+    assert!(tidied.contains("[^&=? ]"), "regex space stripped: {}", tidied);
+    // Exceptions too.
+    let exc = "@@/^https?:\\/\\/[^ ]+\\/ads\\//$script";
+    assert!(filter_tidy(exc, true).contains("[^ ]+"), "{}", filter_tidy(exc, true));
+    // An option-less regex was already kept.
+    assert_eq!(filter_tidy("/a b/", true), "/a b/");
+    // A plain network rule's stray space is still removed.
+    assert_eq!(filter_tidy("||x.com/a b^$script", true), "||x.com/ab^$script");
+}
+
+#[test]
+fn test_typo_fix_skips_cosmetic_rules_with_regex_domains() {
+    // A cosmetic domain list may mix plain and regex domains; a regex ends in
+    // `$/`, which read as an option marker. The `$option.option` fix then
+    // turned `Math.random` into `Math,random`, splitting the scriptlet's
+    // argument. From uAssets' quick-fixes.
+    for rule in [
+        "0deh.com,/^filemoon-[a-z0-9]+\\.(?:com|xyz)$/##+js(acs, Math.random, parseInt(localStorage)",
+        "a.com,/^b-[a-z]+\\.com$/##+js(set, a.b.c, true)",
+        "a.com,/^b\\.com$/#@#.ad.banner",
+    ] {
+        assert_eq!(filter_tidy(rule, true), rule, "cosmetic rule rewritten: {}", rule);
+    }
+    // The fix still applies to network rules.
+    assert_eq!(filter_tidy("||a.com^$third-party.script", true), "||a.com^$script,third-party");
+    assert_eq!(filter_tidy("@@||a.com^$image.script", true), "@@||a.com^$image,script");
 }
 

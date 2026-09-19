@@ -462,24 +462,6 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> Cow<'_, str> {
     Cow::Owned(result)
 }
 
-/// True when `filter` really is a cosmetic / HTML-filtering rule.
-///
-/// Anchored, unlike the looser substring test used to suppress space removal: a
-/// network rule can carry `##` or `$$` inside its URL path (`||a.com/a##b^`),
-/// and a substring test reads that as cosmetic, wrongly suppressing the
-/// `$option.option` fix for it.
-///
-/// Both patterns are needed. `ADGUARD_ELEMENT_PATTERN`'s domain group is
-/// `[^/|@"!]*?`, so a regex-domain rule — `/^\w+\.example\.com$/##.ad`, which
-/// element_tidy passes through untouched — can never match it. Its host anchor
-/// ends in `$`, which reads as an option separator, so relying on the AdGuard
-/// pattern alone let the typo fix rewrite `##.ad` to `##,ad`.
-#[inline]
-fn is_cosmetic_rule(filter: &str) -> bool {
-    crate::ADGUARD_ELEMENT_PATTERN.is_match(filter)
-        || crate::REGEX_ELEMENT_PATTERN.is_match(filter)
-}
-
 /// Is the `$` at `i` part of a cosmetic or HTML-filtering separator rather
 /// than the start of filter options?
 ///
@@ -635,6 +617,20 @@ fn carries_space_valued_option(filter_in: &str) -> bool {
     })
 }
 
+/// Whether a network rule's pattern is a regex: `/.../`, before any option list.
+///
+/// A space in a regex is part of what it matches -- `[^&=? ]` excludes spaces,
+/// `[^&=?]` does not -- so stripping it changes the rule. The old test looked
+/// at the whole line, so it caught only a regex with no options: one carrying
+/// `$script,third-party` ended in `third-party`, was not recognised, and had
+/// its character class rewritten. The same held for every `@@/.../` exception.
+#[inline]
+fn has_regex_pattern(filter: &str) -> bool {
+    let body = filter.strip_prefix("@@").unwrap_or(filter);
+    let pattern = crate::fop_rules::split_options(body).map_or(body, |(pattern, _)| pattern);
+    pattern.len() > 1 && pattern.starts_with('/') && pattern.ends_with('/')
+}
+
 /// Sort and clean filter options.
 pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // Skip filters with regex values in options (contain =/.../ patterns)
@@ -650,15 +646,26 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     // config"]` became `"adconfig"` while the identical `$$` rule was left
     // alone. Deliberately a loose substring test — erring towards not touching
     // something that might be cosmetic.
+    const COSMETIC_SEPARATORS: [&str; 10] =
+        ["##", "#@#", "#?#", "#@?#", "#$#", "#@$#", "#%#", "#@%#", "#$?#", "#@$?#"];
     let is_element_rule = (filter_in.contains('#')
-        && ["##", "#@#", "#?#", "#@?#", "#$#", "#@$#", "#%#", "#@%#", "#$?#", "#@$?#"]
-            .iter().any(|s| filter_in.contains(s)))
+        && COSMETIC_SEPARATORS.iter().any(|s| filter_in.contains(s)))
         || filter_in.contains("$$")
         || filter_in.contains("$@$");
 
     // Fix typo: $option.option -> $option,option (before pattern matching)
+    //
+    // Network rules only, judged the way ABP, uBO and AdGuard all parse a
+    // line: a cosmetic separator anywhere makes it cosmetic. A narrower,
+    // anchored test was tried so that a network rule carrying `##` in its URL
+    // path would still be repaired -- but no such rule exists (a URL fragment
+    // is never part of a request, so it could not match; no engine would read
+    // it as a network rule; and none appears in 2.2M lines of real lists). The
+    // anchored test missed a cosmetic domain list mixing plain and regex
+    // domains, where a regex's `$/` reads as an option marker, and rewrote
+    // uAssets' `+js(acs, Math.random, ...)` to `Math,random`.
     let filter_in: Cow<str> = match find_option_separator(filter_in) {
-        Some(dollar_pos) if !is_cosmetic_rule(filter_in) => {
+        Some(dollar_pos) if !is_element_rule => {
             let (base, opts) = filter_in.split_at(dollar_pos);
             if !opts.contains('=') && opts.contains('.') {
                 Cow::Owned(format!("{}{}", base, opts.replace('.', ",")))
@@ -682,7 +689,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
     let has_whitespace = filter_in.bytes().any(|b| b == b' ' || b == b'\t');
     let filter_in: Cow<str> = if has_whitespace {
         if !is_element_rule
-            && !(filter_in.starts_with('/') && filter_in.ends_with('/'))
+            && !has_regex_pattern(filter_in)
             && !carries_space_valued_option(filter_in)
         {
             Cow::Owned(filter_in.split_whitespace().collect::<String>())
