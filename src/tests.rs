@@ -2339,6 +2339,44 @@ fn test_check_rule_never_flags_valid_modifiers() {
 }
 
 #[test]
+fn test_check_rule_html_filtering_rules() {
+    use crate::fop_rules::check_rule as f;
+    // AdGuard HTML filtering. These have no `#`, so they fell through to the
+    // network path, where a bare tag parsed as an option list: both of the
+    // first two are live in AdGuard Annoyances and were called unknown options.
+    for rule in [
+        "m.timesofindia.com,m-timesofindia-com.cdn.ampproject.org$$amp-consent",
+        "portal.librus.pl$$advertisement-module",
+        "example.com$@$amp-ad",
+        "$$script[tag-content=\"ad config\"]",
+        "example.com$$script[tag-content=\"x\"][max-length=\"500\"]",
+        // A `##` inside the selector is not the separator: the earliest one is.
+        "example.com$$div[attr=\"a##b\"]",
+    ] {
+        assert!(f(rule).is_none(), "valid rule flagged: {}", rule);
+    }
+    // Real faults in one are still caught, now as the cosmetic faults they are.
+    assert_eq!(f("example.com$$div[id=\"ad\"").map(|p| p.reason), Some("unbalanced brackets in selector"));
+    assert_eq!(f(",example.com$$div").map(|p| p.reason), Some("malformed domain list"));
+    assert_eq!(f("example.com$$").map(|p| p.reason), Some("separator with no selector"));
+    // A network rule whose path holds `$$` is still a network rule...
+    assert_eq!(f("||a.com/$$p^$thrid-party").map(|p| p.reason), Some("unknown option"));
+    // ...and a `##` rule whose selector holds `$$` is still a `##` rule.
+    assert!(f("example.com##div[data-x=\"$$\"]").is_none());
+
+    // In an HTML-filtering selector a backslash is text: AdGuard escapes a
+    // quote by doubling it. Reading `\"` as an escape swallowed the closing
+    // quote, and this valid rule was reported unbalanced and deleted.
+    assert!(f("example.com$$script[tag-content=\"C:\\\"]").is_none());
+    assert!(f("example.com$$script[tag-content=\"say \"\"hi\"\"\"]").is_none());
+    // A regex inside :contains() keeps its escapes; that construct is exempt.
+    assert!(f("youporn.com$$script:contains(/window\\.[\\s\\S]*?_zone_/)").is_none());
+    // CSS does use backslash escapes, so a `##` selector still honours them:
+    // the quote here is escaped, and the string closes after `b`.
+    assert!(f("example.com##div[title=\"a\\\"b\"]").is_none());
+}
+
+#[test]
 fn test_literal_arg_constructs_cover_text_matching_pseudos() {
     use crate::fop_rules::{check_rule, LITERAL_ARG_CONSTRUCTS};
     use crate::fop_sort::EXTENDED_PSEUDO;

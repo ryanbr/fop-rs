@@ -34,8 +34,22 @@ impl<'a> RuleProblem<'a> {
 ///
 /// A `#` inside a network rule's path is not a separator, so the separator
 /// must match one of the known spellings exactly rather than any `#`.
+///
+/// The earliest separator wins, whichever family it belongs to. Trying `#`
+/// first split `example.com$$div[attr="a##b"]` at the `##` inside the quotes,
+/// leaving a selector of `b"]` that read as unbalanced.
 #[inline]
 fn split_cosmetic(line: &str) -> Option<(&str, &str, &str)> {
+    match (split_hash_separator(line), split_html_filter(line)) {
+        // The domain part's length is the separator's position.
+        (Some(hash), Some(html)) => Some(if hash.0.len() <= html.0.len() { hash } else { html }),
+        (hash, html) => hash.or(html),
+    }
+}
+
+/// Split at the first `#`-family separator (`##`, `#@#`, `#?#`, `#$#` ...).
+#[inline]
+fn split_hash_separator(line: &str) -> Option<(&str, &str, &str)> {
     let mut from = 0;
     while let Some(hash) = line[from..].find('#') {
         let at = from + hash;
@@ -47,6 +61,33 @@ fn split_cosmetic(line: &str) -> Option<(&str, &str, &str)> {
         from = at + 1;
     }
     None
+}
+
+/// Split an AdGuard HTML-filtering rule, `domains$$selector` or its exception
+/// `domains$@$selector`.
+///
+/// These carry no `#`, so the search in `split_cosmetic` never found them and
+/// the rule fell through to the network path. There a bare tag -- `$$amp-consent`,
+/// `$$advertisement-module`, both live in AdGuard Annoyances -- parsed as an
+/// option list and was reported as an unknown option: a defect, so
+/// `--remove-bad-rules` deleted the rule and `--ci` failed on it. Most `$$` rules
+/// escaped only because `script[tag-content=...]` does not parse as options.
+///
+/// The domain part is held to the shape `ADGUARD_ELEMENT_PATTERN` allows, so a
+/// network rule whose path happens to hold `$$` (`||a.com/$$p^$script`) is not
+/// mistaken for one: a `/`, `|`, `@`, `"` or `!` before the separator rules it out.
+#[inline]
+fn split_html_filter(line: &str) -> Option<(&str, &str, &str)> {
+    let at = match (line.find("$$"), line.find("$@$")) {
+        (Some(a), Some(b)) => a.min(b),
+        (a, b) => a.or(b)?,
+    };
+    let domains = &line[..at];
+    if domains.bytes().any(|b| matches!(b, b'/' | b'|' | b'@' | b'"' | b'!')) {
+        return None;
+    }
+    let sep = if line[at..].starts_with("$@$") { "$@$" } else { "$$" };
+    Some((domains, sep, &line[at + sep.len()..]))
 }
 
 /// Constructs whose arguments are literal text, not CSS.
@@ -70,6 +111,18 @@ pub(crate) const LITERAL_ARG_CONSTRUCTS: [&str; 8] = [
 /// carry deliberately unbalanced characters inside a string or a regex.
 #[inline]
 pub(crate) fn brackets_balance(selector: &str) -> bool {
+    brackets_balance_with(selector, true)
+}
+
+/// `brackets_balance`, with backslash escaping optional.
+///
+/// AdGuard's HTML-filtering selectors (`$$script[tag-content="..."]`) escape a
+/// quote by doubling it, and a backslash there is ordinary text: reading one as
+/// an escape made `[tag-content="C:\"]` swallow its closing quote, so a valid
+/// rule was reported unbalanced and deleted. A doubled quote needs no special
+/// case -- it closes and reopens the string, which balances either way.
+#[inline]
+fn brackets_balance_with(selector: &str, backslash_escapes: bool) -> bool {
     let (mut square, mut round, mut curly) = (0i32, 0i32, 0i32);
     let mut quote = 0u8;
     let mut escaped = false;
@@ -79,7 +132,7 @@ pub(crate) fn brackets_balance(selector: &str) -> bool {
             continue;
         }
         match b {
-            b'\\' => escaped = true,
+            b'\\' if backslash_escapes => escaped = true,
             b'"' | b'\'' if quote == 0 => quote = b,
             q if q == quote => quote = 0,
             _ if quote != 0 => {}
@@ -400,7 +453,15 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         let has_paren = !is_script && !is_snippet && selector.as_bytes().contains(&b'(');
         let literal_args =
             has_paren && LITERAL_ARG_CONSTRUCTS.iter().any(|c| selector.contains(c));
-        if !is_script && !is_snippet && !literal_args && !brackets_balance(selector) {
+        // An HTML-filtering selector's backslashes are literal (see
+        // `brackets_balance_with`); its regexes live in `:contains()`, which
+        // `literal_args` already exempts.
+        let html_filter = matches!(sep, "$$" | "$@$");
+        if !is_script
+            && !is_snippet
+            && !literal_args
+            && !brackets_balance_with(selector, !html_filter)
+        {
             return Some(RuleProblem::new("unbalanced brackets in selector", selector));
         }
         // A selector cannot open on a combinator. `+js(...)` is a scriptlet
