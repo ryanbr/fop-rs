@@ -1057,6 +1057,67 @@ pub fn get_added_lines_against(
     Some(parse_added_lines(&String::from_utf8(output.stdout).ok()?))
 }
 
+/// What HEAD holds for a file in the working tree.
+pub enum AtHead {
+    /// The committed content -- the file's own, or, for a renamed file, that
+    /// of the path it was renamed from.
+    Content(String),
+    /// Confirmed not in HEAD: a new file, or an unborn branch.
+    Absent,
+    /// Could not be established. Callers must not assume there is nothing.
+    Unknown,
+}
+
+/// The committed content behind a working-tree file.
+///
+/// `path` is relative to the repository root, as the diff reports it. Absence
+/// is confirmed rather than inferred from a failed `git show`: that also fails
+/// for a file renamed since HEAD -- whose committed rules live under its old
+/// name, which `git diff` follows -- and when git itself fails. Read as "no
+/// committed rules", either let `--remove-bad-rules` delete a merged line
+/// holding a committed rule.
+pub fn file_at_head(base_cmd: &[String], path: &str) -> AtHead {
+    let git = |args: &[&str]| {
+        Command::new(&base_cmd[0]).args(&base_cmd[1..]).args(args).output().ok()
+    };
+    let show = |p: &str| {
+        git(&["show", &format!("HEAD:{}", p)])
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+    };
+    if let Some(content) = show(path) {
+        return AtHead::Content(content);
+    }
+    // No commit at all: nothing is committed anywhere. `--verify --quiet`
+    // exits 1 for a ref that does not exist and 128 when git itself fails, and
+    // only the first means there is nothing to lose.
+    match git(&["rev-parse", "--verify", "--quiet", "HEAD"]).map(|o| o.status.code()) {
+        Some(Some(0)) => {}
+        Some(Some(1)) => return AtHead::Absent,
+        _ => return AtHead::Unknown,
+    }
+    // Renamed since HEAD: the diff's own rename detection, against HEAD, which
+    // is what the additions were read from.
+    let Some(renames) = git(&["diff", "--name-status", "-M", "HEAD"]).filter(|o| o.status.success())
+    else {
+        return AtHead::Unknown;
+    };
+    let renames = String::from_utf8_lossy(&renames.stdout);
+    for entry in renames.lines() {
+        let fields: Vec<&str> = entry.split('\t').collect();
+        if let [status, from, to] = fields[..] {
+            if status.starts_with('R') && to == path {
+                return show(from).map_or(AtHead::Unknown, AtHead::Content);
+            }
+        }
+    }
+    // Positively absent: listed nowhere in HEAD's tree.
+    match git(&["ls-tree", "--name-only", "HEAD", "--", &format!(":(top){}", path)]) {
+        Some(o) if o.status.success() && o.stdout.iter().all(|b| b.is_ascii_whitespace()) => AtHead::Absent,
+        _ => AtHead::Unknown,
+    }
+}
+
 /// The empty tree's id, as this repository spells it.
 ///
 /// Asked of git rather than hard-coded: `4b825dc6...` is the SHA-1 id, and in a

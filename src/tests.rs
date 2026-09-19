@@ -2592,3 +2592,322 @@ fn test_ci_diff_base_uses_the_fork_point() {
     // Against the tip, upstream's deletion showed up here as an addition.
     assert_eq!(added, vec!["||mine.com^".to_string()], "base {}", base);
 }
+
+// =============================================================================
+// Rule checks run before the sort
+// =============================================================================
+
+fn test_sort_config(comment_chars: &[String]) -> crate::fop_sort::SortConfig<'_> {
+    crate::fop_sort::SortConfig {
+        convert_ubo: true,
+        no_sort: false,
+        alt_sort: false,
+        abp_convert: false,
+        adguard_convert: false,
+        convert_trusted: false,
+        parse_adguard: false,
+        localhost: false,
+        comment_chars,
+        backup: false,
+        keep_empty_lines: false,
+        ignore_dot_domains: false,
+        fix_typos: false,
+        ignore_line_minimum: false,
+        quiet: true,
+        no_color: true,
+        dry_run: false,
+        output_changed: false,
+        add_timestamp: false,
+    }
+}
+
+#[test]
+fn test_tidy_rule_matches_the_sorter() {
+    // `tidy_rule` mirrors the sorter's per-line dispatch so the checks can
+    // judge a line as it will be written. If the two drift apart, the checks
+    // judge a form nobody writes -- so every rule here goes through both.
+    let chars = vec!["!".to_string()];
+    let base = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-tidy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // Under every option that changes a line, not just the defaults: the first
+    // version of this test ran only those, and so missed that `tidy_rule` left
+    // out the typo fixes the sort applies under `fix_typos`.
+    let configs = [
+        ("default", test_sort_config(&chars)),
+        ("fix_typos", crate::fop_sort::SortConfig { fix_typos: true, ..test_sort_config(&chars) }),
+        ("parse_adguard", crate::fop_sort::SortConfig { parse_adguard: true, ..test_sort_config(&chars) }),
+        ("abp_convert", crate::fop_sort::SortConfig { abp_convert: true, ..test_sort_config(&chars) }),
+        ("adguard_convert", crate::fop_sort::SortConfig { adguard_convert: true, ..test_sort_config(&chars) }),
+        ("convert_trusted", crate::fop_sort::SortConfig { convert_trusted: true, ..test_sort_config(&chars) }),
+        ("no_ubo_convert", crate::fop_sort::SortConfig { convert_ubo: false, ..test_sort_config(&chars) }),
+    ];
+    let _ = &base;
+    for (name, config) in &configs {
+    for (i, rule) in [
+        "||x.com^$third-party.script",
+        "||x.com^$redirect_rule=noopjs,xhr",
+        "||x.com^$Third-Party,SCRIPT",
+        "*$ping,third-party",
+        "EXAMPLE.com##div  >  p",
+        "b.com,a.com##.ad",
+        "example.com#?#div:has-text(Sponsored)",
+        "example.com#@#.banner",
+        "/^\\w+\\.example\\.com$/##.ad",
+        "example.com$$script[tag-content=\"ad\"]",
+        "[$path=/x/]example.com##.ad",
+        "@@||x.com^$generichide",
+        "/ads/*",
+        // Rewritten only under fix_typos: `$$domain=` becomes `$domain=`.
+        "||y.com^$$domain=z.com",
+        // Domain-list faults: element_tidy drops the empty entries under any
+        // config; a doubled dot is repaired by nothing.
+        "example..com##.ad",
+        "a.com,,b.com##.ad",
+        ",a.com##.ad",
+        // Changed only by the conversions.
+        "example.com##div:-abp-contains(Sponsored)",
+        "example.com##div:has-text(Sponsored)",
+        "example.com##+js(trusted-set-cookie, consent, true)",
+        // Dropped domains are warned about; the warning must not escape.
+        "a.b,good.com##.ad",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let file = dir.join(format!("{}-{}.txt", name, i));
+        std::fs::write(&file, format!("{}\n", rule)).unwrap();
+        crate::fop_sort::fop_sort(&file, config).unwrap();
+        let sorted = std::fs::read_to_string(&file).unwrap();
+        let written: Vec<&str> = sorted.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(
+            written,
+            vec![crate::fop_sort::tidy_rule(rule, config).as_ref()],
+            "tidy_rule disagrees with the sorter on {} under {}",
+            rule,
+            name
+        );
+    }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_merge_key() {
+    use crate::fop_rules::merge_key;
+    // Rules the sort merges share a key...
+    assert_eq!(merge_key("a.com##.ad"), merge_key("a.com,b.com##.ad"));
+    assert_eq!(merge_key("||x.com^$script,domain=a.com"), merge_key("||x.com^$script,domain=a.com|b.com"));
+    assert_eq!(merge_key("x.com##div:has-text(A)"), merge_key("x.com##div:has-text(/A|B/)"));
+    assert_eq!(merge_key("a.com$$amp-ad"), merge_key("a.com,b.com$$amp-ad"));
+    // Every text-matching pseudo-class the sort merges, not just :has-text().
+    assert_eq!(merge_key("x.com##div:-abp-contains(A)"), merge_key("x.com,y.com##div:-abp-contains(/A|B/)"));
+    assert_eq!(merge_key("x.com##div:abp-contains(A)"), merge_key("x.com##div:abp-contains(/A|B/)"));
+    // ...and rules it would not merge do not.
+    assert_ne!(merge_key("a.com##.ad"), merge_key("a.com##.banner"));
+    assert_ne!(merge_key("a.com##.ad"), merge_key("a.com#@#.ad"));
+}
+
+fn rule_check_repo(name: &str, committed: &str, working: &str) -> ScratchRepo {
+    let repo = ScratchRepo::new(name);
+    repo.write("a.txt", committed);
+    repo.git(&["add", "a.txt"]);
+    repo.git(&["commit", "-q", "-m", "base"]);
+    repo.write("a.txt", working);
+    repo
+}
+
+fn run_checks(repo: &ScratchRepo) -> bool {
+    let chars = vec!["!".to_string()];
+    run_checks_with(repo, &|_: &std::path::Path| test_sort_config(&chars))
+}
+
+fn run_checks_with<'c>(
+    repo: &ScratchRepo,
+    config_for: &(dyn Fn(&std::path::Path) -> crate::fop_sort::SortConfig<'c> + Sync),
+) -> bool {
+    crate::run_rule_checks(
+        &repo.cmd(), true, false, config_for, true,
+        &["txt".to_string()], &[], &[], &[], false, false,
+    )
+}
+
+#[test]
+fn test_remove_bad_rules_keeps_committed_rules() {
+    // The reported case: the checks ran after the sort, which had merged the
+    // added rule into the committed one, so both went.
+    let repo = rule_check_repo("keep", "! t\na.com##.ad\n", "! t\na.com##.ad\nb..com##.ad\n");
+    assert!(run_checks(&repo));
+    assert_eq!(std::fs::read_to_string(repo.0.join("a.txt")).unwrap(), "! t\na.com##.ad\n");
+}
+
+#[test]
+fn test_remove_bad_rules_holds_back_an_already_merged_line() {
+    // A tree sorted earlier (a `--no-commit` run) already holds the merge, so
+    // the line is the committed rule and the bad one together. Deleting it
+    // would lose the committed rule: it is reported, kept, and the run fails
+    // so nothing is committed.
+    let merged = "! t\na.com,b..com##.ad\n";
+    let repo = rule_check_repo("merged", "! t\na.com##.ad\n", merged);
+    assert!(!run_checks(&repo));
+    assert_eq!(std::fs::read_to_string(repo.0.join("a.txt")).unwrap(), merged);
+}
+
+#[test]
+fn test_rule_checks_judge_the_repaired_form() {
+    // Each of these is an "unknown option" -- a removable defect -- as written,
+    // and fine once the sort has lowercased and normalised the option names.
+    // Judging the raw line would delete three rules fop is about to repair.
+    let working = "! t\n||a.com^\n||x.com^$redirect_rule=noopjs\n||y.com^$Third-Party\n||z.com^$SCRIPT,domain=a.com\n";
+    let repo = rule_check_repo("repair", "! t\n||a.com^\n", working);
+    assert!(run_checks(&repo));
+    assert_eq!(std::fs::read_to_string(repo.0.join("a.txt")).unwrap(), working);
+}
+
+#[test]
+fn test_webbundle_is_a_known_option() {
+    assert!(crate::fop_rules::check_rule("||example.com^$webbundle").is_none());
+}
+
+#[test]
+fn test_rule_checks_use_each_files_own_config() {
+    // A file listed in `localhost_files` is sorted as a hosts file even when
+    // the global setting is off. Judged under the global config, the space in
+    // each added entry was stripped and the line reported as a bare domain.
+    let repo = ScratchRepo::new("hosts");
+    repo.write("hosts.txt", "0.0.0.0 a.com\n");
+    repo.git(&["add", "hosts.txt"]);
+    repo.git(&["commit", "-q", "-m", "base"]);
+    let working = "0.0.0.0 a.com\n0.0.0.0 b.com\n";
+    repo.write("hosts.txt", working);
+    let chars = vec!["!".to_string()];
+    let config_for = |path: &std::path::Path| crate::fop_sort::SortConfig {
+        localhost: path.file_name().is_some_and(|n| n == "hosts.txt"),
+        ..test_sort_config(&chars)
+    };
+    // Asserted on the findings themselves: the false one is advice, which is
+    // kept, so the file's content alone could not show it was raised.
+    let additions = crate::fop_git::get_added_lines(&repo.cmd()).unwrap();
+    let tidied = crate::tidy_all(&additions, &config_for, &repo.0);
+    let found: Vec<&str> = crate::check_as_sorted(&additions, &tidied)
+        .iter()
+        .map(|(_, p)| p.reason)
+        .collect();
+    assert!(found.is_empty(), "hosts entry judged under the global config: {:?}", found);
+    assert!(run_checks_with(&repo, &config_for));
+    assert_eq!(std::fs::read_to_string(repo.0.join("hosts.txt")).unwrap(), working);
+}
+
+#[test]
+fn test_rule_checks_judge_repaired_domain_lists() {
+    // element_tidy drops empty entries from a domain list, so a doubled,
+    // leading or trailing comma is written repaired. Judged as typed, each is a
+    // removable "malformed domain list" and would be deleted. A doubled dot is
+    // repaired by nothing -- not by fix_typos either -- so it is still judged
+    // and removed. Run under fix_typos, which leaves all of this unchanged.
+    let working = "! t\na.com##.ad\nb.com,,c.com##.banner\n,d.com##.ad2\ne.com,##.ad3\n";
+    let repo = rule_check_repo("typos", "! t\na.com##.ad\n", working);
+    let chars = vec!["!".to_string()];
+    let config_for =
+        |_: &std::path::Path| crate::fop_sort::SortConfig { fix_typos: true, ..test_sort_config(&chars) };
+    assert!(run_checks_with(&repo, &config_for));
+    assert_eq!(std::fs::read_to_string(repo.0.join("a.txt")).unwrap(), working);
+
+    // Something fix_typos does not repair is still judged, and removed.
+    let repo = rule_check_repo("typos2", "! t\na.com##.ad\n", "! t\na.com##.ad\nexample..com##.x\n");
+    assert!(run_checks_with(&repo, &config_for));
+    assert_eq!(std::fs::read_to_string(repo.0.join("a.txt")).unwrap(), "! t\na.com##.ad\n");
+}
+
+#[test]
+fn test_tidy_rule_is_silent() {
+    // The sort warns when it writes the line; the checks' pass over the same
+    // line must not, or every warning appears twice.
+    use std::sync::atomic::Ordering;
+    crate::WARNING_TO_FILE.store(true, Ordering::Relaxed);
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let marker = "silent-marker-4f1c.com";
+    let rule = format!("a.b,{}##.ad", marker);
+    let _ = crate::fop_sort::tidy_rule(&rule, &config);
+    let leaked = crate::WARNING_BUFFER.lock().unwrap().iter().any(|w| w.contains(marker));
+    // The same work done by the sorter's own path does warn, so the assertion
+    // above is not passing merely because nothing warns.
+    let _ = crate::fop_sort::element_tidy(&format!("a.b,{}", marker), "##", ".ad");
+    let warned = crate::WARNING_BUFFER.lock().unwrap().iter().any(|w| w.contains(marker));
+    assert!(!leaked, "tidy_rule printed a warning the sort will print again");
+    assert!(warned, "element_tidy no longer warns, so this test proves nothing");
+}
+
+#[test]
+fn test_empty_path_option_is_unset() {
+    // An empty path-valued option means "not set", not the path "".
+    use crate::non_empty_path;
+    assert_eq!(non_empty_path(""), None);
+    assert_eq!(non_empty_path("   "), None);
+    assert_eq!(non_empty_path(" warnings.txt "), Some(std::path::PathBuf::from("warnings.txt")));
+    assert_eq!(non_empty_path("/abs/banned.txt"), Some(std::path::PathBuf::from("/abs/banned.txt")));
+}
+
+#[test]
+fn test_merge_guard_covers_abp_contains() {
+    // The sort merges :-abp-contains() arguments as it does :has-text(); a
+    // guard keyed only on :has-text( let this merged line be deleted, and the
+    // committed x.com rule with it.
+    let merged = "! t\nx.com,y..com##div:-abp-contains(/A|B/)\n";
+    let repo = rule_check_repo("abpmerge", "! t\nx.com##div:-abp-contains(A)\n", merged);
+    assert!(!run_checks(&repo));
+    assert_eq!(std::fs::read_to_string(repo.0.join("a.txt")).unwrap(), merged);
+}
+
+#[test]
+fn test_merge_guard_follows_a_rename() {
+    // Renamed since HEAD, a file's committed rules live under its old name.
+    // Taken as "not in HEAD, so nothing committed", its merged line was deleted.
+    let repo = ScratchRepo::new("rename");
+    let body = "! t\na.com##.ad\nc.com##.c\nd.com##.d\ne.com##.e\nf.com##.f\n";
+    repo.write("old.txt", body);
+    repo.git(&["add", "old.txt"]);
+    repo.git(&["commit", "-q", "-m", "base"]);
+    repo.git(&["mv", "old.txt", "new.txt"]);
+    let merged = "! t\na.com,b..com##.ad\nc.com##.c\nd.com##.d\ne.com##.e\nf.com##.f\n";
+    repo.write("new.txt", merged);
+    assert!(!run_checks(&repo));
+    assert_eq!(std::fs::read_to_string(repo.0.join("new.txt")).unwrap(), merged);
+}
+
+#[test]
+fn test_bad_rule_in_a_new_file_is_still_removed() {
+    // A file confirmed absent from HEAD has no committed rules to lose, so the
+    // guard must not hold its lines back.
+    let repo = ScratchRepo::new("newfile");
+    repo.write("a.txt", "! t\n");
+    repo.git(&["add", "a.txt"]);
+    repo.git(&["commit", "-q", "-m", "base"]);
+    repo.write("fresh.txt", "! t\ngood.com##.ad\nbad..com##.ad\n");
+    repo.git(&["add", "fresh.txt"]);
+    assert!(run_checks(&repo));
+    assert_eq!(std::fs::read_to_string(repo.0.join("fresh.txt")).unwrap(), "! t\ngood.com##.ad\n");
+}
+
+#[test]
+fn test_file_at_head_classification() {
+    use crate::fop_git::{file_at_head, AtHead};
+    // Committed: its content.
+    let repo = ScratchRepo::new("athead");
+    repo.write("a.txt", "a.com##.ad\n");
+    repo.git(&["add", "a.txt"]);
+    repo.git(&["commit", "-q", "-m", "base"]);
+    assert!(matches!(file_at_head(&repo.cmd(), "a.txt"), AtHead::Content(c) if c == "a.com##.ad\n"));
+    // Confirmed absent from a real HEAD.
+    assert!(matches!(file_at_head(&repo.cmd(), "never.txt"), AtHead::Absent));
+    // An unborn branch has nothing committed.
+    let unborn = ScratchRepo::new("athead-unborn");
+    assert!(matches!(file_at_head(&unborn.cmd(), "a.txt"), AtHead::Absent));
+    // Git that cannot run proves nothing either way: Unknown, never Absent,
+    // or the merge guard would treat the file as having nothing to lose.
+    let broken = vec!["/nonexistent/git-binary".to_string(), "-C".to_string(), repo.0.display().to_string()];
+    assert!(matches!(file_at_head(&broken, "a.txt"), AtHead::Unknown));
+}
+

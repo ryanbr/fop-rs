@@ -104,8 +104,67 @@ fn get_git_username() -> Option<String> {
         .map(|s| s.trim().to_lowercase())
 }
 
+/// A path-valued `.fopconfig` option, where an empty value means "not set".
+///
+/// `PathBuf::from("")` is not nothing: it made each of these options present
+/// with an unusable path. A bare `warning-output =` -- as the README's sample
+/// config ships it -- sent every warning to a file that was never written; an
+/// empty `output-diff` switched on dry-run so nothing was sorted; and an empty
+/// `check-banned-list` warned on every run that it could not load "".
+fn non_empty_path(value: &str) -> Option<PathBuf> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| PathBuf::from(value))
+}
+
+/// A path given on the command line, where an empty value is an error.
+///
+/// Not the same rule as `.fopconfig`: a blank config line is a key left unset,
+/// but `--output-diff=` on the command line is nearly always a script expanding
+/// an unset variable, and the flag still says what was wanted. Dropping it
+/// widens the run instead of narrowing it -- an empty `--output-diff=` asked for
+/// a read-only diff and got every file rewritten; an empty `--check-file=` asked
+/// for one file and got the whole repository sorted. So it stops, as a
+/// malformed `--threads` or `--commit-mask` does.
+fn cli_path(flag: &str, value: &str) -> PathBuf {
+    non_empty_path(value).unwrap_or_else(|| {
+        eprintln!("Error: {} needs a path (got an empty value)", flag);
+        std::process::exit(2);
+    })
+}
+
+thread_local! {
+    /// Set while `fop_sort::tidy_rule` runs. See `SuppressWarnings`.
+    static WARNINGS_SUPPRESSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Silences `write_warning` on this thread until dropped.
+///
+/// The rule checks put each added line through the sort's own tidying to judge
+/// it as it will be written, and that tidying warns -- "Removed invalid
+/// domain(s)", "option ... is not recognised". The sort then tidies the same
+/// line for real and warns again, so every such warning printed twice. The
+/// sort's copy is the one that belongs. Thread-local, because the checks tidy
+/// on the rayon pool while nothing else runs; restores the previous state, so
+/// nesting is harmless.
+pub(crate) struct SuppressWarnings(bool);
+
+impl SuppressWarnings {
+    pub(crate) fn new() -> Self {
+        Self(WARNINGS_SUPPRESSED.with(|s| s.replace(true)))
+    }
+}
+
+impl Drop for SuppressWarnings {
+    fn drop(&mut self) {
+        WARNINGS_SUPPRESSED.with(|s| s.set(self.0));
+    }
+}
+
 /// Write warning to buffer (if file output) or stderr
 pub(crate) fn write_warning(message: &str) {
+    if WARNINGS_SUPPRESSED.with(|s| s.get()) {
+        return;
+    }
     if !WARNING_TO_FILE.load(std::sync::atomic::Ordering::Relaxed) {
         eprintln!("{}", message);
         return;
@@ -522,7 +581,7 @@ impl Args {
             backup: parse_bool(&config, "backup", false),
             keep_empty_lines: parse_bool(&config, "keep-empty-lines", false),
             ignore_dot_domains: parse_bool(&config, "ignore-dot-domains", false),
-            warning_output: config.get("warning-output").map(PathBuf::from),
+            warning_output: config.get("warning-output").and_then(|v| non_empty_path(v)),
             create_pr: config.get("create-pr").and_then(|v| {
                 match v.to_lowercase().as_str() {
                     "" | "true" | "yes" | "1" => Some(String::new()), // Enable with prompt
@@ -532,7 +591,7 @@ impl Args {
             }),
             git_pr_branch: config.get("git-pr-branch").cloned(),
             pr_show_changes: parse_bool(&config, "pr-show-changes", false),
-            check_banned_list: config.get("check-banned-list").map(PathBuf::from),
+            check_banned_list: config.get("check-banned-list").and_then(|v| non_empty_path(v)),
             auto_banned_remove: parse_bool(&config, "auto-banned-remove", false),
             fix_typos: parse_bool(&config, "fix-typos", false),
             ignore_line_minimum: parse_bool(&config, "ignore-line-minimum", false),
@@ -549,7 +608,7 @@ impl Args {
             quiet: parse_bool(&config, "quiet", false),
             limited_quiet: parse_bool(&config, "limited-quiet", false),
             auto_fix: parse_bool(&config, "auto-fix", false),
-            output_diff: config.get("output-diff").map(PathBuf::from),
+            output_diff: config.get("output-diff").and_then(|v| non_empty_path(v)),
             output_diff_individual: false,
             check_file: None,
             output_changed: false,
@@ -679,7 +738,7 @@ impl Args {
                 }
                 "--pr-show-changes" => args.pr_show_changes = true,
                 _ if arg.starts_with("--check-banned-list=") => {
-                    args.check_banned_list = Some(PathBuf::from(arg.trim_start_matches("--check-banned-list=")));
+                    args.check_banned_list = Some(cli_path("--check-banned-list", arg.trim_start_matches("--check-banned-list=")));
                 }
                 "--auto-banned-remove" => args.auto_banned_remove = true,
                 _ if arg.starts_with("--ignorefiles=") => {
@@ -709,8 +768,7 @@ impl Args {
                 "--keep-empty-lines" => args.keep_empty_lines = true,
                 "--ignore-dot-domains" => args.ignore_dot_domains = true,
                 _ if arg.starts_with("--warning-output=") => {
-                    args.warning_output =
-                        Some(PathBuf::from(arg.trim_start_matches("--warning-output=")));
+                    args.warning_output = Some(cli_path("--warning-output", arg.trim_start_matches("--warning-output=")));
                 }
                 _ if arg.starts_with("--config-file=") => {
                     // Already handled in first pass
@@ -755,7 +813,7 @@ impl Args {
                 }
                 "--ignore-config" => {} // Already handled early
                 _ if arg.starts_with("--check-file=") => {
-                    args.check_file = Some(PathBuf::from(arg.trim_start_matches("--check-file=")));
+                    args.check_file = Some(cli_path("--check-file", arg.trim_start_matches("--check-file=")));
                 }
                 "--quiet" | "-q" => args.quiet = true,
                 "--limited-quiet" => args.limited_quiet = true,
@@ -776,7 +834,7 @@ impl Args {
                 }
                 _ if arg.starts_with("--output-diff=") => {
                     args.output_diff =
-                        Some(PathBuf::from(arg.trim_start_matches("--output-diff=")));
+                        Some(cli_path("--output-diff", arg.trim_start_matches("--output-diff=")));
                 }
                 _ if arg.starts_with("--git-message=") => {
                     args.git_message = Some(arg.trim_start_matches("--git-message=").to_string());
@@ -1229,10 +1287,12 @@ pub(crate) static KNOWN_OPTIONS: LazyLock<HashSet<&'static str>> = LazyLock::new
 /// prefix, so the two sets deliberately overlap.
 /// Options `KNOWN_OPTIONS` omitted. Harmless while an unknown option was only
 /// a warning; with the addition checks it would delete a valid rule.
-pub(crate) static EXTRA_KNOWN_OPTIONS: [&str; 7] = [
+pub(crate) static EXTRA_KNOWN_OPTIONS: [&str; 8] = [
     "inline-font", "beacon", "mp4", "noop", "queryprune",
     // AdGuard's spelling of uBO's strict1p / strict3p.
     "strict-first-party", "strict-third-party",
+    // A resource type in ABP and uBO: requests for a Web Bundle.
+    "webbundle",
 ];
 
 /// Modifiers valid bare only on an exception rule, where they switch off every
@@ -1572,10 +1632,11 @@ fn ci_git_cmd(git_binary: Option<&str>, location: &Path) -> Vec<String> {
 /// `interactive` is false in sort-only mode, where there is no commit to
 /// confirm and the findings are a report.
 #[allow(clippy::too_many_arguments)]
-fn run_rule_checks(
+fn run_rule_checks<'c, F>(
     base_cmd: &[String],
     remove_bad_rules: bool,
     dry_run: bool,
+    config_for: &F,
     no_color: bool,
     file_extensions: &[String],
     ignore_files: &[String],
@@ -1583,7 +1644,13 @@ fn run_rule_checks(
     ignore_all_but: &[String],
     disable_ignored: bool,
     interactive: bool,
-) -> bool {
+) -> bool
+where
+    F: Fn(&Path) -> fop_sort::SortConfig<'c> + Sync + ?Sized,
+{
+    // Relative to the repository root, as the diff reports paths. Without a
+    // root the file name alone still finds per-file settings.
+    let root = fop_git::repo_root(base_cmd).unwrap_or_default();
     // Filter lists only -- the diff also carries workflows, scripts and
     // source, where a `$` is not an option marker and --remove-bad-rules would
     // delete a working line.
@@ -1612,7 +1679,8 @@ fn run_rule_checks(
         eprintln!("Warning: could not read the diff; the rule checks did not run.");
         return !interactive;
     };
-    let problems = fop_rules::check_additions(&additions);
+    let tidied = tidy_all(&additions, config_for, &root);
+    let problems = check_as_sorted(&additions, &tidied);
     if problems.is_empty() {
         return true;
     }
@@ -1634,8 +1702,19 @@ fn run_rule_checks(
         // from one such file in a single run. Nothing is rewritten in place: a
         // silent correction is harder to notice than a deletion.
         let advice = problems.iter().filter(|(_, p)| !p.removable).count();
-        let targets: Vec<&fop_typos::Addition> =
+        let removable: Vec<&fop_typos::Addition> =
             problems.iter().filter(|(_, p)| p.removable).map(|(add, _)| *add).collect();
+        let (targets, merged) = partition_merged(&removable, base_cmd);
+        if !merged.is_empty() {
+            eprintln!(
+                "\nNot removed -- each of these may hold a committed rule that sorting \
+                 merged into it, and deleting the line would delete that rule too:"
+            );
+            for add in &merged {
+                eprintln!("  {}:{}: {}", add.file, add.line_num, add.content);
+            }
+            eprintln!("Fix them by hand.");
+        }
         match remove_flagged_lines(&targets, base_cmd) {
             Ok(n) => {
                 println!("Removed {} line(s).", n);
@@ -1661,7 +1740,8 @@ fn run_rule_checks(
         };
         // Only a defect still present is a failure; the advice was kept on
         // purpose above.
-        let left = fop_rules::check_additions(&after)
+        let after_tidied = tidy_all(&after, config_for, &root);
+        let left = check_as_sorted(&after, &after_tidied)
             .iter()
             .filter(|(_, p)| p.removable)
             .count();
@@ -1688,6 +1768,83 @@ fn run_rule_checks(
         return false;
     }
     true
+}
+
+/// Each added line in the form the sort will write it (see `fop_sort::tidy_rule`),
+/// under the config its own file is sorted with.
+///
+/// On the rayon pool: this is the sort's per-line work, and serially it cost
+/// the checks half again their time when a large block of rules was added.
+fn tidy_all<'c, F>(additions: &[fop_typos::Addition], config_for: &F, root: &Path) -> Vec<String>
+where
+    F: Fn(&Path) -> fop_sort::SortConfig<'c> + Sync + ?Sized,
+{
+    additions
+        .par_iter()
+        .map(|add| {
+            let config = config_for(&root.join(&add.file));
+            fop_sort::tidy_rule(&add.content, &config).into_owned()
+        })
+        .collect()
+}
+
+/// The rule checks, judged on each addition's as-sorted form but reported
+/// against the line the author wrote -- which is also the one removal deletes.
+fn check_as_sorted<'a>(
+    additions: &'a [fop_typos::Addition],
+    tidied: &'a [String],
+) -> Vec<(&'a fop_typos::Addition, fop_rules::RuleProblem<'a>)> {
+    additions
+        .iter()
+        .zip(tidied)
+        .filter_map(|(add, as_sorted)| fop_rules::check_rule(as_sorted).map(|p| (add, p)))
+        .collect()
+}
+
+/// Split flagged lines into those safe to delete and those that may carry a
+/// committed rule.
+///
+/// The checks run before sorting, so a flagged line is normally just what the
+/// author wrote. But a file already sorted since HEAD -- by an earlier
+/// `--no-commit` run, say -- may hold a merge: a committed `a.com##.ad` and an
+/// added `b..com##.ad` become `a.com,b..com##.ad`, and deleting that line
+/// deletes the committed rule with it. So a line is held back when a committed
+/// line sharing its merge key has gone missing from the file: that rule was
+/// merged into something, and this line may be it. A file that cannot be read
+/// cannot be vouched for, so its lines are held back too.
+fn partition_merged<'a>(
+    targets: &[&'a fop_typos::Addition],
+    base_cmd: &[String],
+) -> (Vec<&'a fop_typos::Addition>, Vec<&'a fop_typos::Addition>) {
+    let root = fop_git::repo_root(base_cmd);
+    let mut absorbed: HashMap<&str, Option<HashSet<String>>> = HashMap::new();
+    for add in targets {
+        absorbed.entry(add.file.as_str()).or_insert_with(|| {
+            let current = fs::read_to_string(root.as_ref()?.join(&add.file)).ok()?;
+            let present: HashSet<&str> = current.lines().map(str::trim).collect();
+            let committed = match fop_git::file_at_head(base_cmd, &add.file) {
+                fop_git::AtHead::Content(content) => content,
+                // Confirmed new: it has no committed rules to lose.
+                fop_git::AtHead::Absent => String::new(),
+                // Cannot be vouched for, so nothing in it is deleted.
+                fop_git::AtHead::Unknown => return None,
+            };
+            Some(
+                committed
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('!') && !present.contains(l))
+                    .map(|l| fop_rules::merge_key(l).into_owned())
+                    .collect(),
+            )
+        });
+    }
+    targets.iter().partition(|add| {
+        absorbed
+            .get(add.file.as_str())
+            .and_then(|keys| keys.as_ref())
+            .is_some_and(|keys| !keys.contains(fop_rules::merge_key(&add.content).as_ref()))
+    })
 }
 
 /// Delete the flagged lines from their files.
@@ -1894,33 +2051,13 @@ fn process_location(
         })
         .collect();
 
-    // Get list of changed files from git (if flag enabled)
-    let changed_files: Option<HashSet<PathBuf>> = if only_sort_changed {
-        get_git_changed_files(location).map(|v| v.into_iter().collect())
-    } else {
-        None
-    };
-    
-    if !quiet {
-        if let Some(ref files) = changed_files {
-            println!("Git detected: processing {} changed file(s)", files.len());
-        } else if only_sort_changed {
-            eprintln!("Warning: --only-sort-changed set but git not available, processing all files");
-        }
-    }
-
-    // Process files in parallel
-    let diffs: Vec<String> = txt_files
-        .par_iter()
-        .filter_map(|entry| {
-        // Skip files git says are unchanged
-        if let Some(ref changed) = changed_files {
-            if !changed.contains(entry.path()) {
-                return None;
-            }
-        }
-
-        let path = entry.path();
+    // The config a file is actually sorted with: the global settings, the
+    // per-file AdGuard and hosts lists, and any [filename] section in
+    // .fopconfig. One definition for the sort and the pre-sort rule checks,
+    // which judge each line as the sort will write it and so must agree with
+    // it file by file -- judged under the global config, a hosts entry in a
+    // `localhost_files` file had its space stripped and read as a bare domain.
+    let file_config = |path: &Path| -> SortConfig {
         let mut config = SortConfig {
             convert_ubo: sort_config.convert_ubo,
             no_sort: sort_config.no_sort,
@@ -1948,6 +2085,76 @@ fn process_location(
                 overrides.apply_to(&mut config);
             }
         }
+        config
+    };
+
+    // Check newly added rules before sorting. The sort merges rules -- an added
+    // `b..com##.ad` joins a committed `a.com##.ad` as `a.com,b..com##.ad` -- and
+    // checks run after it judged that merged line, so --remove-bad-rules
+    // deleted the committed rule along with the bad one. Before the sort, the
+    // diff holds only what the author wrote; each line is still judged in the
+    // form the sort will write it (see `fop_sort::tidy_rule`). This is also
+    // before the timestamp and checksum passes, which hash the file body.
+    let mut rules_ok = true;
+    if check_rules_on_add {
+        match base_cmd.as_ref().filter(|c| fop_git::git_binary_available(&c[0])) {
+            Some(base_cmd) => {
+                rules_ok = run_rule_checks(
+                    base_cmd,
+                    remove_bad_rules,
+                    sort_config.dry_run,
+                    &file_config,
+                    no_color,
+                    file_extensions,
+                    ignore_files,
+                    ignore_dirs,
+                    ignore_all_but,
+                    disable_ignored,
+                    !no_commit,
+                );
+            }
+            // Two different failures, and blaming the wrong one sends people
+            // hunting: no `.git` here means fop was pointed at a subdirectory,
+            // which is a different problem from git being unrunnable.
+            None if repository.is_none() => eprintln!(
+                "Warning: no repository in {} -- fop looks for .git in the directory it is \
+                 given, so run it from the repository root. Skipping the rule checks.",
+                location.display()
+            ),
+            None => eprintln!(
+                "Warning: git could not be run; skipping the rule checks."
+            ),
+        }
+    }
+
+    // Get list of changed files from git (if flag enabled)
+    let changed_files: Option<HashSet<PathBuf>> = if only_sort_changed {
+        get_git_changed_files(location).map(|v| v.into_iter().collect())
+    } else {
+        None
+    };
+    
+    if !quiet {
+        if let Some(ref files) = changed_files {
+            println!("Git detected: processing {} changed file(s)", files.len());
+        } else if only_sort_changed {
+            eprintln!("Warning: --only-sort-changed set but git not available, processing all files");
+        }
+    }
+
+    // Process files in parallel
+    let diffs: Vec<String> = txt_files
+        .par_iter()
+        .filter_map(|entry| {
+        // Skip files git says are unchanged
+        if let Some(ref changed) = changed_files {
+            if !changed.contains(entry.path()) {
+                return None;
+            }
+        }
+
+        let path = entry.path();
+        let config = file_config(path);
 
         match fop_sort(path, &config) {
             Ok(Some(diff)) => {
@@ -2004,39 +2211,6 @@ fn process_location(
         }
     }
 
-    // Check newly added rules before the timestamp and checksum passes: those
-    // hash the file body, and removing a line afterwards leaves the checksum
-    // describing content that is no longer there.
-    let mut rules_ok = true;
-    if check_rules_on_add {
-        match base_cmd.as_ref().filter(|c| fop_git::git_binary_available(&c[0])) {
-            Some(base_cmd) => {
-                rules_ok = run_rule_checks(
-                    base_cmd,
-                    remove_bad_rules,
-                    sort_config.dry_run,
-                    no_color,
-                    file_extensions,
-                    ignore_files,
-                    ignore_dirs,
-                    ignore_all_but,
-                    disable_ignored,
-                    !no_commit,
-                );
-            }
-            // Two different failures, and blaming the wrong one sends people
-            // hunting: no `.git` here means fop was pointed at a subdirectory,
-            // which is a different problem from git being unrunnable.
-            None if repository.is_none() => eprintln!(
-                "Warning: no repository in {} -- fop looks for .git in the directory it is \
-                 given, so run it from the repository root. Skipping the rule checks.",
-                location.display()
-            ),
-            None => eprintln!(
-                "Warning: git could not be run; skipping the rule checks."
-            ),
-        }
-    }
 
     // Add timestamps to specified files (after sorting, before checksum)
     if !add_timestamp.is_empty() {
@@ -2503,7 +2677,11 @@ fn main() {
         };
         let base_cmd = ci_git_cmd(args.git_binary.as_deref(), location);
         let Some(base) = ci_diff_base(&base_cmd) else {
-            eprintln!("CI audit: could not resolve a base commit to diff against.");
+            eprintln!(
+                "CI audit: could not resolve a base commit to diff against. The checkout \
+                 has no history to compare with -- a shallow clone holds only HEAD. With \
+                 actions/checkout, set `fetch-depth: 2` (or 0 for the full history)."
+            );
             std::process::exit(1);
         };
         let Some(additions) = fop_git::get_added_lines_against(&base_cmd, Some(&base)) else {
@@ -2562,7 +2740,11 @@ fn main() {
         let base = match ci_diff_base(&base_cmd) {
             Some(base) => base,
             None => {
-                eprintln!("CI audit: could not resolve a base commit to diff against.");
+                eprintln!(
+                "CI audit: could not resolve a base commit to diff against. The checkout \
+                 has no history to compare with -- a shallow clone holds only HEAD. With \
+                 actions/checkout, set `fetch-depth: 2` (or 0 for the full history)."
+            );
                 std::process::exit(1);
             }
         };

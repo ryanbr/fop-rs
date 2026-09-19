@@ -1217,7 +1217,7 @@ fn brackets_balance_literal(text: &str) -> bool {
 }
 
 /// Parse a selector to extract base selector and :has-text() argument
-fn parse_has_text_selector(selector: &str) -> Option<(String, String, String)> {
+pub(crate) fn parse_has_text_selector(selector: &str) -> Option<(String, String, String)> {
     let caps = HAS_TEXT_PATTERN.captures(selector)?;
     let (base, pseudo, arg) = (&caps[1], &caps[2], &caps[3]);
     // The pattern is lazy on the left, so a nested `:has(span:has-text(x))`
@@ -1632,6 +1632,72 @@ fn combine_filters(
 // =============================================================================
 // Main Sorting Function
 // =============================================================================
+
+/// One rule as the sort writes it, without merging it with any other.
+///
+/// The addition checks run before sorting, so that they judge -- and
+/// `--remove-bad-rules` deletes -- only lines the author wrote. Run after, they
+/// saw the sort's merges: an added `b..com##.ad` beside a committed
+/// `a.com##.ad` became `a.com,b..com##.ad`, which was flagged and deleted,
+/// taking the committed rule with it. But the sort also repairs rules as it
+/// goes (`$third-party.script` becomes `$script,third-party`, `redirect_rule`
+/// becomes `redirect-rule`), so a line is judged in the form it will be
+/// written: deleting a rule fop would have repaired is not removing a bad one.
+///
+/// Mirrors the per-line pipeline in `fop_sort` -- comments and AdGuard rule
+/// modifiers pass through, regex-domain rules go through `filter_tidy`, element
+/// rules through `element_tidy` and the selector conversions, network rules
+/// through `filter_tidy`, and both through the typo fixes when `fix_typos` is
+/// on -- and leaves out only what depends on the rest of the file: merging and
+/// ordering. `config` must be the one this file is sorted with, per-file
+/// overrides included. A test runs both over the same rules under several
+/// configs, so the two cannot drift apart unnoticed.
+///
+/// Silent: the sort raises any warning again when it writes the line.
+pub(crate) fn tidy_rule<'a>(line: &'a str, config: &SortConfig) -> Cow<'a, str> {
+    let _silent = crate::SuppressWarnings::new();
+    let line = line.trim();
+    let is_comment = config.comment_chars.iter().any(|c| line.starts_with(c.as_str()))
+        || line.starts_with("%include")
+        || (line.starts_with('[') && line.ends_with(']'));
+    // Hosts entries are not filter rules, and `[$...]` modifiers pass through
+    // the sort untouched.
+    if line.is_empty() || is_comment || config.localhost || line.starts_with("[$") {
+        return Cow::Borrowed(line);
+    }
+    if REGEX_ELEMENT_PATTERN.is_match(line) {
+        return Cow::Owned(filter_tidy(line, config.convert_ubo));
+    }
+    let element_caps = if config.alt_sort {
+        ELEMENT_PATTERN.captures(line)
+    } else if config.parse_adguard {
+        ADGUARD_ELEMENT_PATTERN.captures(line)
+    } else {
+        FOPPY_ELEMENT_PATTERN.captures(line)
+    };
+    let mut tidied = match element_caps {
+        Some(caps) => {
+            let mut tidied = element_tidy(&caps[1].to_ascii_lowercase(), &caps[2], &caps[3]);
+            if config.abp_convert || config.adguard_convert {
+                tidied = convert_selectors(&tidied, config.abp_convert, config.adguard_convert);
+            }
+            if config.convert_trusted {
+                if let Some(converted) = convert_trusted_scriptlet(&tidied) {
+                    tidied = converted;
+                }
+            }
+            tidied
+        }
+        None => filter_tidy(line, config.convert_ubo),
+    };
+    if config.fix_typos {
+        let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
+        if !fixes.is_empty() {
+            tidied = fixed;
+        }
+    }
+    Cow::Owned(tidied)
+}
 
 /// Why `line` can never be a valid filter rule, or `None` if it might be.
 ///

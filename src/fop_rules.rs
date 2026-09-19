@@ -579,6 +579,35 @@ fn unanchored_mash(pattern: &str) -> Option<&'static str> {
     unanchored_reason(pattern).filter(|&r| r == NO_ANCHOR_MASH)
 }
 
+/// The part of a rule that a merge leaves unchanged.
+///
+/// The sort combines rules that differ only in their domain list, or only in
+/// the argument of a text-matching pseudo-class, so a line flagged in a file
+/// that was already sorted may carry a committed rule merged into it. Two rules
+/// sharing this key may be halves of one such merge. Deliberately loose -- the
+/// whole pattern of a network rule, the separator and selector of a cosmetic
+/// one -- because it is only ever used to decide against deleting.
+///
+/// The text-matching case is keyed through `fop_sort::parse_has_text_selector`,
+/// the parser the merge itself groups by, rather than a list of pseudo-class
+/// names kept here: a hand-kept `:has-text(` missed `:-abp-contains(` and
+/// `:abp-contains(`, which the sort merges too, so a merged line got a key its
+/// committed half did not share and was deleted with it.
+pub(crate) fn merge_key(line: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    let line = line.trim();
+    if let Some((domains, sep, selector)) = split_cosmetic(line) {
+        return match crate::fop_sort::parse_has_text_selector(selector) {
+            Some((base, pseudo, _)) => Cow::Owned(format!("{}{}:{}", sep, base, pseudo)),
+            None => Cow::Borrowed(&line[domains.len()..]),
+        };
+    }
+    Cow::Borrowed(match split_options(line) {
+        Some((pattern, _)) => pattern,
+        None => line,
+    })
+}
+
 /// Check added lines for bad rules.
 pub fn check_additions(additions: &[Addition]) -> Vec<(&Addition, RuleProblem<'_>)> {
     additions
