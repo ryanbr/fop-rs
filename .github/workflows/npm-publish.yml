@@ -161,29 +161,38 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-pc-windows-msvc,x86_64-pc-windows-gnu
+          targets: aarch64-pc-windows-msvc
 
-      - name: Install llvm-tools for PGO
-        run: rustup component add llvm-tools-preview
+      # -Cprofile-generate needs the profiler_builtins crate, which rustup
+      # ships only for a toolchain's own host -- instrumenting windows-gnu as
+      # a *target* of the msvc host fails with E0463. Installing the gnu
+      # toolchain makes it the host, so the instrumented build, the training
+      # run and the final binaries are all native, and the published binary
+      # stays the same mingw build users already have. This toolchain brings
+      # its own mingw, so no MSYS2 wrangling either.
+      - name: Install the windows-gnu toolchain for PGO
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu
+          rustup component add llvm-tools-preview --toolchain stable-x86_64-pc-windows-gnu
 
       - name: Generate PGO profile data
         run: |
-          # x86_64 Windows is native on this runner, so the instrumented
-          # binary can be run to collect a real profile -- which it cannot be
-          # when cross-compiled from Linux, where these used to be built.
-          # MSYS2 ships with the image but is not on PATH; the windows-gnu
-          # target needs its gcc to link, and keeping that target means the
-          # published binary is the same mingw build as before, only faster.
-          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
-          $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-Cprofile-generate=$env:RUNNER_TEMP\pgo-data"
-          cargo build --release --target x86_64-pc-windows-gnu
+          # Native on this runner, so the instrumented binary can be run to
+          # collect a real profile -- which it cannot be when cross-compiled
+          # from Linux, where these used to be built.
+          $env:RUSTFLAGS = "-Cprofile-generate=$env:RUNNER_TEMP\pgo-data"
+          cargo +stable-x86_64-pc-windows-gnu build --release
           Copy-Item -Recurse test-lists "$env:RUNNER_TEMP\pgo-train"
-          & "target\x86_64-pc-windows-gnu\release\fop.exe" --no-commit "$env:RUNNER_TEMP\pgo-train"
+          # A leading .\ is required: PowerShell's call operator reads a bare
+          # relative path as a command name, not a file.
+          & ".\target\release\fop.exe" --no-commit "$env:RUNNER_TEMP\pgo-train"
           if ($LASTEXITCODE -ne 0) { throw "PGO training run failed ($LASTEXITCODE)" }
           Remove-Item -Recurse -Force "$env:RUNNER_TEMP\pgo-train"
-          # llvm-profdata is a host tool, so it sits under the host triple.
-          $sysroot = rustc --print sysroot
+          $env:RUSTFLAGS = ""
+          # llvm-profdata is a host tool, so take the gnu toolchain's own.
+          $sysroot = rustc +stable-x86_64-pc-windows-gnu --print sysroot
           $profdata = (Get-ChildItem "$sysroot\lib\rustlib\*\bin\llvm-profdata.exe" | Select-Object -First 1).FullName
+          if (-not $profdata) { throw "llvm-profdata not found under $sysroot" }
           & $profdata merge -o "$env:RUNNER_TEMP\pgo-data\merged.profdata" "$env:RUNNER_TEMP\pgo-data"
           if (-not (Test-Path "$env:RUNNER_TEMP\pgo-data\merged.profdata")) { throw "no PGO profile was produced" }
           cargo clean
@@ -191,27 +200,28 @@ jobs:
       - name: Build Windows binaries
         run: |
           $VERSION = "${{ needs.build-linux-windows.outputs.version }}"
-          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
           $pgo = "$env:RUNNER_TEMP\pgo-data\merged.profdata"
 
-          # Windows x86_64 baseline + PGO. Runs on every x86_64: PGO reorders
-          # and inlines, it adds no instructions.
-          $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-Cprofile-use=$pgo"
-          cargo build --release --target x86_64-pc-windows-gnu
-          Copy-Item "target\x86_64-pc-windows-gnu\release\fop.exe" "fop-${VERSION}-windows-x86_64.exe"
+          # Windows x86_64 baseline + PGO, built by the gnu toolchain as its
+          # own host. Runs on every x86_64: PGO reorders and inlines, it adds
+          # no instructions.
+          $env:RUSTFLAGS = "-Cprofile-use=$pgo"
+          cargo +stable-x86_64-pc-windows-gnu build --release
+          Copy-Item ".\target\release\fop.exe" "fop-${VERSION}-windows-x86_64.exe"
 
           # Windows x86_64-v3 (AVX2) + PGO
           cargo clean
-          $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-C target-cpu=x86-64-v3 -Cprofile-use=$pgo"
-          cargo build --release --target x86_64-pc-windows-gnu
-          Copy-Item "target\x86_64-pc-windows-gnu\release\fop.exe" "fop-${VERSION}-windows-x86_64-v3.exe"
+          $env:RUSTFLAGS = "-C target-cpu=x86-64-v3 -Cprofile-use=$pgo"
+          cargo +stable-x86_64-pc-windows-gnu build --release
+          Copy-Item ".\target\release\fop.exe" "fop-${VERSION}-windows-x86_64-v3.exe"
 
           # Windows ARM64, cross-compiled from this x64 runner, so no PGO.
           # Optimized for Snapdragon 8cx Gen 3+ / Cortex-A78+, static CRT to avoid VCRUNTIME140.dll
           cargo clean
+          $env:RUSTFLAGS = ""
           $env:CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-cpu=cortex-a78 -C target-feature=+crt-static"
           cargo build --release --target aarch64-pc-windows-msvc
-          Copy-Item "target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64-v2.exe"
+          Copy-Item ".\target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64-v2.exe"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v5
