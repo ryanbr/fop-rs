@@ -397,6 +397,13 @@ pub fn check_rule(line: &str) -> Option<RuleProblem<'_>> {
         b'!' | b'[' | b'%' => return None,
         _ => {}
     }
+    // Nor a plain-text comment, which the sort keeps verbatim. Only that form:
+    // `##.ad` is a real generic cosmetic rule and is still judged. A heading
+    // ending in `##` otherwise read as "separator with no selector", which
+    // `--remove-bad-rules` was free to delete.
+    if crate::fop_sort::is_plain_comment(line) {
+        return None;
+    }
     if !line.bytes().any(|b| b == b'#' || b == b'$') {
         // No separator and no options: the only thing left worth saying is
         // that a bare hostname was probably meant to be an anchored rule.

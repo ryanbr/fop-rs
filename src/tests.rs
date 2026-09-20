@@ -2675,6 +2675,13 @@ fn test_tidy_rule_matches_the_sorter() {
         "example.com##+js(trusted-set-cookie, consent, true)",
         // Dropped domains are warned about; the warning must not escape.
         "a.b,good.com##.ad",
+        // Comments in either character, hash-space included: the sorter and
+        // `tidy_rule` decide comment-ness separately, and this test missed the
+        // hash-space case drifting between them until a line of it was added.
+        "# a plain-text heading",
+        "#",
+        "#foo bar",
+        "! a heading",
     ]
     .iter()
     .enumerate()
@@ -3815,6 +3822,66 @@ fn test_rules_without_a_dot_are_kept() {
             assert!(!result.lines().any(|l| l == rule), "{} was kept", rule);
         }
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_hash_space_lines_are_comments() {
+    // Plain URL registries that ship beside filter lists comment with `#`:
+    // uAssets' badlists.txt is one. Such a line matches no cosmetic separator
+    // -- those are all two characters -- so it used to sort as a network rule
+    // and lose its spaces, `# Reek's Anti-Adblock Killer` becoming
+    // `#Reek'sAnti-AdblockKiller` and floating away from the URLs it labelled.
+    // The whitespace is what makes it a comment: `#foo` is left alone.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-hash-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("list.txt");
+    std::fs::write(
+        &file,
+        "! Title: pin\n\
+         # a heading with spaces\n\
+         ||zzz.example^\n\
+         #\n\
+         ||aaa.example^\n",
+    )
+    .unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let result = std::fs::read_to_string(&file).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+    // Text intact, and still above the rule it introduces rather than sorted
+    // among the rules.
+    assert!(
+        lines.contains(&"# a heading with spaces"),
+        "hash comment was rewritten: {result}"
+    );
+    assert!(lines.contains(&"#"), "bare hash was rewritten: {result}");
+    let heading = lines.iter().position(|l| *l == "# a heading with spaces").unwrap();
+    let zzz = lines.iter().position(|l| *l == "||zzz.example^").unwrap();
+    let bare = lines.iter().position(|l| *l == "#").unwrap();
+    assert!(heading < zzz && zzz < bare, "comments did not hold the rules apart: {result}");
+    // A comment closes the section, so the two rules never sort together.
+    assert!(
+        lines.iter().position(|l| *l == "||aaa.example^").unwrap() > bare,
+        "sections merged across the comment: {result}"
+    );
+    // Without the whitespace it stays a rule, as before.
+    assert_eq!(crate::fop_sort::tidy_rule("#foo bar", &config), "#foobar");
+    assert_eq!(crate::fop_sort::tidy_rule("# foo bar", &config), "# foo bar");
+    // The addition checks must agree with the sort, or --remove-bad-rules
+    // deletes a line the sort keeps: a heading ending in `##` read as
+    // "separator with no selector", which is removable.
+    for heading in ["# ends with ##", "# note: ||x.com^$doc", "# a heading", "#"] {
+        assert!(
+            crate::fop_rules::check_rule(heading).is_none(),
+            "{heading} was judged as a rule"
+        );
+    }
+    // A domainless cosmetic rule is not a comment and is still judged.
+    assert!(crate::fop_rules::check_rule("##").is_some(), "real defect went unflagged");
+    assert_eq!(crate::fop_sort::tidy_rule("##.ad", &config), "##.ad");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

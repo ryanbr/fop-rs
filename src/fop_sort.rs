@@ -1916,6 +1916,28 @@ pub(crate) fn combine_filters_linear(
 // Main Sorting Function
 // =============================================================================
 
+/// Whether a line is a plain-text comment: `#` alone, or `#` then whitespace.
+///
+/// Hosts files and the plain URL registries that ship beside filter lists --
+/// uAssets' `badlists.txt` among them -- comment with `#`, while fop's comment
+/// character defaults to `!`. Such a line matches no cosmetic separator either,
+/// since every one of those is at least two characters (`##`, `#@#`, `#?#`,
+/// `#$#`, `#%#`), so it used to fall through to the network-rule path: its
+/// whitespace was stripped (`# two words` became `#twowords`) and it sorted as
+/// a rule, away from the lines it introduced.
+///
+/// Requiring the whitespace keeps this narrow. `#foo` stays a rule, because
+/// only `# foo` is the documented hosts convention, and a bare `#` is no rule
+/// in any syntax fop reads.
+#[inline]
+pub(crate) fn is_plain_comment(line: &str) -> bool {
+    match line.as_bytes() {
+        [b'#'] => true,
+        [b'#', rest @ ..] => rest.first().is_some_and(u8::is_ascii_whitespace),
+        _ => false,
+    }
+}
+
 /// One rule as the sort writes it, without merging it with any other.
 ///
 /// The addition checks run before sorting, so that they judge -- and
@@ -1941,6 +1963,7 @@ pub(crate) fn tidy_rule<'a>(line: &'a str, config: &SortConfig) -> Cow<'a, str> 
     let _silent = crate::SuppressWarnings::new();
     let line = line.trim();
     let is_comment = config.comment_chars.iter().any(|c| line.starts_with(c.as_str()))
+        || is_plain_comment(line)
         || line.starts_with("%include")
         || (line.starts_with('[') && line.ends_with(']'));
     // Hosts entries are not filter rules, and `[$...]` modifiers pass through
@@ -2230,6 +2253,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Comments and special lines
         let is_comment = config.comment_chars.iter().any(|c| line.starts_with(c))
+            || is_plain_comment(line)
             || (config.localhost
                 && line.starts_with('#')
                 && !config.comment_chars.iter().any(|c| c == "#"));
