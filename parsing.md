@@ -353,6 +353,13 @@ A network rule whose domain holds no dot (`\|\|cfd^`, `\|\|countly-`,
 `\|\|com/services/?rt=`) is **kept**: it is a whole-TLD or prefix match, which
 is legitimate, and a typo looks the same. FOP mentions it once per run, which
 `--ignore-dot-domains` silences.
+
+The mention is only for a pattern that is nothing but the host, since that is
+where a mistyped domain hides. Three shapes no typo can take stay quiet: a path
+or wildcard under the host (`\|\|com/*/ModalEngage\|`), a host prefix ending in
+`-` (`\|\|chamsocthe-`), and a host left to `ipaddress=`
+(`\|\|cc^$doc,ipaddress=15.207.81.128`). The rule is kept in every case; only
+the mention differs.
 | Line under 3 characters | `a` | Counted in characters, not bytes. Unless `--ignore-line-minimum`. |
 
 ## Typo detection and fixing

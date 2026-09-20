@@ -3822,6 +3822,89 @@ fn test_html_filter_is_not_read_as_options() {
 }
 
 #[test]
+fn test_no_dot_warning_only_where_a_typo_could_hide() {
+    // The mention is for a domain that might be mistyped, so it is worth only
+    // a pattern that is nothing but the host. A path or wildcard under the
+    // host, a host prefix ending in `-`, and a host left to `ipaddress=` were
+    // each built deliberately -- nobody mistypes a domain and then writes a
+    // path beneath it -- and warning on them buried the rest: 109 mentions on
+    // uAssets alone, 278 over four corpora, not one a typo. Every rule here is
+    // real. The rules themselves are untouched either way; only the mention
+    // goes, so this pins the noise, not the output.
+    use crate::{WARNING_BUFFER, WARNING_TO_FILE};
+    use std::sync::atomic::Ordering::Relaxed;
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-nodotwarn-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let quiet = [
+        "||com/*/ModalEngage|$script,third-party",
+        "||de/trck/eclick/*^url=http$document,urlskip=?url",
+        "||chamsocthe-$document",
+        "||re-captha-version-$all",
+        "||cc^$document,ipaddress=15.207.81.128",
+        "||com^*.php?*&r=&p=&g=|$document",
+        // An address is not a domain that forgot its dots. IPv4 is held back
+        // by the dot test itself, which is why the regex that used to check it
+        // here could go; IPv6 by the `[`.
+        "||1.2.3.4^$script",
+        "||[::1]^$third-party",
+        "||[fe80::1]^$script",
+    ];
+    let loud = [
+        "||cfd^$popup,third-party,domain=multiup.io",
+        "||appcodepnik^",
+        "||undefined^$script,redirect=noopjs",
+        "||xhamster$document,replace=/popunder//",
+    ];
+
+    WARNING_TO_FILE.store(true, Relaxed);
+    WARNING_BUFFER.lock().unwrap().clear();
+    let file = dir.join("list.txt");
+    std::fs::write(
+        &file,
+        format!("! Title: pin\n{}\n{}\n", quiet.join("\n"), loud.join("\n")),
+    )
+    .unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let mentioned: Vec<String> = WARNING_BUFFER
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|w| w.contains("no dot in its domain"))
+        .cloned()
+        .collect();
+    let sorted = std::fs::read_to_string(&file).unwrap();
+    // Restored before asserting, so a failure does not leave every later
+    // test's warnings buffered instead of printed.
+    WARNING_TO_FILE.store(false, Relaxed);
+    WARNING_BUFFER.lock().unwrap().clear();
+
+    for rule in quiet {
+        assert!(
+            !mentioned.iter().any(|w| w.contains(rule)),
+            "mentioned a shape no typo can take: {rule}\n{mentioned:#?}"
+        );
+    }
+    for rule in loud {
+        assert!(
+            mentioned.iter().any(|w| w.contains(rule)),
+            "a bare no-dot host went unmentioned: {rule}\n{mentioned:#?}"
+        );
+    }
+    // Quiet or loud, the rule is written back either way -- as the sort tidies
+    // it, which for `||undefined^$script,redirect=noopjs` means sorted options.
+    for rule in quiet.iter().chain(loud.iter()) {
+        let written = crate::fop_sort::tidy_rule(rule, &config);
+        assert!(sorted.lines().any(|l| l == written), "dropped: {rule}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_rules_without_a_dot_are_kept() {
     // A domain with no dot is a whole-TLD or prefix match, not a mistake FOP
     // can tell: `||cfd^$popup,domain=multiup.io` blocks an abuse TLD,

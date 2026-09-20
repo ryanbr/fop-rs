@@ -27,7 +27,7 @@ use crate::{
     write_warning, ADGUARD_ELEMENT_DOMAIN_PATTERN, ADGUARD_ELEMENT_PATTERN,
     ATTRIBUTE_VALUE_PATTERN, DOMAIN_EXTRACT_PATTERN, ELEMENT_DOMAIN_PATTERN,
     ELEMENT_PATTERN, FILTER_DOMAIN_PATTERN, FOPPY_ELEMENT_DOMAIN_PATTERN, FOPPY_ELEMENT_PATTERN,
-    IP_ADDRESS_PATTERN, KNOWN_OPTIONS, OPTION_PATTERN,
+    KNOWN_OPTIONS, OPTION_PATTERN,
     PSEUDO_PATTERN, REGEX_ELEMENT_PATTERN, REMOVAL_PATTERN, TREE_SELECTOR,
     UBO_CONVERSIONS, UNICODE_SELECTOR,
 };
@@ -2417,19 +2417,42 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         // `--ignore-dot-domains` silences the mention -- and the addition
         // checks, which run with the author present, are where a new one is
         // judged.
+        //
+        // Only where a typo could hide, which is a pattern that is nothing but
+        // the host. A rule going on to name a path or a wildcard
+        // (`||com/*/ModalEngage|`), one matching a host prefix
+        // (`||chamsocthe-`), and one leaving the host to `ipaddress=`
+        // (`||cc^$doc,ipaddress=15.207.81.128`) were all built deliberately:
+        // nobody mistypes a domain and then writes a path under it. Warning on
+        // them buried the rest -- 109 mentions on uAssets, 278 over four
+        // corpora, not one of them a typo -- so the shapes that cannot be one
+        // stay quiet, leaving 25.
         if (line.starts_with("||") || line.starts_with('|'))
             && !SKIP_SCHEMES.iter().any(|s| line.starts_with(s))
         {
             if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(line) {
                 let domain = &caps[1];
-                let is_ip = domain.starts_with('[') || IP_ADDRESS_PATTERN.is_match(domain);
-                let has_wildcard = domain.contains('*');
-
+                // Ordered so the one test that rejects nearly every rule comes
+                // first: a domain holding a dot is the overwhelming case, and
+                // everything after it then runs on the few that do not. The
+                // IPv4 check that used to run here -- a regex, on every rule
+                // beginning `|` -- cannot match past it at all, since
+                // `^\d+\.\d+\.\d+\.\d+` needs three dots and this domain has
+                // none; only the IPv6 `[` remains. The slice below is last
+                // because it is the only test that looks beyond the domain.
                 if !config.ignore_dot_domains
-                    && !is_ip
-                    && !has_wildcard
                     && !domain.contains('.')
+                    && !domain.starts_with('[')
+                    && !domain.contains('*')
                     && !domain.starts_with('~')
+                    && !domain.ends_with('-')
+                    && !line.contains("ipaddress=")
+                    && {
+                        // What follows the host, past the anchors that end it.
+                        let tail = line[caps.get(1).map_or(line.len(), |m| m.end())..]
+                            .trim_start_matches(['^', '|']);
+                        tail.is_empty() || tail.starts_with('$')
+                    }
                 {
                     write_warning(&format!(
                         "Kept a network rule with no dot in its domain: {} (domain: {}) -- \

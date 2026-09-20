@@ -1298,9 +1298,6 @@ pub(crate) static UNICODE_SELECTOR: LazyLock<Regex> =
 pub(crate) static DOMAIN_EXTRACT_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\|*([^/\^\$]+)").unwrap());
 
-pub(crate) static IP_ADDRESS_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\d+\.\d+\.\d+\.\d+").unwrap());
-
 // =============================================================================
 // Constants
 // =============================================================================
