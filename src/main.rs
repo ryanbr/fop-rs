@@ -2692,7 +2692,48 @@ fn print_benchmark(times: &[std::time::Duration], files: usize, lines: usize, by
     }
 }
 
+/// Turn on ANSI escape processing for this process's console.
+///
+/// FOP colours stdout and writes the escapes unconditionally -- there is no
+/// terminal detection anywhere, and none of the 24 coloured writes checks
+/// whether anything will render them. A Windows console shows them only with
+/// `ENABLE_VIRTUAL_TERMINAL_PROCESSING` set, which Windows Terminal turns on
+/// for itself but the classic console does not, so there the banner and the
+/// headings came out as literal `<ESC>[1m`. The `colored` crate set this mode
+/// itself; `owo-colors`, which replaced it, does not.
+///
+/// Best effort. A redirected or piped stdout is not a console and has no mode
+/// to set, and failing is not worth reporting: the escapes are then going to a
+/// file, which is where they were going anyway.
+#[cfg(windows)]
+fn enable_ansi_on_windows() {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+        STD_OUTPUT_HANDLE,
+    };
+    // SAFETY: the three calls take a handle this thread owns and a mode out
+    // parameter that lives across the call. Each is checked before the next is
+    // made, and nothing here dereferences a pointer.
+    unsafe {
+        let handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            return;
+        }
+        let mut mode = 0;
+        if GetConsoleMode(handle, &mut mode) == 0 {
+            return;
+        }
+        SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    }
+}
+
+/// Every other console FOP runs on handles the escapes without being asked.
+#[cfg(not(windows))]
+fn enable_ansi_on_windows() {}
+
 fn main() {
+    enable_ansi_on_windows();
     let (mut args, config_path) = Args::parse();
 
     // Warn early if commit-url-template is missing the {sha} placeholder —

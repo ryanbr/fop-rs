@@ -22,6 +22,12 @@ similar = "2"
 urlencoding ="2.1"
 mimalloc = { version = "0.1", default-features = false }
 
+# Only to turn on ANSI escape processing for the console; see
+# enable_ansi_on_windows in main.rs. Already in the Windows dependency graph,
+# so this adds nothing to the build.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
