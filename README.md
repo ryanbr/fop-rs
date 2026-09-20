@@ -357,8 +357,8 @@ If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the pl
 | Platform | Binary | Optimization | Compatible Devices |
 |----------|--------|--------------|-------------------|
 | **Linux** | | | |
-| x86_64 | `linux-x86_64` | Baseline | All 64-bit Intel/AMD |
-| x86_64 | `linux-x86_64-v3` | AVX2 | Intel Haswell+ / AMD Excavator+ (~2015+) |
+| x86_64 | `linux-x86_64` | Baseline + PGO | All 64-bit Intel/AMD |
+| x86_64 | `linux-x86_64-v3` | AVX2 + PGO | Intel Haswell+ / AMD Excavator+ (~2015+) |
 | x86 | `linux-x86_32` | Baseline | 32-bit systems, older hardware |
 | ARM64 | `linux-arm64` | Baseline | Raspberry Pi 3/4/5, Orange Pi 3/4/5, all ARM64 |
 | ARM64 | `linux-arm64-n1` | Neoverse N1 | Pi 5, Orange Pi 5, AWS Graviton2+, Ampere Altra |
@@ -374,9 +374,20 @@ If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the pl
 
 ### Which binary should I use?
 
-**Linux/Windows x86_64:**
-- Use `-v3` for CPUs from ~2015+ (Haswell, Ryzen) - ~10-20% faster due to AVX2
-- Use baseline if unsure or on older CPUs
+**Linux x86_64:**
+- Use the baseline. It is built with profile-guided optimisation, trained by
+  sorting `test-lists/` so the profile reflects real filter lists, and it runs
+  on every x86_64 CPU: PGO reorders and inlines, it adds no instructions.
+- `-v3` adds AVX2 targeting on top of the same PGO, worth under 1% here and
+  within measurement noise. The hot path is byte scanning, which `memchr`
+  already dispatches to AVX2 at runtime whatever the build targets, so the
+  flag only vectorises colder code. Take it if you want to measure it on your
+  own lists.
+
+**Windows x86_64:**
+- Either build works everywhere `-v3`'s CPU requirement allows. Neither
+  carries PGO: they are cross-compiled from Linux, where the instrumented
+  binary cannot be run to collect a profile.
 
 **Linux ARM64 (Raspberry Pi / Orange Pi):**
 - Use `linux-arm64` for Pi 3, Pi 4, Orange Pi 3/4, or if unsure
@@ -388,8 +399,8 @@ If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the pl
 
 | Binary | Target | RUSTFLAGS |
 |--------|--------|-----------|
-| `linux-x86_64` | Native | - |
-| `linux-x86_64-v3` | Native | `-C target-cpu=x86-64-v3` |
+| `linux-x86_64` | Native | `-Cprofile-use` (PGO) |
+| `linux-x86_64-v3` | Native | `-C target-cpu=x86-64-v3 -Cprofile-use` (PGO) |
 | `linux-x86_32` | `i686-unknown-linux-gnu` | - |
 | `linux-arm64` | `aarch64-unknown-linux-gnu` | - |
 | `linux-arm64-n1` | `aarch64-unknown-linux-gnu` | `-C target-cpu=neoverse-n1` |

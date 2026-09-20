@@ -67,16 +67,25 @@ jobs:
 
       - name: Generate PGO profile data
         run: |
+          # Train on a real sort. `cargo test` was doing nothing here: without
+          # RUSTFLAGS it rebuilds uninstrumented, so the only profiles were
+          # from build scripts, and the shipped v3 binary saw -3.7% where a
+          # sorting workload gives -9.7%.
           RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
-          cargo test --release || true
+          cp -r test-lists /tmp/pgo-train
+          ./target/release/fop --no-commit /tmp/pgo-train
+          rm -rf /tmp/pgo-train
           $(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-profdata merge -o /tmp/pgo-data/merged.profdata /tmp/pgo-data
           cargo clean
 
       - name: Build binaries
         run: |
           VERSION=${{ steps.version.outputs.version }}
-          # Baseline - works on all x86_64 (no PGO)
-          cargo build --release
+          # Baseline - works on all x86_64. PGO reorders and inlines; it adds
+          # no instructions, so this still runs anywhere an unoptimised build
+          # would. This is the binary install.js fetches, so it is the one
+          # worth optimising.
+          RUSTFLAGS="-Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release
           cp target/release/fop "fop-${VERSION}-linux-x86_64"
 
           # Optimized for ~2015+ CPUs (AVX2) + PGO
@@ -99,17 +108,6 @@ jobs:
           cargo clean
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
           cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
-
-          # Linux x86_64-v4 (AVX-512: Intel Ice Lake+, AMD Zen 4+) + PGO
-          cargo clean
-          rustup target add x86_64-unknown-linux-gnu
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v4 -Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release --target x86_64-unknown-linux-gnu
-          cp target/x86_64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_64-v4"
-
-          # Windows x86_64-v4 (AVX-512: Intel Ice Lake+, AMD Zen 4+)
-          cargo clean
-          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C target-cpu=x86-64-v4" cargo build --release --target x86_64-pc-windows-gnu
-          cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v4.exe"
 
           # Windows x86 32-bit
           cargo clean
@@ -192,8 +190,13 @@ jobs:
 
       - name: Generate PGO profile data
         run: |
+          # Train on a real sort, as the Linux job does: `cargo test` without
+          # RUSTFLAGS rebuilds uninstrumented and contributes no profile at
+          # all, leaving only build-script data behind.
           RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
-          cargo test --release || true
+          cp -r test-lists /tmp/pgo-train
+          ./target/release/fop --no-commit /tmp/pgo-train
+          rm -rf /tmp/pgo-train
           $(rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/llvm-profdata merge -o /tmp/pgo-data/merged.profdata /tmp/pgo-data
           cargo clean
 
