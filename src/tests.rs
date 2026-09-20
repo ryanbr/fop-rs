@@ -3822,6 +3822,32 @@ fn test_html_filter_is_not_read_as_options() {
 }
 
 #[test]
+fn test_extract_leading_host() {
+    // Replaces `^\|*([^/\^\$]+)`, which ran -- with a capture group built for
+    // each -- on 70% of network rules. Compared against that regex over 2.6M
+    // lines of four corpora, the two part company on one line only, noted
+    // below.
+    use crate::fop_sort::extract_leading_host as h;
+    assert_eq!(h("||example.com^$script"), Some(("example.com", 13)));
+    assert_eq!(h("||example.com"), Some(("example.com", 13)));
+    assert_eq!(h("|http://example.com/a"), Some(("http:", 6)));
+    assert_eq!(h("||com/*/ModalEngage|"), Some(("com", 5)));
+    assert_eq!(h("||cfd^"), Some(("cfd", 5)));
+    assert_eq!(h("example.com^"), Some(("example.com", 11)));
+    assert_eq!(h("||chamsocthe-$doc"), Some(("chamsocthe-", 13)));
+    // Nothing before the first delimiter, so no host.
+    assert_eq!(h(""), None);
+    assert_eq!(h("||"), None);
+    assert_eq!(h("^abc"), None);
+    assert_eq!(h("$script"), None);
+    // The one disagreement: the regex backtracks, `\|*` yielding its `|` so
+    // the group can take it, and calls the host `|`. The scan says there is no
+    // host. Nothing downstream can tell -- a host of `|` is followed by a
+    // path, so neither form warns -- and "no host" is the truer answer.
+    assert_eq!(h("|/nbsys3/fsyspp.js"), None);
+}
+
+#[test]
 fn test_no_dot_warning_only_where_a_typo_could_hide() {
     // The mention is for a domain that might be mistyped, so it is worth only
     // a pattern that is nothing but the host. A path or wildcard under the

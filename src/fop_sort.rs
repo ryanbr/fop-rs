@@ -25,7 +25,7 @@ use std::cmp::Ordering;
 
 use crate::{
     write_warning, ADGUARD_ELEMENT_DOMAIN_PATTERN, ADGUARD_ELEMENT_PATTERN,
-    ATTRIBUTE_VALUE_PATTERN, DOMAIN_EXTRACT_PATTERN, ELEMENT_DOMAIN_PATTERN,
+    ATTRIBUTE_VALUE_PATTERN, ELEMENT_DOMAIN_PATTERN,
     ELEMENT_PATTERN, FILTER_DOMAIN_PATTERN, FOPPY_ELEMENT_DOMAIN_PATTERN, FOPPY_ELEMENT_PATTERN,
     KNOWN_OPTIONS, OPTION_PATTERN,
     PSEUDO_PATTERN, REGEX_ELEMENT_PATTERN, REMOVAL_PATTERN, TREE_SELECTOR,
@@ -1937,6 +1937,31 @@ pub(crate) fn combine_filters_linear(
 // Main Sorting Function
 // =============================================================================
 
+/// The host at the start of a rule, and where it ends: `DOMAIN_EXTRACT_PATTERN`
+/// (`^\|*([^/\^\$]+)`) as a byte scan. Skip the leading `|`, then take up to
+/// the first `/`, `^` or `$`.
+///
+/// The two agree on all but one line of 2.6M across four corpora:
+/// `|/nbsys3/fsyspp.js`, where the regex backtracks -- `\|*` gives up its `|`
+/// so the group can take it -- and calls the host `|`. The scan says there is
+/// no host, which is the truer answer, and nothing downstream can tell: a
+/// host of `|` is followed by a path, so neither warns.
+///
+/// 70% of network rules reach this -- 860k of the 1.23M in a 1.67M-line corpus
+/// -- and `captures` builds and fills a capture group for every one, to hand
+/// back a slice a scan finds directly. Worth 8% of the whole sort.
+#[inline]
+pub(crate) fn extract_leading_host(line: &str) -> Option<(&str, usize)> {
+    let bytes = line.as_bytes();
+    let start = bytes.iter().take_while(|&&b| b == b'|').count();
+    let end = start
+        + bytes[start..]
+            .iter()
+            .take_while(|&&b| b != b'/' && b != b'^' && b != b'$')
+            .count();
+    (end > start).then(|| (&line[start..end], end))
+}
+
 /// Whether a line is a plain-text comment: `#` alone, or `#` then whitespace.
 ///
 /// Hosts files and the plain URL registries that ship beside filter lists --
@@ -2430,8 +2455,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if (line.starts_with("||") || line.starts_with('|'))
             && !SKIP_SCHEMES.iter().any(|s| line.starts_with(s))
         {
-            if let Some(caps) = DOMAIN_EXTRACT_PATTERN.captures(line) {
-                let domain = &caps[1];
+            if let Some((domain, at)) = extract_leading_host(line) {
                 // Ordered so the one test that rejects nearly every rule comes
                 // first: a domain holding a dot is the overwhelming case, and
                 // everything after it then runs on the few that do not. The
@@ -2449,8 +2473,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     && !line.contains("ipaddress=")
                     && {
                         // What follows the host, past the anchors that end it.
-                        let tail = line[caps.get(1).map_or(line.len(), |m| m.end())..]
-                            .trim_start_matches(['^', '|']);
+                        let tail = line[at..].trim_start_matches(['^', '|']);
                         tail.is_empty() || tail.starts_with('$')
                     }
                 {

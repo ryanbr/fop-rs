@@ -1295,9 +1295,6 @@ pub(crate) static TREE_SELECTOR: LazyLock<Regex> =
 pub(crate) static UNICODE_SELECTOR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\\[0-9a-fA-F]{1,6}\s[a-zA-Z]*[A-Z]").unwrap());
 
-pub(crate) static DOMAIN_EXTRACT_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\|*([^/\^\$]+)").unwrap());
-
 // =============================================================================
 // Constants
 // =============================================================================
