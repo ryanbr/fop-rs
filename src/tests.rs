@@ -3826,6 +3826,46 @@ fn test_rules_without_a_dot_are_kept() {
 }
 
 #[test]
+fn test_space_valued_options_keep_their_spaces() {
+    // `carries_space_valued_option` holds back the whitespace strip. It listed
+    // `csp=` and `header=` but not these four, so a space in their values was
+    // run out: uAssets' badware.txt carried five `reason=` rules whose English
+    // was welded together (`reason="Blatant scammers who are not related"`).
+    // The other three take a regex, where a space is part of what matches --
+    // `ipaddress=/^1\.2\.3\.4 $/` stripped is a different address -- and none
+    // carries one in the lists today, which is why this pins them.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    for rule in [
+        "||x.com^$all,reason=\"Blatant scammers who are not related\"",
+        "||y.com^$all,reason=no quotes here",
+        "||a.com^$uritransform=/a b/c d/",
+        "||b.com^$urltransform=/x y/z/",
+        "||c.com^$doc,ipaddress=/^1\\.2\\.3\\.4 $/",
+    ] {
+        assert_eq!(crate::fop_sort::tidy_rule(rule, &config), rule, "space stripped");
+    }
+    // A rule whose option value holds no space is tidied as before: the guard
+    // must key on the option, not merely on the rule carrying one of these.
+    assert_eq!(
+        crate::fop_sort::tidy_rule("||d.com^$doc,reason=onetwo", &config),
+        "||d.com^$document,reason=onetwo"
+    );
+    // `top=` restricts to the top-level context, as `to=` does the
+    // destination. uBO added it in 2026; FOP called it an unknown option on
+    // two rules in uAssets' filters-general.txt.
+    assert!(
+        crate::fop_rules::check_rule("||e.com^$script,3p,to=com,top=pro|to|~gov.to").is_none(),
+        "top= was judged unknown"
+    );
+    assert_eq!(
+        crate::fop_rules::check_rule("||f.com^$script,tpo=x.com").unwrap().reason,
+        "unknown option",
+        "a near-miss on it should still be caught"
+    );
+}
+
+#[test]
 fn test_hash_space_lines_are_comments() {
     // Plain URL registries that ship beside filter lists comment with `#`:
     // uAssets' badlists.txt is one. Such a line matches no cosmetic separator

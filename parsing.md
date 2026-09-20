@@ -131,6 +131,7 @@ other network rule, FOP strips whitespace.
 | `domain=` | Yes | Yes | Yes | A E U | Entries sorted; `\|`-separated |
 | `from=` | - | Yes | - | U | Converted to `domain=` |
 | `to=` | - | Yes | Yes | A U | |
+| `top=` | - | Yes | - | U | Restricts to the top-level context, as `to=` does the destination |
 | `denyallow=` | - | Yes | Yes | A U | |
 | `sitekey=` | Yes | - | - | E | |
 | `csp=` | Yes | Yes | Yes | A E U | Spaces kept. Bare `csp` is recognised too. |
@@ -148,11 +149,11 @@ other network rule, FOP strips whitespace.
 | `permissions=` | - | Yes | Yes | A U | Spaces kept |
 | `referrerpolicy=` | - | - | Yes | A | |
 | `method=` | - | Yes | Yes | A U | |
-| `ipaddress=` | - | Yes | - | U | |
-| `reason=` | - | Yes | Yes | U | |
+| `ipaddress=` | - | Yes | - | U | Spaces kept |
+| `reason=` | - | Yes | Yes | U | Free text; spaces kept |
 | `urlskip=` | - | Yes | - | U | Spaces kept |
-| `uritransform=` | - | Yes | - | U | |
-| `urltransform=` | - | Renamed | Yes | A | uBO calls it `uritransform=` |
+| `uritransform=` | - | Yes | - | U | Spaces kept |
+| `urltransform=` | - | Renamed | Yes | A | uBO calls it `uritransform=`; spaces kept |
 | `jsonprune=` | - | - | Yes | | Spaces kept |
 | `xmlprune=` | - | - | Yes | A | Spaces kept |
 | `hls=` | - | - | Yes | A | |

@@ -612,14 +612,21 @@ fn restore_cleared_wildcard(original: &str, tidied: String) -> String {
 /// applying -- seven rules in AdGuard's allowlist. Stripping whitespace from a
 /// rule bearing one changes what it matches.
 ///
+/// `reason=` is free text, and `uritransform=`, `urltransform=` and
+/// `ipaddress=` take a regex, where a space is part of what matches:
+/// `ipaddress=/^1\.2\.3\.4 $/` stripped is a different address. Five rules in
+/// uAssets' badware.txt had their `reason=` text run together before these
+/// were listed; the other three carry no space in the lists today.
+///
 /// Matched by scanning for the name and testing the byte before it, rather than
 /// by building `"$name"` and `",name"` to search for: that allocated two
-/// Strings per name, twenty-two per rule, to test for one byte.
+/// Strings per name, one pair for each, to test for one byte.
 fn carries_space_valued_option(filter_in: &str) -> bool {
-    const SPACE_VALUED: [&str; 12] = [
+    const SPACE_VALUED: [&str; 16] = [
         "csp=", "replace=", "urlskip=", "removeparam=", "jsonprune=", "xmlprune=",
         "header=", "responseheader=", "requestheader=", "permissions=", "addheader=",
         "extension=",
+        "reason=", "uritransform=", "urltransform=", "ipaddress=",
     ];
     let bytes = filter_in.as_bytes();
     SPACE_VALUED.iter().any(|name| {
