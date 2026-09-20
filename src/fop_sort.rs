@@ -2361,7 +2361,17 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Process blocking rules
 
-        // Skip network rules without dot in domain
+        // A network rule whose domain carries no dot.
+        //
+        // Deleting these was wrong: `||cfd^$third-party,popup,domain=multiup.io`
+        // blocks an abuse TLD outright, `||countly-` matches a host prefix and
+        // `||com/services/?rt=` a path under any .com host. 11 such rules in
+        // AdguardFilters and 11 in uAssets were dropped, reported by a warning
+        // and gone from the list. A typo like `||exmaple^` looks exactly the
+        // same to FOP, so the rule is kept and mentioned instead --
+        // `--ignore-dot-domains` silences the mention -- and the addition
+        // checks, which run with the author present, are where a new one is
+        // judged.
         if (line.starts_with("||") || line.starts_with('|'))
             && !SKIP_SCHEMES.iter().any(|s| line.starts_with(s))
         {
@@ -2377,10 +2387,10 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     && !domain.starts_with('~')
                 {
                     write_warning(&format!(
-                        "Skipped network rule without dot in domain: {} (domain: {})",
+                        "Kept a network rule with no dot in its domain: {} (domain: {}) -- \
+                         a whole-TLD or prefix match. Check it is not a typo.",
                         line, domain
                     ));
-                    continue;
                 }
             }
         }

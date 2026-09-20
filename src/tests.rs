@@ -3775,6 +3775,50 @@ fn test_html_filter_is_not_read_as_options() {
 }
 
 #[test]
+fn test_rules_without_a_dot_are_kept() {
+    // A domain with no dot is a whole-TLD or prefix match, not a mistake FOP
+    // can tell: `||cfd^$popup,domain=multiup.io` blocks an abuse TLD,
+    // `||countly-` a host prefix, `||com/services/?rt=` a path under any .com.
+    // Deleting them dropped 11 rules from AdguardFilters and 11 from uAssets.
+    // A TLD-only pattern, which matches every host under it, still goes.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-nodot-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let kept = [
+        "||cfd^$popup,third-party,domain=multiup.io",
+        "||countly-",
+        "||com/services/?rt=$script,third-party",
+        "||tech^$app=com.imo.android.imoim",
+        "|/nbsys3/fsyspp.js",
+    ];
+    let removed = [".com", "||.net^"];
+    let sort = |config: &crate::fop_sort::SortConfig| {
+        let file = dir.join("list.txt");
+        std::fs::write(&file, format!("! Title: pin
+{}
+{}
+||keep.example^
+", kept.join("
+"), removed.join("
+"))).unwrap();
+        crate::fop_sort::fop_sort(&file, config).unwrap();
+        std::fs::read_to_string(&file).unwrap()
+    };
+    for config in [&config, &crate::fop_sort::SortConfig { ignore_dot_domains: true, ..test_sort_config(&chars) }] {
+        let result = sort(config);
+        for rule in kept {
+            assert!(result.lines().any(|l| l == rule), "{} was dropped", rule);
+        }
+        for rule in removed {
+            assert!(!result.lines().any(|l| l == rule), "{} was kept", rule);
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_regex_pseudo_arguments_kept() {
     // Their arguments are regexes, where `+` and `>` are not combinators:
     // tidied as a selector, `/__adv+/` became `/__adv + /`.

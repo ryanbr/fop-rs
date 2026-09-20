@@ -344,7 +344,7 @@ struct Args {
     backup: bool,
     /// Keep empty lines in output
     keep_empty_lines: bool,
-    /// Don't skip rules without dot in domain
+    /// Don't mention rules whose domain has no dot
     ignore_dot_domains: bool,
     /// Output warnings to file instead of stderr
     warning_output: Option<PathBuf>,
@@ -1056,7 +1056,7 @@ impl Args {
         println!("        --comments=     Comment line prefixes (default: !)");
         println!("        --backup        Create .backup files before modifying");
         println!("        --keep-empty-lines  Keep empty lines in output");
-        println!("        --ignore-dot-domains  Don't skip rules without dot in domain");
+        println!("        --ignore-dot-domains  Don't mention rules whose domain has no dot");
         println!("        --warning-output=   Output warnings to file instead of stderr");
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --create-pr[=TITLE]  Create PR branch instead of committing to master");

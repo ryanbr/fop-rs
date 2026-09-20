@@ -92,7 +92,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--no-large-warning` | Disable large change warning prompt |
 | `--backup` | Create .backup files before modifying |
 | `--keep-empty-lines` | Keep empty lines in output |
-| `--ignore-dot-domains` | Don't skip rules without dot in domain |
+| `--ignore-dot-domains` | Don't mention rules whose domain has no dot (`\|\|cfd^`, `\|\|countly-`). Such rules are kept either way |
 | `--ignorefiles=` | Additional files to ignore (comma-separated, partial names) |
 | `--ignoredirs=` | Additional directories to ignore (comma-separated, partial names) |
 | `--ignore-all-but=` |  Only process these files, ignore all others (comma-separated) |
@@ -179,7 +179,7 @@ backup = false
 # Keep empty lines in output
 keep-empty-lines = false
 
-# Don't skip rules without dot in domain
+# Don't mention rules whose domain has no dot
 ignore-dot-domains = false
 
 # Comment line prefixes

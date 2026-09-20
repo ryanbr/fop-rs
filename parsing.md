@@ -345,8 +345,12 @@ eyeo's Acceptable Ads rules with thousands of domains, is merged in one pass.
 | Rule | Example | Why |
 |------|---------|-----|
 | TLD only | `\|\|.com^`, `.net` | Blocks a whole top-level domain |
-| Network rule whose domain has no dot | `\|\|click^$script` | Unless `--ignore-dot-domains`. Skips valid uBO rules too; see [Known limitations](#known-limitations). |
 | Line starting with `"`, `)`, `]` or `}` | `"])` | Debris from a truncated rule; no valid rule starts this way |
+
+A network rule whose domain holds no dot (`\|\|cfd^`, `\|\|countly-`,
+`\|\|com/services/?rt=`) is **kept**: it is a whole-TLD or prefix match, which
+is legitimate, and a typo looks the same. FOP mentions it once per run, which
+`--ignore-dot-domains` silences.
 | Line under 3 characters | `a` | Counted in characters, not bytes. Unless `--ignore-line-minimum`. |
 
 ## Typo detection and fixing
@@ -403,12 +407,10 @@ rule is legal as written.
 
 Found while checking the September 2026 snapshots:
 
-- **uBO rules whose domain has no dot are skipped** unless
-  `--ignore-dot-domains` is used. 11 valid uAssets rules, such as
-  `||de/*/ad_bomb/*`, are affected.
-- **Without `--parse-adguard`, `$$` rules are read as network rules.** They
-  are left as written, but the part after `$$` can trigger an
-  unknown-option warning (`$$amp-consent`).
+- **Without `--parse-adguard`, AdGuard's `$$`, `#$?#` and CSS-injection
+  rules are not sorted as cosmetic.** They are left exactly as written, so
+  their domains are neither sorted nor merged. For a list AdGuard reads,
+  that flag is the better match.
 - **A merged domain list can grow very long.** In eyeo's
   `exceptionrules.txt`, lines kept under 20,000 characters merge into lines
   of up to 586k characters. Merging does not change what the rules match.
