@@ -3019,9 +3019,9 @@ fn test_combine_filters_records_each_pairwise_step() {
     }
 }
 
-/// Held by the tests that read or replace the global change record, so one
-/// cannot see the other's swap.
-static SORT_CHANGES_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Held by the tests that read or replace FOP's global state -- the change
+/// record, the warning buffer -- so one cannot see another's writes.
+static GLOBAL_STATE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
 fn test_combine_filters_tracking_is_capped() {
@@ -3031,7 +3031,7 @@ fn test_combine_filters_tracking_is_capped() {
     // holds this group's 49.
     use crate::fop_sort::{combine_filters, PR_CHANGES_SHOWN, SORT_CHANGES, TRACK_CHANGES};
     use std::sync::atomic::Ordering::Relaxed;
-    let _guard = SORT_CHANGES_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let el = &*crate::ELEMENT_DOMAIN_PATTERN;
     TRACK_CHANGES.store(true, Relaxed);
     let group: Vec<String> = (0..50).map(|i| format!("d{:02}.pin9.test##.cap", 49 - i)).collect();
@@ -3049,7 +3049,7 @@ fn test_pr_changes_counts_unlisted_merges() {
     // The description lists the recorded steps and counts the rest from the
     // total, since only the listed ones are kept.
     use crate::fop_sort::{SortChanges, SORT_CHANGES};
-    let _guard = SORT_CHANGES_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let body = {
         let mut changes = SORT_CHANGES.lock().unwrap();
         let saved = std::mem::take(&mut *changes);
@@ -3725,6 +3725,53 @@ fn test_list_symlinks_stay_in_tree() {
     }
     assert!(!list_file_in_tree(&tree.join("sub"), &root), "a directory is not a list");
     let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn test_html_filter_is_not_read_as_options() {
+    // `$$` and `$@$` open an AdGuard HTML filter: what follows is a selector,
+    // not an option list. Read as options in the default mode, FOP warned that
+    // `amp-consent` in `...$$amp-consent` was unknown -- on a rule it was
+    // right to leave alone, and in a list it has no way to convert.
+    use crate::{WARNING_BUFFER, WARNING_TO_FILE};
+    use std::sync::atomic::Ordering::Relaxed;
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let warned_about = |fragment: &str| {
+        WARNING_BUFFER.lock().unwrap().iter().any(|w| w.contains(fragment))
+    };
+    WARNING_TO_FILE.store(true, Relaxed);
+    WARNING_BUFFER.lock().unwrap().clear();
+
+    // Rules that carry a `$` but are cosmetic: HTML filters, AdGuard CSS
+    // injection, a scriptlet argument, a regex in :has-text()
+    let untouched = [
+        "m.timesofindia.com,m-timesofindia-com.cdn.ampproject.org$$amp-consent",
+        "portal.librus.pl$$advertisement-module",
+        "example.com$@$script[tag-content=\"x\"]",
+        "example.com$$div[id=\"a\"][class=\"b,c\"]",
+        "example.com#$#body { background: url(\"a$b\"); }",
+        "example.com#%#//scriptlet('set-constant', 'a$b', 'true')",
+        "example.com#?#div:has-text(/a$b/)",
+    ];
+    let rewritten: Vec<&str> = untouched
+        .iter()
+        .filter(|rule| crate::fop_sort::filter_tidy(rule, true) != **rule)
+        .copied()
+        .collect();
+    // A network rule's unknown option is still worth saying
+    crate::fop_sort::filter_tidy("||example.com^$scirpt", true);
+    let (selector_warnings, option_warning) = (
+        warned_about("amp-consent") || warned_about("advertisement-module"),
+        warned_about("scirpt"),
+    );
+    // Restored before asserting, so a failure here does not leave every later
+    // test's warnings buffered instead of printed
+    WARNING_TO_FILE.store(false, Relaxed);
+    WARNING_BUFFER.lock().unwrap().clear();
+
+    assert!(rewritten.is_empty(), "rewritten: {:?}", rewritten);
+    assert!(!selector_warnings, "warned about a selector");
+    assert!(option_warning, "an unknown option on a network rule must still warn");
 }
 
 #[test]

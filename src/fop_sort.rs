@@ -729,6 +729,16 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
         );
     }
 
+    // A cosmetic rule has no option list: what follows its separator is a
+    // selector. AdGuard's HTML filters (`$$`, `$@$`) reach here in the default
+    // mode, where reading the selector as options warned that `amp-consent` in
+    // `...$$amp-consent` is not an option FOP knows. Nothing below rewrites
+    // such a line -- only the warning was wrong -- so it is returned as it
+    // stands, in every mode rather than only under --parse-adguard.
+    if is_element_rule {
+        return filter_in.to_string();
+    }
+
     let option_split = OPTION_PATTERN.captures(filter_in);
 
     match option_split {
