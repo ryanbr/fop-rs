@@ -38,9 +38,8 @@ jobs:
       - name: Install cross-compilation tools
         run: |
           sudo apt-get update
-          # x86_64 Windows moved to the Windows runner, so its mingw
-          # cross-toolchain and target are no longer needed here.
-          sudo apt-get install -y gcc-mingw-w64-i686 gcc-multilib
+          sudo apt-get install -y gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 gcc-multilib
+          rustup target add x86_64-pc-windows-gnu
           rustup target add i686-pc-windows-gnu
           rustup target add i686-unknown-linux-gnu
         
@@ -111,8 +110,18 @@ jobs:
           cargo build --release --target i686-unknown-linux-gnu
           cp target/i686-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_32"
 
-          # Windows x86_64 is built on the Windows runner instead, where it is
-          # native and so can carry a PGO profile.
+          # Windows x86_64 baseline. No PGO: rustup ships no profiler runtime
+          # for x86_64-pc-windows-gnu, so the target cannot be instrumented,
+          # native or not. The MSVC build on the Windows runner carries the
+          # profile instead.
+          cargo clean
+          cargo build --release --target x86_64-pc-windows-gnu
+          cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64.exe"
+
+          # Windows x86_64-v3 (optimized for ~2015+ CPUs)
+          cargo clean
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
+          cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
 
           # Windows x86 32-bit
           cargo clean
@@ -143,6 +152,8 @@ jobs:
           name: linux-windows-binaries
           path: |
             fop-*-linux-*
+            fop-*-windows-x86_64.exe
+            fop-*-windows-x86_64-v3.exe
             fop-*-windows-x86_32.exe
 
       - name: Push changes
@@ -163,25 +174,19 @@ jobs:
         with:
           targets: aarch64-pc-windows-msvc
 
-      # -Cprofile-generate needs the profiler_builtins crate, which rustup
-      # ships only for a toolchain's own host -- instrumenting windows-gnu as
-      # a *target* of the msvc host fails with E0463. Installing the gnu
-      # toolchain makes it the host, so the instrumented build, the training
-      # run and the final binaries are all native, and the published binary
-      # stays the same mingw build users already have. This toolchain brings
-      # its own mingw, so no MSYS2 wrangling either.
-      - name: Install the windows-gnu toolchain for PGO
-        run: |
-          rustup toolchain install stable-x86_64-pc-windows-gnu
-          rustup component add llvm-tools-preview --toolchain stable-x86_64-pc-windows-gnu
+      # x86_64-pc-windows-msvc is this runner's own host and is the only
+      # x64 Windows target rustup ships a profiler runtime for -- the gnu
+      # target has none, so it cannot be instrumented at all. This builds an
+      # MSVC binary alongside the published mingw one so the two can be
+      # compared before anything switches over; install.js still fetches the
+      # mingw build.
+      - name: Install llvm-tools for PGO
+        run: rustup component add llvm-tools-preview
 
       - name: Generate PGO profile data
         run: |
-          # Native on this runner, so the instrumented binary can be run to
-          # collect a real profile -- which it cannot be when cross-compiled
-          # from Linux, where these used to be built.
           $env:RUSTFLAGS = "-Cprofile-generate=$env:RUNNER_TEMP\pgo-data"
-          cargo +stable-x86_64-pc-windows-gnu build --release
+          cargo build --release
           Copy-Item -Recurse test-lists "$env:RUNNER_TEMP\pgo-train"
           # A leading .\ is required: PowerShell's call operator reads a bare
           # relative path as a command name, not a file.
@@ -189,8 +194,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "PGO training run failed ($LASTEXITCODE)" }
           Remove-Item -Recurse -Force "$env:RUNNER_TEMP\pgo-train"
           $env:RUSTFLAGS = ""
-          # llvm-profdata is a host tool, so take the gnu toolchain's own.
-          $sysroot = rustc +stable-x86_64-pc-windows-gnu --print sysroot
+          $sysroot = rustc --print sysroot
           $profdata = (Get-ChildItem "$sysroot\lib\rustlib\*\bin\llvm-profdata.exe" | Select-Object -First 1).FullName
           if (-not $profdata) { throw "llvm-profdata not found under $sysroot" }
           & $profdata merge -o "$env:RUNNER_TEMP\pgo-data\merged.profdata" "$env:RUNNER_TEMP\pgo-data"
@@ -200,20 +204,13 @@ jobs:
       - name: Build Windows binaries
         run: |
           $VERSION = "${{ needs.build-linux-windows.outputs.version }}"
-          $pgo = "$env:RUNNER_TEMP\pgo-data\merged.profdata"
 
-          # Windows x86_64 baseline + PGO, built by the gnu toolchain as its
-          # own host. Runs on every x86_64: PGO reorders and inlines, it adds
-          # no instructions.
-          $env:RUSTFLAGS = "-Cprofile-use=$pgo"
-          cargo +stable-x86_64-pc-windows-gnu build --release
-          Copy-Item ".\target\release\fop.exe" "fop-${VERSION}-windows-x86_64.exe"
-
-          # Windows x86_64-v3 (AVX2) + PGO
-          cargo clean
-          $env:RUSTFLAGS = "-C target-cpu=x86-64-v3 -Cprofile-use=$pgo"
-          cargo +stable-x86_64-pc-windows-gnu build --release
-          Copy-Item ".\target\release\fop.exe" "fop-${VERSION}-windows-x86_64-v3.exe"
+          # Windows x86_64 MSVC + PGO, for comparison against the published
+          # mingw build. Static CRT so it needs no VCRUNTIME140.dll, as the
+          # ARM build does.
+          $env:RUSTFLAGS = "-C target-feature=+crt-static -Cprofile-use=$env:RUNNER_TEMP\pgo-data\merged.profdata"
+          cargo build --release
+          Copy-Item ".\target\release\fop.exe" "fop-${VERSION}-windows-x86_64-msvc.exe"
 
           # Windows ARM64, cross-compiled from this x64 runner, so no PGO.
           # Optimized for Snapdragon 8cx Gen 3+ / Cortex-A78+, static CRT to avoid VCRUNTIME140.dll
