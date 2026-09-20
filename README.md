@@ -367,8 +367,8 @@ If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the pl
 | Intel | `macos-x86_64` | Baseline | All Intel Macs |
 | Apple Silicon | `macos-arm64` | Apple M1 | M1, M2, M3, M4, M5 Macs |
 | **Windows** | | | |
-| x86_64 | `windows-x86_64.exe` | Baseline | All 64-bit Windows |
-| x86_64 | `windows-x86_64-v3.exe` | AVX2 | Intel Haswell+ / AMD Excavator+ (~2015+) |
+| x86_64 | `windows-x86_64.exe` | Baseline + PGO | All 64-bit Windows |
+| x86_64 | `windows-x86_64-v3.exe` | AVX2 + PGO | Intel Haswell+ / AMD Excavator+ (~2015+) |
 | x86 | `windows-x86_32.exe` | Baseline | 32-bit Windows |
 | ARM64 | `windows-arm64-v2.exe` | Cortex-A78 | Surface Pro X, Snapdragon laptops |
 
@@ -385,9 +385,8 @@ If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the pl
   own lists.
 
 **Windows x86_64:**
-- Either build works everywhere `-v3`'s CPU requirement allows. Neither
-  carries PGO: they are cross-compiled from Linux, where the instrumented
-  binary cannot be run to collect a profile.
+- Same as Linux: use the baseline, which carries PGO and runs on every
+  x86_64. `-v3` adds AVX2 targeting on top, for the same negligible gain.
 
 **Linux ARM64 (Raspberry Pi / Orange Pi):**
 - Use `linux-arm64` for Pi 3, Pi 4, Orange Pi 3/4, or if unsure
@@ -407,8 +406,8 @@ If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the pl
 | `linux-riscv64` | `riscv64gc-unknown-linux-gnu` | - |
 | `macos-x86_64` | `x86_64-apple-darwin` | - |
 | `macos-arm64` | `aarch64-apple-darwin` | `-C target-cpu=apple-m1` |
-| `windows-x86_64.exe` | `x86_64-pc-windows-gnu` | - |
-| `windows-x86_64-v3.exe` | `x86_64-pc-windows-gnu` | `-C target-cpu=x86-64-v3` |
+| `windows-x86_64.exe` | `x86_64-pc-windows-gnu` | `-Cprofile-use` (PGO) |
+| `windows-x86_64-v3.exe` | `x86_64-pc-windows-gnu` | `-C target-cpu=x86-64-v3 -Cprofile-use` (PGO) |
 | `windows-x86_32.exe` | `i686-pc-windows-gnu` | - |
 | `windows-arm64-v2.exe` | `aarch64-pc-windows-msvc` | `-C target-cpu=cortex-a78` |
 

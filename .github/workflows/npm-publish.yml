@@ -34,8 +34,9 @@ jobs:
       - name: Install cross-compilation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 gcc-multilib
-          rustup target add x86_64-pc-windows-gnu
+          # x86_64 Windows moved to the Windows runner, so its mingw
+          # cross-toolchain and target are no longer needed here.
+          sudo apt-get install -y gcc-mingw-w64-i686 gcc-multilib
           rustup target add i686-pc-windows-gnu
           rustup target add i686-unknown-linux-gnu
         
@@ -99,15 +100,8 @@ jobs:
           cargo build --release --target i686-unknown-linux-gnu
           cp target/i686-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_32"
 
-          # Windows x86_64 baseline
-          cargo clean
-          cargo build --release --target x86_64-pc-windows-gnu
-          cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64.exe"
-
-          # Windows x86_64-v3 (optimized for ~2015+ CPUs)
-          cargo clean
-          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
-          cp target/x86_64-pc-windows-gnu/release/fop.exe "fop-${VERSION}-windows-x86_64-v3.exe"
+          # Windows x86_64 is built on the Windows runner instead, where it is
+          # native and so can carry a PGO profile.
 
           # Windows x86 32-bit
           cargo clean
@@ -138,12 +132,12 @@ jobs:
           name: linux-windows-binaries
           path: |
             fop-*-linux-*
-            fop-*-windows-*.exe
+            fop-*-windows-x86_32.exe
 
       - name: Push changes
         run: git push --follow-tags
 
-  build-windows-arm:
+  build-windows:
     runs-on: windows-latest
     needs: build-linux-windows
     steps:
@@ -155,21 +149,63 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-pc-windows-msvc
+          targets: aarch64-pc-windows-msvc,x86_64-pc-windows-gnu
 
-      - name: Build Windows ARM64
+      - name: Install llvm-tools for PGO
+        run: rustup component add llvm-tools-preview
+
+      - name: Generate PGO profile data
+        run: |
+          # x86_64 Windows is native on this runner, so the instrumented
+          # binary can be run to collect a real profile -- which it cannot be
+          # when cross-compiled from Linux, where these used to be built.
+          # MSYS2 ships with the image but is not on PATH; the windows-gnu
+          # target needs its gcc to link, and keeping that target means the
+          # published binary is the same mingw build as before, only faster.
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-Cprofile-generate=$env:RUNNER_TEMP\pgo-data"
+          cargo build --release --target x86_64-pc-windows-gnu
+          Copy-Item -Recurse test-lists "$env:RUNNER_TEMP\pgo-train"
+          & "target\x86_64-pc-windows-gnu\release\fop.exe" --no-commit "$env:RUNNER_TEMP\pgo-train"
+          if ($LASTEXITCODE -ne 0) { throw "PGO training run failed ($LASTEXITCODE)" }
+          Remove-Item -Recurse -Force "$env:RUNNER_TEMP\pgo-train"
+          # llvm-profdata is a host tool, so it sits under the host triple.
+          $sysroot = rustc --print sysroot
+          $profdata = (Get-ChildItem "$sysroot\lib\rustlib\*\bin\llvm-profdata.exe" | Select-Object -First 1).FullName
+          & $profdata merge -o "$env:RUNNER_TEMP\pgo-data\merged.profdata" "$env:RUNNER_TEMP\pgo-data"
+          if (-not (Test-Path "$env:RUNNER_TEMP\pgo-data\merged.profdata")) { throw "no PGO profile was produced" }
+          cargo clean
+
+      - name: Build Windows binaries
         run: |
           $VERSION = "${{ needs.build-linux-windows.outputs.version }}"
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          $pgo = "$env:RUNNER_TEMP\pgo-data\merged.profdata"
+
+          # Windows x86_64 baseline + PGO. Runs on every x86_64: PGO reorders
+          # and inlines, it adds no instructions.
+          $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-Cprofile-use=$pgo"
+          cargo build --release --target x86_64-pc-windows-gnu
+          Copy-Item "target\x86_64-pc-windows-gnu\release\fop.exe" "fop-${VERSION}-windows-x86_64.exe"
+
+          # Windows x86_64-v3 (AVX2) + PGO
+          cargo clean
+          $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-C target-cpu=x86-64-v3 -Cprofile-use=$pgo"
+          cargo build --release --target x86_64-pc-windows-gnu
+          Copy-Item "target\x86_64-pc-windows-gnu\release\fop.exe" "fop-${VERSION}-windows-x86_64-v3.exe"
+
+          # Windows ARM64, cross-compiled from this x64 runner, so no PGO.
           # Optimized for Snapdragon 8cx Gen 3+ / Cortex-A78+, static CRT to avoid VCRUNTIME140.dll
-          $env:RUSTFLAGS="-C target-cpu=cortex-a78 -C target-feature=+crt-static"
+          cargo clean
+          $env:CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-cpu=cortex-a78 -C target-feature=+crt-static"
           cargo build --release --target aarch64-pc-windows-msvc
           Copy-Item "target\aarch64-pc-windows-msvc\release\fop.exe" "fop-${VERSION}-windows-arm64-v2.exe"
 
-      - name: Upload Windows ARM artifact
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: windows-arm-binaries
-          path: fop-*-windows-arm64-v2.exe
+          name: windows-binaries
+          path: fop-*-windows-*.exe
          
   build-macos:
     runs-on: macos-latest
@@ -221,7 +257,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: [build-linux-windows, build-windows-arm, build-macos]
+    needs: [build-linux-windows, build-windows, build-macos]
     permissions:
       contents: write
     steps:
@@ -247,7 +283,7 @@ jobs:
           files: |
             linux-windows-binaries/*
             macos-binaries/*
-            windows-arm-binaries/*
+            windows-binaries/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
