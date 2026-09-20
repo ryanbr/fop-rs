@@ -445,8 +445,19 @@ pub(crate) fn remove_unnecessary_wildcards(filter_text: &str) -> Cow<'_, str> {
         }
     }
 
-    // Remove trailing asterisks
-    while result.len() > 1
+    // Remove trailing asterisks.
+    //
+    // Not when the whole rule arrived here rather than just its pattern, as it
+    // does when the options did not match OPTION_PATTERN -- `$csp=` and
+    // friends, whose values hold spaces. Then the last `*` closes the final
+    // option's value, not the pattern: `*$csp=script-src *,domain=isohunt.*`
+    // was written back as `domain=isohunt.`, a host with a trailing dot that
+    // matches nothing, and `*$csp=script-src *,domain=torrentproject2.*` lost
+    // the only domain it had. The `ends_with(' ')` guard below caught only the
+    // narrower `$csp=script-src *` with nothing after it.
+    let carries_options = find_option_separator(&result).is_some();
+    while !carries_options
+        && result.len() > 1
         && result.ends_with('*')
         && !result[..result.len() - 1].ends_with('|')
         && !result[..result.len() - 1].ends_with(' ')

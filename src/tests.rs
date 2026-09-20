@@ -744,6 +744,23 @@ fn test_remove_unnecessary_wildcards() {
         remove_unnecessary_wildcards("**$csp=script-src 'self'"),
         "*$csp=script-src 'self'"
     );
+    // And a trailing `*` then closes the last option's value, not the pattern.
+    // `domain=isohunt.*` was written back as `domain=isohunt.`, a host with a
+    // trailing dot that matches nothing; the second rule lost the only domain
+    // it had. Both are real rules from uAssets' filters-2021.txt.
+    for rule in [
+        "*$csp=script-src *,domain=isohuntz.*|isohunt.*|myisohunt.*",
+        "*$csp=script-src *,domain=torrentproject2.*",
+        "||t.com^$csp=a b,domain=x.*",
+        "*$csp=a *,domain=x.*|y.com",
+    ] {
+        assert_eq!(remove_unnecessary_wildcards(rule), rule, "wildcard trimmed off an option");
+    }
+    // A pattern reaching here on its own still loses its trailing `*`, which is
+    // the whole point of the function: the guard keys on the option separator,
+    // not merely on the rule holding a `*`.
+    assert_eq!(remove_unnecessary_wildcards("||example.com^*"), "||example.com^");
+    assert_eq!(remove_unnecessary_wildcards("||example.com/a\\$b*"), "||example.com/a\\$b");
 }
 
 #[test]
