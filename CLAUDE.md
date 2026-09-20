@@ -254,6 +254,11 @@ cargo test test_name -- --nocapture
 ```
 
 ## Release Process
+0. Optional: trigger it with `dry_run` set to build every binary and upload the
+   artifacts without bumping the version, tagging, releasing or publishing.
+   Worth doing after any change to the build matrix -- the version bump is
+   pushed before the Windows and macOS jobs run, so a failure there burns a
+   version number.
 1. Trigger "Manual Publish" workflow in GitHub Actions
 2. Workflow bumps version, builds all platforms, publishes to npm
 3. Creates GitHub release with binaries

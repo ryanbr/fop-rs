@@ -10,6 +10,10 @@ on:
           - patch
           - minor
           - major
+      dry_run:
+        description: 'Build and upload artifacts only: no version bump, tag, release or publish'
+        default: false
+        type: boolean
 jobs:
   build-linux-windows:
     runs-on: ubuntu-latest
@@ -53,6 +57,13 @@ jobs:
       - name: Bump version and sync install.js
         id: version
         run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            # The downstream jobs name their binaries from this output, so it
+            # still has to be set -- just from the version already committed.
+            echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+            echo "Dry run: building the current version, nothing will be bumped or published."
+            exit 0
+          fi
           npm version ${{ inputs.bump }} --no-git-tag-version
           NEW_VERSION=$(node -p "require('./package.json').version")
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
@@ -135,6 +146,7 @@ jobs:
             fop-*-windows-x86_32.exe
 
       - name: Push changes
+        if: ${{ !inputs.dry_run }}
         run: git push --follow-tags
 
   build-windows:
@@ -256,6 +268,7 @@ jobs:
           path: fop-*-macos-*
 
   release:
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     needs: [build-linux-windows, build-windows, build-macos]
     permissions:
