@@ -4021,7 +4021,12 @@ fn test_hash_space_lines_are_comments() {
     // -- those are all two characters -- so it used to sort as a network rule
     // and lose its spaces, `# Reek's Anti-Adblock Killer` becoming
     // `#Reek'sAnti-AdblockKiller` and floating away from the URLs it labelled.
-    // The whitespace is what makes it a comment: `#foo` is left alone.
+    // The whitespace is what makes it a comment, and it must introduce
+    // something: `#foo` is left alone, and a lone `#` introduces nothing, so
+    // it is left to the line-length minimum that removes any other
+    // one-character line. A lone `!` keeps its pass, being the comment
+    // character itself and a section spacer 6,886 times over in the corpora,
+    // where a lone `#` does not appear once.
     let chars = vec!["!".to_string()];
     let config = test_sort_config(&chars);
     let dir = std::env::temp_dir().join(format!("fop-test-hash-{}", std::process::id()));
@@ -4034,6 +4039,8 @@ fn test_hash_space_lines_are_comments() {
          # a heading with spaces\n\
          ||zzz.example^\n\
          #\n\
+         # b\n\
+         !\n\
          ||aaa.example^\n",
     )
     .unwrap();
@@ -4046,14 +4053,18 @@ fn test_hash_space_lines_are_comments() {
         lines.contains(&"# a heading with spaces"),
         "hash comment was rewritten: {result}"
     );
-    assert!(lines.contains(&"#"), "bare hash was rewritten: {result}");
+    // A lone `#` goes: one character, like any other too-short line. `# b`
+    // reaches three and stays, as does a lone `!`.
+    assert!(!lines.contains(&"#"), "a lone hash outlived the length minimum: {result}");
+    assert!(lines.contains(&"# b"), "`# b` is long enough to stay: {result}");
+    assert!(lines.contains(&"!"), "a lone `!` must keep its pass: {result}");
     let heading = lines.iter().position(|l| *l == "# a heading with spaces").unwrap();
     let zzz = lines.iter().position(|l| *l == "||zzz.example^").unwrap();
-    let bare = lines.iter().position(|l| *l == "#").unwrap();
-    assert!(heading < zzz && zzz < bare, "comments did not hold the rules apart: {result}");
+    let b_head = lines.iter().position(|l| *l == "# b").unwrap();
+    assert!(heading < zzz && zzz < b_head, "comments did not hold the rules apart: {result}");
     // A comment closes the section, so the two rules never sort together.
     assert!(
-        lines.iter().position(|l| *l == "||aaa.example^").unwrap() > bare,
+        lines.iter().position(|l| *l == "||aaa.example^").unwrap() > b_head,
         "sections merged across the comment: {result}"
     );
     // Without the whitespace it stays a rule, as before.

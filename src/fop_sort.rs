@@ -1972,13 +1972,13 @@ pub(crate) fn extract_leading_host(line: &str) -> Option<(&str, usize)> {
 /// whitespace was stripped (`# two words` became `#twowords`) and it sorted as
 /// a rule, away from the lines it introduced.
 ///
-/// Requiring the whitespace keeps this narrow. `#foo` stays a rule, because
-/// only `# foo` is the documented hosts convention, and a bare `#` is no rule
-/// in any syntax fop reads.
+/// Requiring the whitespace keeps this narrow, and it must be followed by
+/// something: `#foo` stays a rule, because only `# foo` is the documented
+/// hosts convention, and a lone `#` introduces nothing, so it is left to the
+/// line-length minimum that removes any other one-character line.
 #[inline]
 pub(crate) fn is_plain_comment(line: &str) -> bool {
     match line.as_bytes() {
-        [b'#'] => true,
         [b'#', rest @ ..] => rest.first().is_some_and(u8::is_ascii_whitespace),
         _ => false,
     }

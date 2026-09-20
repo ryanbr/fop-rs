@@ -29,7 +29,7 @@ Snapshot usage was surveyed in September 2026.
 | Line | Treated as | Notes |
 |------|-----------|-------|
 | `! ...` | Comment | Kept in place, and ends the section above it. Only the rules between two comments are sorted together. |
-| `# ...`, `#` | Comment | The hosts-file convention, for lists that use it. Needs the whitespace: `#foo` is a rule, `# foo` a comment. Add others with `--comments=`. |
+| `# ...` | Comment | The hosts-file convention, for lists that use it. Needs the whitespace and something after it: `#foo` is a rule, `# foo` a comment, and a lone `#` is neither, so the line-length minimum removes it. A lone `!` is exempt. Add other characters with `--comments=`. |
 | `[Adblock Plus 2.0]` | Header | Kept in place; ends a section |
 | `%include file` | Include directive | Kept in place; ends a section |
 | `!#if`, `!#else`, `!#endif`, `!#include`, `!#safari_cb_affinity` | Comment | Rules never cross a directive. See [Directives and hints](#directives-and-hints). |
