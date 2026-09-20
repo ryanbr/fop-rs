@@ -1709,23 +1709,30 @@ fn test_has_text_merge_refuses_what_it_cannot_fold() {
     let slash = c(vec!["a.com##.x:has-text(/)".into(), "a.com##.x:has-text(B)".into()]);
     assert_eq!(slash, vec!["a.com##.x:has-text(//|B/)".to_string()]);
 
-    // One flagged argument sets the flags for the whole group; plain text
-    // joins under them. That does widen the plain text -- `Sponsored` becomes
-    // case-insensitive -- which is what an author writing `/i` beside it
-    // means, and either order gives the same flags.
+    // A flagged argument does not pull an unflagged one under its flags.
+    // `Sponsored` is a case-sensitive match and `/Protect your privacy/i` is
+    // not; folding them gave `/…|Sponsored/i`, which hid strictly more than
+    // the two rules did. These are uAssets' own rules on torrentz2, written
+    // separately and saying nothing about each other. Either order refuses.
+    let widening = vec![
+        "a.com##.x:has-text(/Protect your privacy/i)".to_string(),
+        "a.com##.x:has-text(Sponsored)".to_string(),
+    ];
+    assert_eq!(c(widening.clone()), widening);
+    let reversed: Vec<String> = widening.iter().rev().cloned().collect();
+    assert_eq!(c(reversed.clone()), reversed);
+    // Arguments already agreeing on their flags fold as before, as do two that
+    // are both case-sensitive -- plain text beside an unflagged regex.
     assert_eq!(
         c(vec![
-            "a.com##.x:has-text(/Protect your privacy/i)".into(),
-            "a.com##.x:has-text(Sponsored)".into(),
+            "a.com##.x:has-text(/foo/i)".into(),
+            "a.com##.x:has-text(/bar/i)".into(),
         ]),
-        vec!["a.com##.x:has-text(/Protect your privacy|Sponsored/i)".to_string()]
+        vec!["a.com##.x:has-text(/foo|bar/i)".to_string()]
     );
     assert_eq!(
-        c(vec![
-            "a.com##.x:has-text(Sponsored)".into(),
-            "a.com##.x:has-text(/Protect your privacy/i)".into(),
-        ]),
-        vec!["a.com##.x:has-text(/Sponsored|Protect your privacy/i)".to_string()]
+        c(vec!["a.com##.x:has-text(/foo/)".into(), "a.com##.x:has-text(bar)".into()]),
+        vec!["a.com##.x:has-text(/foo|bar/)".to_string()]
     );
     // Two different flag sets have no single form to merge into.
     let mixed_flags = vec![
@@ -2448,13 +2455,29 @@ fn test_has_text_trailing_letters_are_not_regex_flags() {
     assert_eq!(merged.len(), 1, "{:?}", merged);
     assert!(!merged[0].ends_with("/to)"), "text read as flags: {}", merged[0]);
     assert!(merged[0].contains("path/to"), "{}", merged[0]);
-    // Real flags are still recognised: the group takes `i`, by design (see
-    // the note in has_text_merge -- plain text joins a flagged regex under it).
+    // Real flags are still recognised, and that is now what stops the merge:
+    // `Sponsored` is case-sensitive and `/Ad/i` is not, so there is no one
+    // form to fold them into. Were `i` read as text rather than flags, the two
+    // would both be plain and would merge -- so two rules out is the proof.
     let merged = combine_has_text_rules(vec![
         "example.com##div:has-text(/Ad/i)".to_string(),
         "example.com##div:has-text(Sponsored)".to_string(),
     ]);
-    assert_eq!(merged, vec!["example.com##div:has-text(/Ad|Sponsored/i)".to_string()]);
+    assert_eq!(
+        merged,
+        vec![
+            "example.com##div:has-text(/Ad/i)".to_string(),
+            "example.com##div:has-text(Sponsored)".to_string(),
+        ]
+    );
+    // Agreeing on the flags, they still fold.
+    assert_eq!(
+        combine_has_text_rules(vec![
+            "example.com##div:has-text(/Ad/i)".to_string(),
+            "example.com##div:has-text(/Sponsored/i)".to_string(),
+        ]),
+        vec!["example.com##div:has-text(/Ad|Sponsored/i)".to_string()]
+    );
     // A repeated flag is not a flag set JavaScript accepts, so it is text too.
     let dup = combine_has_text_rules(vec![
         "example.com##div:has-text(/a/ii)".to_string(),

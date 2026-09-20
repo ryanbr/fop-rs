@@ -1315,21 +1315,24 @@ fn merge_has_text_args(args: &[String]) -> String {
     if args.iter().any(|a| is_unmergeable_arg(a)) {
         return String::new();
     }
-    // One flag set for the group, taken from whichever arguments carry flags.
-    // Plain text and unflagged regexes join under it: folding `/a/i` with `b`
-    // gives `/a|b/i`, which does make `b` case-insensitive -- a wider match
-    // than it had, and the one an author writing `/i` alongside it wants.
+    // Every argument must already carry the group's flags, with no flags a set
+    // of its own. Plain text and an unflagged regex are both case-sensitive, so
+    // they fold together losslessly, and `/a/i` with `/b/i` is likewise already
+    // agreed -- but `/a/i` with `b` is not. That used to merge as `/a|b/i`, on
+    // the reasoning that an author writing `/i` beside it meant `b` too; these
+    // are separate rules that happen to share a base selector, though, written
+    // at different times and saying nothing about each other. Folding them hid
+    // strictly more than the two rules did: uAssets' `:has-text(Sponsored)` on
+    // torrentz2 began matching "sponsored" in any case. Five corpora hold two
+    // such pairs, and that is the only one the sort actually groups -- a
+    // comment separates the other, so its two rules never meet. A cosmetic
+    // rule that widens itself on a sort is a false positive nobody asked for.
     //
-    // Two different flag sets have no single form to merge into, so `/a/i`
-    // with `/b/m` is left alone.
-    let mut flags = "";
-    for arg in args {
-        if let Some(f) = regex_flags(arg) {
-            if !flags.is_empty() && flags != f {
-                return String::new();
-            }
-            flags = f;
-        }
+    // Two different flag sets have no single form to merge into either, so
+    // `/a/i` with `/b/m` is left alone.
+    let flags = regex_flags(&args[0]).unwrap_or("");
+    if args.iter().any(|a| regex_flags(a).unwrap_or("") != flags) {
+        return String::new();
     }
     let mut seen: Vec<String> = Vec::with_capacity(args.len());
     for arg in args {
