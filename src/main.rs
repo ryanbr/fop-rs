@@ -1864,6 +1864,12 @@ where
     if (remove_bad_rules || remove_non_domain) && dry_run {
         println!("Dry run: the flagged lines were left in place.");
     }
+    // What this run is authorised to delete. --remove-non-domain-on-add takes
+    // only what it added to the list; every other defect keeps needing
+    // --remove-bad-rules, so the narrow flag cannot widen into the broad one.
+    let deletes = |p: &fop_rules::RuleProblem| {
+        p.removable && (remove_bad_rules || p.reason == fop_rules::NON_DOMAIN_REASON)
+    };
     if (remove_bad_rules || remove_non_domain) && !dry_run {
         // Defects go; advice stays. `removable` exists to draw exactly that
         // line -- a bare hostname or an unanchored host rule is legal syntax,
@@ -1875,10 +1881,13 @@ where
         // --remove-non-domain-on-add deletes only what it added to the list;
         // the other defects keep needing --remove-bad-rules, so the narrower
         // flag cannot quietly widen into the broader one.
-        let deletes = |p: &fop_rules::RuleProblem| {
-            p.removable && (remove_bad_rules || p.reason == fop_rules::NON_DOMAIN_REASON)
-        };
-        let advice = problems.iter().filter(|(_, p)| !deletes(p)).count();
+        // Two reasons a line stays, and they are not the same thing. Advice
+        // is legal as written and never removed. A defect this run was not
+        // asked to remove -- `##` under --remove-non-domain-on-add alone --
+        // is not advice, and calling it that told the author their rule was
+        // fine when it is not.
+        let advice = problems.iter().filter(|(_, p)| !p.removable).count();
+        let held_back = problems.iter().filter(|(_, p)| p.removable && !deletes(p)).count();
         let removable: Vec<&fop_typos::Addition> =
             problems.iter().filter(|(_, p)| deletes(p)).map(|(add, _)| *add).collect();
         let (targets, merged) = partition_merged(&removable, base_cmd);
@@ -1902,6 +1911,13 @@ where
                         advice
                     );
                 }
+                if held_back > 0 {
+                    println!(
+                        "Kept {} defective line(s) this run was not asked to remove -- \
+                         --remove-bad-rules deletes them.",
+                        held_back
+                    );
+                }
             }
             Err(e) => {
                 eprintln!("Could not remove flagged lines: {}", e);
@@ -1915,13 +1931,26 @@ where
             eprintln!("Warning: could not re-read the diff after removing lines.");
             return !interactive;
         };
-        // Only a defect still present is a failure; the advice was kept on
-        // purpose above.
+        // Only a line this run was asked to remove counts as a failure. The
+        // advice was kept on purpose, and so was any defect outside the
+        // flags given: reporting those as "could not be removed" contradicted
+        // the line above saying they had been kept, and returned false, which
+        // in interactive mode stopped the commit over nothing.
         let after_tidied = tidy_all(&after, config_for, &root);
-        let left = check_as_sorted(&after, &after_tidied)
+        let mut left = check_as_sorted(&after, &after_tidied)
             .iter()
-            .filter(|(_, p)| p.removable)
+            .filter(|(_, p)| deletes(p))
             .count();
+        // `check_as_sorted` runs the standard checks only, so a bare word that
+        // survived removal would go unseen there. Ask again on the same terms
+        // the flag set.
+        if remove_non_domain {
+            left += after
+                .iter()
+                .zip(&after_tidied)
+                .filter(|(_, as_sorted)| fop_rules::is_non_domain_word(as_sorted))
+                .count();
+        }
         if left > 0 {
             if interactive {
                 eprintln!("{} rule(s) could not be removed; stopping rather than committing them.", left);

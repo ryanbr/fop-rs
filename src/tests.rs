@@ -3934,6 +3934,50 @@ fn test_remove_non_domain_on_add() {
 }
 
 #[test]
+fn test_narrow_flag_does_not_fail_on_defects_it_kept() {
+    // The re-read after removing asks whether anything flagged is still
+    // there. It used to count every defect, so a run given only
+    // --remove-non-domain-on-add reported the `##` it had deliberately kept
+    // as "could not be removed" -- contradicting the line above saying it was
+    // kept -- and returned false, which in interactive mode stops the commit.
+    // It must ask what this run was asked to remove, not what is a defect.
+    let repo = rule_check_repo(
+        "narrow-flag-keeps",
+        "[Adblock Plus 2.0]\n! T\nzoho.com##.ad\n",
+        "[Adblock Plus 2.0]\n! T\nisCookiesAccepted\n##\n||x.com^$fakeopt\nzoho.com##.ad\n",
+    );
+    let chars = vec!["!".to_string()];
+    let config_for = |_: &std::path::Path| test_sort_config(&chars);
+    // Interactive, which is where the false return actually stopped a commit.
+    let ok = crate::run_rule_checks(
+        &repo.cmd(), false, true, None, false, &config_for, true,
+        &["txt".to_string()], &[], &[], &[], false, true,
+    );
+    let after = std::fs::read_to_string(repo.0.join("a.txt")).unwrap();
+    assert!(ok, "the run failed over defects it was never asked to remove:\n{after}");
+    // The bare word went; the defects outside the flag stayed.
+    assert!(!after.lines().any(|l| l == "isCookiesAccepted"), "{after}");
+    assert!(after.lines().any(|l| l == "##"), "a defect outside the flag was removed:\n{after}");
+    assert!(after.lines().any(|l| l == "||x.com^$fakeopt"), "{after}");
+
+    // With --remove-bad-rules as well, all three go and the run still passes.
+    let repo = rule_check_repo(
+        "narrow-flag-both",
+        "[Adblock Plus 2.0]\n! T\nzoho.com##.ad\n",
+        "[Adblock Plus 2.0]\n! T\nisCookiesAccepted\n##\n||x.com^$fakeopt\nzoho.com##.ad\n",
+    );
+    let ok = crate::run_rule_checks(
+        &repo.cmd(), true, true, None, false, &config_for, true,
+        &["txt".to_string()], &[], &[], &[], false, true,
+    );
+    let after = std::fs::read_to_string(repo.0.join("a.txt")).unwrap();
+    assert!(ok, "the run failed with both flags:\n{after}");
+    for gone in ["isCookiesAccepted", "##", "||x.com^$fakeopt"] {
+        assert!(!after.lines().any(|l| l == gone), "{gone} survived both flags:\n{after}");
+    }
+}
+
+#[test]
 fn test_banned_list_is_not_checked_as_a_filter_list() {
     // The banned-domain list is a registry of names: bare entries are what
     // belongs there, and easylist's holds two without a dot. Checking it as a
