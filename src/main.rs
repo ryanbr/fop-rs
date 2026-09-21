@@ -368,6 +368,8 @@ struct Args {
     check_rules_on_add: bool,
     /// Delete the flagged lines instead of only reporting them
     remove_bad_rules: bool,
+    /// Delete an added line that is a bare word rather than a domain
+    remove_non_domain_on_add: bool,
     /// Users allowed to push directly (bypass create-pr)
     direct_push_users: Vec<String>,
     /// Auto-fix without prompting (use with --fix-typos or --fix-typos-on-add)
@@ -681,6 +683,7 @@ impl Args {
             // uncoupled makes `remove-bad-rules = true` alone silently do
             // nothing -- the exact trap that coupling avoids.
             remove_bad_rules: parse_bool(&config, "remove-bad-rules", false),
+            remove_non_domain_on_add: parse_bool(&config, "remove-non-domain-on-add", false),
             direct_push_users: config.get("direct-push-users")
                 .map(|s| s.split(',').map(|u| u.trim().to_lowercase()).collect())
                 .unwrap_or_default(),
@@ -885,6 +888,11 @@ impl Args {
                     args.remove_bad_rules = true;
                     args.check_rules_on_add = true;
                 }
+                // Removing implies checking here too, for the same reason.
+                "--remove-non-domain-on-add" => {
+                    args.remove_non_domain_on_add = true;
+                    args.check_rules_on_add = true;
+                }
                 "--auto-fix" => args.auto_fix = true,
                 _ if arg.starts_with("--add-timestamp=") => {
                     args.add_timestamp = arg.trim_start_matches("--add-timestamp=")
@@ -1065,6 +1073,7 @@ impl Args {
         println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
         println!("        --check-rules-on-add  Check git additions for rules that cannot work");
         println!("        --remove-bad-rules    Delete defective lines instead of reporting them (advice is kept)");
+        println!("        --remove-non-domain-on-add  Delete an added line that is a bare word, not a domain");
         println!("        --ignore-line-minimum  Keep rules under 3 chars instead of dropping them");
         println!("        --auto-fix           Auto-fix typos without prompting");
         println!("        --threads=N         Worker threads (default: cores, capped at 8; overrides RAYON_NUM_THREADS)");
@@ -1768,6 +1777,7 @@ fn ci_git_cmd(git_binary: Option<&str>, location: &Path) -> Vec<String> {
 fn run_rule_checks<'c, F>(
     base_cmd: &[String],
     remove_bad_rules: bool,
+    remove_non_domain: bool,
     dry_run: bool,
     config_for: &F,
     no_color: bool,
@@ -1813,7 +1823,19 @@ where
         return !interactive;
     };
     let tidied = tidy_all(&additions, config_for, &root);
-    let problems = check_as_sorted(&additions, &tidied);
+    let mut problems = check_as_sorted(&additions, &tidied);
+    if remove_non_domain {
+        // Opt-in, and judged on the sorted form like every other check, so a
+        // line is flagged as it would be written. Skipped where a check
+        // already spoke: one line, one reason.
+        let already: std::collections::HashSet<usize> =
+            problems.iter().map(|(add, _)| add.line_num).collect();
+        for (add, as_sorted) in additions.iter().zip(&tidied) {
+            if !already.contains(&add.line_num) && fop_rules::is_non_domain_word(as_sorted) {
+                problems.push((add, fop_rules::RuleProblem::new(fop_rules::NON_DOMAIN_REASON, "")));
+            }
+        }
+    }
     if problems.is_empty() {
         return true;
     }
@@ -1823,10 +1845,10 @@ where
     // A dry run writes nothing, so the lines stay -- but that is a reason to
     // fall through to the prompt, not to report the rules as dealt with. An
     // early `true` here let `--output --remove-bad-rules` commit them.
-    if remove_bad_rules && dry_run {
+    if (remove_bad_rules || remove_non_domain) && dry_run {
         println!("Dry run: the flagged lines were left in place.");
     }
-    if remove_bad_rules && !dry_run {
+    if (remove_bad_rules || remove_non_domain) && !dry_run {
         // Defects go; advice stays. `removable` exists to draw exactly that
         // line -- a bare hostname or an unanchored host rule is legal syntax,
         // and in a plain domain-list file it is what belongs there -- and the
@@ -1834,9 +1856,15 @@ where
         // advice too, with a note afterwards, removed 1062 deliberate entries
         // from one such file in a single run. Nothing is rewritten in place: a
         // silent correction is harder to notice than a deletion.
-        let advice = problems.iter().filter(|(_, p)| !p.removable).count();
+        // --remove-non-domain-on-add deletes only what it added to the list;
+        // the other defects keep needing --remove-bad-rules, so the narrower
+        // flag cannot quietly widen into the broader one.
+        let deletes = |p: &fop_rules::RuleProblem| {
+            p.removable && (remove_bad_rules || p.reason == fop_rules::NON_DOMAIN_REASON)
+        };
+        let advice = problems.iter().filter(|(_, p)| !deletes(p)).count();
         let removable: Vec<&fop_typos::Addition> =
-            problems.iter().filter(|(_, p)| p.removable).map(|(add, _)| *add).collect();
+            problems.iter().filter(|(_, p)| deletes(p)).map(|(add, _)| *add).collect();
         let (targets, merged) = partition_merged(&removable, base_cmd);
         if !merged.is_empty() {
             eprintln!(
@@ -2077,6 +2105,7 @@ fn process_location(
     fix_typos_on_add: bool,
     check_rules_on_add: bool,
     remove_bad_rules: bool,
+    remove_non_domain_on_add: bool,
     auto_fix: bool,
     only_sort_changed: bool,
     rebase_on_fail: bool,
@@ -2252,6 +2281,7 @@ fn process_location(
                 rules_ok = run_rule_checks(
                     base_cmd,
                     remove_bad_rules,
+                    remove_non_domain_on_add,
                     sort_config.dry_run,
                     &file_config,
                     no_color,
@@ -3361,6 +3391,7 @@ fn main() {
                 args.fix_typos_on_add,
                 args.check_rules_on_add,
                 args.remove_bad_rules,
+                args.remove_non_domain_on_add,
                 args.auto_fix,
                 args.only_sort_changed,
                 args.rebase_on_fail,

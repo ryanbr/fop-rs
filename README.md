@@ -93,6 +93,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--backup` | Create .backup files before modifying |
 | `--keep-empty-lines` | Keep empty lines in output |
 | `--ignore-dot-domains` | Don't mention rules whose domain has no dot (`\|\|cfd^`, `\|\|countly-`). Such rules are kept either way |
+| `--remove-non-domain-on-add` | Delete an added line that is a bare word rather than a domain (`isCookiesAccepted`). Opt-in: a bare word is a legal substring rule, so only additions are judged and a leading or trailing `-` or `_` exempts it |
 | `--ignorefiles=` | Additional files to ignore (comma-separated, partial names) |
 | `--ignoredirs=` | Additional directories to ignore (comma-separated, partial names) |
 | `--ignore-all-but=` |  Only process these files, ignore all others (comma-separated) |

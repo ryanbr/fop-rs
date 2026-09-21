@@ -25,7 +25,7 @@ pub struct RuleProblem<'a> {
 
 impl<'a> RuleProblem<'a> {
     #[inline]
-    fn new(reason: &'static str, detail: &'a str) -> Self {
+    pub(crate) fn new(reason: &'static str, detail: &'a str) -> Self {
         Self { reason, detail, suggestion: None, removable: true }
     }
 }
@@ -411,6 +411,35 @@ fn split_options_inner(line: &str, escaped_commas: bool) -> Option<(&str, &str)>
         }
     }
     None
+}
+
+/// Reason text for a bare word offered as a rule.
+pub const NON_DOMAIN_REASON: &str =
+    "not a domain -- a bare word matches any URL containing it";
+
+/// Whether a line is a bare word: no dot, no separator, no options, no anchor,
+/// and no `-` or `_` at either end.
+///
+/// Such a rule is legal and sometimes meant: `fingerprintjs` and `pkaystream`
+/// are real. It is also what a stray paste looks like -- `isCookiesAccepted`,
+/// one argument of a scriptlet, sorted quietly into a list because nothing
+/// objected. Nothing here can tell those apart, which is why the ordinary
+/// checks leave both alone and only `--remove-non-domain-on-add` acts.
+///
+/// The edge marker is the one signal that does separate them in practice. Of
+/// 911 distinct bare-word rules across easylist, uAssets, AdguardFilters and
+/// test-lists, 900 open or close with `-` or `_` -- how a substring rule is
+/// written -- and those are never flagged. The other 11 are, and all 11 are
+/// real rules, so the flag is for a list whose author knows they do not write
+/// them.
+pub fn is_non_domain_word(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let edge = |b: u8| b == b'-' || b == b'_';
+    bytes.len() >= 2
+        && !line.contains('.')
+        && bytes.first().is_some_and(|&b| !edge(b))
+        && bytes.last().is_some_and(|&b| !edge(b))
+        && bytes.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 /// Why this rule looks wrong, or `None` if it looks fine.

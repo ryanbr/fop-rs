@@ -2790,12 +2790,22 @@ fn run_checks(repo: &ScratchRepo) -> bool {
     run_checks_with(repo, &|_: &std::path::Path| test_sort_config(&chars))
 }
 
+/// `run_checks`, with --remove-non-domain-on-add rather than --remove-bad-rules.
+fn run_checks_non_domain(repo: &ScratchRepo) -> bool {
+    let chars = vec!["!".to_string()];
+    let config_for = |_: &std::path::Path| test_sort_config(&chars);
+    crate::run_rule_checks(
+        &repo.cmd(), false, true, false, &config_for, true,
+        &["txt".to_string()], &[], &[], &[], false, false,
+    )
+}
+
 fn run_checks_with<'c>(
     repo: &ScratchRepo,
     config_for: &(dyn Fn(&std::path::Path) -> crate::fop_sort::SortConfig<'c> + Sync),
 ) -> bool {
     crate::run_rule_checks(
-        &repo.cmd(), true, false, config_for, true,
+        &repo.cmd(), true, false, false, config_for, true,
         &["txt".to_string()], &[], &[], &[], false, false,
     )
 }
@@ -3877,6 +3887,80 @@ fn test_element_prefilter_keeps_every_separator() {
     }
     // A line with neither character cannot be cosmetic, and is untouched.
     assert_eq!(crate::fop_sort::tidy_rule("||plain.com^", &adguard), "||plain.com^");
+}
+
+#[test]
+fn test_remove_non_domain_on_add() {
+    // A bare word is a legal rule -- it blocks any URL containing it, and
+    // `fingerprintjs` and `pkaystream` are real ones -- so nothing removes it
+    // by default. It is also what a stray paste looks like: the line that
+    // prompted this was `isCookiesAccepted`, one argument of a scriptlet,
+    // sorted quietly into easylist because no check objected. The flag is for
+    // a list whose author knows they do not write that shape.
+    let repo = rule_check_repo(
+        "non-domain-add",
+        // Committed: two real bare-word rules, which the checks never see,
+        // since they judge additions alone.
+        "[Adblock Plus 2.0]\n! T\nfingerprintjs\npkaystream\n\
+         5sim.net,aerolineas.com.ar##+js(set-local-storage-item, isCookiesAccepted, true)\n",
+        // Added: a stray word, a substring rule wearing its boundary markers,
+        // a domain, and a real rule that merges into the committed one.
+        "[Adblock Plus 2.0]\n! T\nfingerprintjs\npkaystream\n\
+         5sim.net,aerolineas.com.ar##+js(set-local-storage-item, isCookiesAccepted, true)\n\
+         isCookiesAccepted\n-120x600-\n_social-button-\nexample.com\n\
+         cellcom.co.il##+js(set-local-storage-item, isCookiesAccepted, true)\n",
+    );
+    run_checks_non_domain(&repo);
+    let after = std::fs::read_to_string(repo.0.join("a.txt")).unwrap();
+    let has = |s: &str| after.lines().any(|l| l == s);
+
+    // The stray word goes.
+    assert!(!has("isCookiesAccepted"), "the bare word survived:\n{after}");
+    // A boundary marker says substring rule, so those stay however bare.
+    assert!(has("-120x600-"), "an edge-marked substring was removed:\n{after}");
+    assert!(has("_social-button-"), "an edge-marked substring was removed:\n{after}");
+    // A domain is not a bare word, and is advice at most.
+    assert!(has("example.com"), "a domain was removed:\n{after}");
+    // The committed bare words are not additions, so they are never judged.
+    assert!(has("fingerprintjs"), "a committed bare word was removed:\n{after}");
+    assert!(has("pkaystream"), "a committed bare word was removed:\n{after}");
+    // And the real rule added alongside it is kept. The checks run before the
+    // sort, so it is still its own line here; merging it into the committed
+    // twin is the sort's job and is covered by the merge tests.
+    assert!(
+        after.lines().any(|l| l.starts_with("cellcom.co.il##+js(")),
+        "the added rule was removed:\n{after}"
+    );
+}
+
+#[test]
+fn test_non_domain_words_are_kept_without_the_flag() {
+    // The default is unchanged: nothing removes a bare word, and no check
+    // even mentions one. 911 distinct bare-word rules live across easylist,
+    // uAssets, AdguardFilters and test-lists, so this is the behaviour that
+    // must not drift.
+    let repo = rule_check_repo(
+        "non-domain-default",
+        "[Adblock Plus 2.0]\n! T\nzoho.com##.ad\n",
+        "[Adblock Plus 2.0]\n! T\nisCookiesAccepted\nzoho.com##.ad\n",
+    );
+    run_checks(&repo);
+    assert!(
+        std::fs::read_to_string(repo.0.join("a.txt")).unwrap().lines().any(|l| l == "isCookiesAccepted"),
+        "--remove-bad-rules removed a bare word"
+    );
+    assert!(
+        crate::fop_rules::check_rule("isCookiesAccepted").is_none(),
+        "a bare word is flagged without the flag"
+    );
+    // The predicate itself, on the shapes that decide it.
+    use crate::fop_rules::is_non_domain_word as w;
+    for yes in ["isCookiesAccepted", "fingerprintjs", "page_view_count", "728x90px", "a1"] {
+        assert!(w(yes), "{yes} should qualify");
+    }
+    for no in ["-120x600-", "_social-button-", "-ads", "ads_", "example.com", "", "a"] {
+        assert!(!w(no), "{no} should not qualify");
+    }
 }
 
 #[test]
