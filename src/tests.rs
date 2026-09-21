@@ -3822,6 +3822,47 @@ fn test_html_filter_is_not_read_as_options() {
 }
 
 #[test]
+fn test_element_prefilter_keeps_every_separator() {
+    // The element patterns are only consulted for a line that could carry a
+    // cosmetic separator, since they are the expensive kind -- a lazy
+    // `([^/|@"!]*?)` and three capture groups puts the regex crate on its
+    // backtracking and PikeVM engines, which a profile of a real sort shows as
+    // its two hottest functions. Every separator holds a `#` bar AdGuard's
+    // `$$` and `$@$`, so those are what the prefilter must not lose: dropping
+    // the AdGuard half of it leaves 162 lines of test-lists sorted wrongly and
+    // no test red, which is why this one exists.
+    let chars = vec!["!".to_string()];
+    let adguard = crate::fop_sort::SortConfig { parse_adguard: true, ..test_sort_config(&chars) };
+    // Sorted and lowercased domains prove the rule went down the cosmetic
+    // path; left as written proves it did not.
+    assert_eq!(
+        crate::fop_sort::tidy_rule("B.com,a.com$$amp-ad", &adguard),
+        "a.com,b.com$$amp-ad"
+    );
+    assert_eq!(
+        crate::fop_sort::tidy_rule("D.com,c.com$@$script[tag-content=\"x\"]", &adguard),
+        "c.com,d.com$@$script[tag-content=\"x\"]"
+    );
+    // Without the mode they are not cosmetic, and are left alone.
+    let plain = test_sort_config(&chars);
+    assert_eq!(
+        crate::fop_sort::tidy_rule("B.com,a.com$$amp-ad", &plain),
+        "B.com,a.com$$amp-ad"
+    );
+    // The `#` separators go through the prefilter in every mode.
+    for (rule, want) in [
+        ("B.com,a.com##.ad", "a.com,b.com##.ad"),
+        ("B.com,a.com#@#.ad", "a.com,b.com#@#.ad"),
+        ("B.com,a.com#?#div:has(> .ad)", "a.com,b.com#?#div:has(> .ad)"),
+        ("B.com,a.com#$?#div", "a.com,b.com#$?#div"),
+    ] {
+        assert_eq!(crate::fop_sort::tidy_rule(rule, &adguard), want, "{rule}");
+    }
+    // A line with neither character cannot be cosmetic, and is untouched.
+    assert_eq!(crate::fop_sort::tidy_rule("||plain.com^", &adguard), "||plain.com^");
+}
+
+#[test]
 fn test_extract_leading_host() {
     // Replaces `^\|*([^/\^\$]+)`, which ran -- with a capture group built for
     // each -- on 70% of network rules. Compared against that regex over 2.6M

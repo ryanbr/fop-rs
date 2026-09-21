@@ -1962,6 +1962,23 @@ pub(crate) fn extract_leading_host(line: &str) -> Option<(&str, usize)> {
     (end > start).then(|| (&line[start..end], end))
 }
 
+/// Whether a line could carry a cosmetic separator at all.
+///
+/// Every separator the element patterns accept holds a `#` -- `##`, `#@#`,
+/// `#?#`, `#$#`, `#%#` and the AdGuard extended forms -- bar AdGuard's HTML
+/// filters, `$$` and `$@$`. A line with neither character cannot match, and
+/// the patterns that decide are the expensive kind: a lazy `([^/|@"!]*?)` and
+/// three capture groups, which puts the regex crate on its backtracking and
+/// PikeVM engines rather than a DFA. They were the two hottest functions in a
+/// profile of a real sort, above anything in FOP itself.
+///
+/// 78% of rules in a 1.58M-line corpus hold no `#`, so most lines now settle
+/// this with one `memchr` pass instead.
+#[inline]
+fn may_be_element_rule(line: &str, parse_adguard: bool) -> bool {
+    line.contains('#') || (parse_adguard && line.contains('$'))
+}
+
 /// Whether a line is a plain-text comment: `#` alone, or `#` then whitespace.
 ///
 /// Hosts files and the plain URL registries that ship beside filter lists --
@@ -2017,10 +2034,12 @@ pub(crate) fn tidy_rule<'a>(line: &'a str, config: &SortConfig) -> Cow<'a, str> 
     if line.is_empty() || is_comment || config.localhost || line.starts_with("[$") {
         return Cow::Borrowed(line);
     }
-    if REGEX_ELEMENT_PATTERN.is_match(line) {
+    if line.starts_with('/') && REGEX_ELEMENT_PATTERN.is_match(line) {
         return Cow::Owned(filter_tidy(line, config.convert_ubo));
     }
-    let element_caps = if config.alt_sort {
+    let element_caps = if !may_be_element_rule(line, config.parse_adguard) {
+        None
+    } else if config.alt_sort {
         ELEMENT_PATTERN.captures(line)
     } else if config.parse_adguard {
         ADGUARD_ELEMENT_PATTERN.captures(line)
@@ -2358,13 +2377,15 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         }
 
         // Handle regex domain rules (uBO) - pass through unchanged
-        if REGEX_ELEMENT_PATTERN.is_match(line) {
+        if line.starts_with('/') && REGEX_ELEMENT_PATTERN.is_match(line) {
             section.push(filter_tidy(line, config.convert_ubo));
             continue;
         }
 
         // Process element hiding rules
-        let element_caps = if config.alt_sort {
+        let element_caps = if !may_be_element_rule(line, config.parse_adguard) {
+            None
+        } else if config.alt_sort {
             ELEMENT_PATTERN.captures(line)
         } else if config.parse_adguard {
             ADGUARD_ELEMENT_PATTERN.captures(line)
