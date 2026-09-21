@@ -427,11 +427,16 @@ pub const NON_DOMAIN_REASON: &str =
 /// checks leave both alone and only `--remove-non-domain-on-add` acts.
 ///
 /// The edge marker is the one signal that does separate them in practice. Of
-/// 911 distinct bare-word rules across easylist, uAssets, AdguardFilters and
-/// test-lists, 900 open or close with `-` or `_` -- how a substring rule is
-/// written -- and those are never flagged. The other 11 are, and all 11 are
-/// real rules, so the flag is for a list whose author knows they do not write
-/// them.
+/// 112 distinct bare-word rules across easylist, uAssets, AdguardFilters and
+/// test-lists, 103 open or close with `-` or `_` -- how a substring rule is
+/// written -- and those are never flagged. The other 9 are, and all 9 are real
+/// rules, so the flag is for a list whose author knows they do not write them.
+///
+/// Counted over filter lists only. A first pass took in easylist's
+/// `cleaned-domains.txt`, which is the banned-domain registry rather than a
+/// list, and uAssets' `badlists.txt`, which names other lists; those put the
+/// figure at 911 and lent it two rules, `fingerprintjs` and `pkaystream`,
+/// that are not rules at all.
 pub fn is_non_domain_word(line: &str) -> bool {
     let bytes = line.as_bytes();
     let edge = |b: u8| b == b'-' || b == b'_';

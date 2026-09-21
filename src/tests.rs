@@ -2795,7 +2795,7 @@ fn run_checks_non_domain(repo: &ScratchRepo) -> bool {
     let chars = vec!["!".to_string()];
     let config_for = |_: &std::path::Path| test_sort_config(&chars);
     crate::run_rule_checks(
-        &repo.cmd(), false, true, false, &config_for, true,
+        &repo.cmd(), false, true, None, false, &config_for, true,
         &["txt".to_string()], &[], &[], &[], false, false,
     )
 }
@@ -2805,7 +2805,7 @@ fn run_checks_with<'c>(
     config_for: &(dyn Fn(&std::path::Path) -> crate::fop_sort::SortConfig<'c> + Sync),
 ) -> bool {
     crate::run_rule_checks(
-        &repo.cmd(), true, false, false, config_for, true,
+        &repo.cmd(), true, false, None, false, config_for, true,
         &["txt".to_string()], &[], &[], &[], false, false,
     )
 }
@@ -3934,9 +3934,37 @@ fn test_remove_non_domain_on_add() {
 }
 
 #[test]
+fn test_banned_list_is_not_checked_as_a_filter_list() {
+    // The banned-domain list is a registry of names: bare entries are what
+    // belongs there, and easylist's holds two without a dot. Checking it as a
+    // filter list would see --remove-non-domain-on-add delete them. The path
+    // is known from --check-banned-list, so it is skipped whether or not
+    // `ignorefiles` also names it.
+    let repo = ScratchRepo::new("banned-not-checked");
+    repo.write("banned.txt", "example.com\nfingerprintjs\n");
+    repo.write("a.txt", "[Adblock Plus 2.0]\n! T\nzoho.com##.ad\n");
+    repo.git(&["add", "-A"]);
+    repo.git(&["commit", "-q", "-m", "base"]);
+    // A bare entry added to each: one belongs, the other does not.
+    repo.write("banned.txt", "example.com\nfingerprintjs\npkaystream\n");
+    repo.write("a.txt", "[Adblock Plus 2.0]\n! T\nisCookiesAccepted\nzoho.com##.ad\n");
+
+    let chars = vec!["!".to_string()];
+    let config_for = |_: &std::path::Path| test_sort_config(&chars);
+    crate::run_rule_checks(
+        &repo.cmd(), false, true, Some("banned.txt"), false, &config_for, true,
+        &["txt".to_string()], &[], &[], &[], false, false,
+    );
+    let banned = std::fs::read_to_string(repo.0.join("banned.txt")).unwrap();
+    let list = std::fs::read_to_string(repo.0.join("a.txt")).unwrap();
+    assert!(banned.lines().any(|l| l == "pkaystream"), "a banned-list entry was removed:\n{banned}");
+    assert!(!list.lines().any(|l| l == "isCookiesAccepted"), "the filter list was not checked:\n{list}");
+}
+
+#[test]
 fn test_non_domain_words_are_kept_without_the_flag() {
     // The default is unchanged: nothing removes a bare word, and no check
-    // even mentions one. 911 distinct bare-word rules live across easylist,
+    // even mentions one. 112 distinct bare-word rules live across easylist,
     // uAssets, AdguardFilters and test-lists, so this is the behaviour that
     // must not drift.
     let repo = rule_check_repo(
