@@ -1855,11 +1855,19 @@ fn test_split_options_matches_the_pattern_it_replaced() {
 
 #[test]
 fn test_split_options_agrees_with_the_regex() {
-    use crate::fop_rules::split_options;
-    // `OPTION_PATTERN` is still the sorter's definition of an option list, so
-    // the scan that replaced it here is held to producing the same split. It
-    // agrees on all 609k lines of EasyList and the region lists; these are the
+    use crate::fop_rules::{split_options, split_options_as_pattern};
+    // `OPTION_PATTERN` is the definition of an option list that the sorter
+    // shipped with, so the scan that replaced it is held to producing the same
+    // split. `split_options_as_pattern` is the one that has to match it
+    // exactly, and does on all 2,619,918 lines of four corpora; these are the
     // shapes that are rare or absent there.
+    //
+    // `split_options` is deliberately not the same. It tokenises on unescaped
+    // commas, so it accepts a value holding `\,` where the regex, reading a
+    // value as `[^,\s]+`, stops at the escape and declines the line. 282 rules
+    // across those corpora are shaped that way. Both contracts are pinned
+    // below: the sorter keeps the regex's answer, and the addition checks keep
+    // the one that understands the escape.
     for line in [
         // Not option markers at all.
         "export PATH=$PATH:/usr/bin", "  run: echo \"$GITHUB_SHA\"", "some: $value",
@@ -1877,11 +1885,20 @@ fn test_split_options_agrees_with_the_regex() {
         // Escaped markers.
         "x\\$y$third-party",
     ] {
-        let scanned = split_options(line);
         let matched = crate::OPTION_PATTERN
             .captures(line)
             .map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str()));
-        assert_eq!(scanned, matched, "{:?}", line);
+        assert_eq!(split_options_as_pattern(line), matched, "as_pattern: {:?}", line);
+        assert_eq!(split_options(line), matched, "split_options: {:?}", line);
+    }
+    // Where the two part company, and why the sorter uses the first.
+    for line in [
+        "||x^$replace=/a\\,b/c/",
+        "||abcya.com/client/main-*.js$script,replace=/\\,n.src=s.ri.adDetect//",
+    ] {
+        assert!(crate::OPTION_PATTERN.captures(line).is_none(), "{line}");
+        assert_eq!(split_options_as_pattern(line), None, "as_pattern took it: {line}");
+        assert!(split_options(line).is_some(), "split_options declined it: {line}");
     }
 }
 

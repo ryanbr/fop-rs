@@ -27,7 +27,7 @@ use crate::{
     write_warning, ADGUARD_ELEMENT_DOMAIN_PATTERN, ADGUARD_ELEMENT_PATTERN,
     ATTRIBUTE_VALUE_PATTERN, ELEMENT_DOMAIN_PATTERN,
     ELEMENT_PATTERN, FILTER_DOMAIN_PATTERN, FOPPY_ELEMENT_DOMAIN_PATTERN, FOPPY_ELEMENT_PATTERN,
-    KNOWN_OPTIONS, OPTION_PATTERN,
+    KNOWN_OPTIONS,
     PSEUDO_PATTERN, REGEX_ELEMENT_PATTERN, REMOVAL_PATTERN, TREE_SELECTOR,
     UBO_CONVERSIONS, UNICODE_SELECTOR,
 };
@@ -757,24 +757,30 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
         return filter_in.to_string();
     }
 
-    let option_split = OPTION_PATTERN.captures(filter_in);
+    // `OPTION_PATTERN` by scan. The regex leads with `.*` and backtracks over
+    // every `$` in the line, which puts the regex crate on its bounded
+    // backtracker -- the hottest function in a profile of a real sort once the
+    // element patterns were gated. The two agree on all 2,619,918 lines of
+    // four corpora; see `split_options_as_pattern` for the one shape where
+    // agreeing took care.
+    let option_split = crate::fop_rules::split_options_as_pattern(filter_in);
 
     match option_split {
         None => restore_cleared_wildcard(
             filter_in,
             remove_unnecessary_wildcards(filter_in).into_owned(),
         ),
-        Some(caps) => {
+        Some((pattern, options)) => {
             // A rule with options but no pattern is spelled `*$opts`, and the
             // `*` IS the pattern. Tidying reduces it to nothing, producing the
             // pattern-less `$opts` form, which not every consumer of these
             // lists accepts — so put a single `*` back. Also collapses `**$opts`
             // to one wildcard, since the repeat is just untidy.
             let filter_text = restore_cleared_wildcard(
-                &caps[1],
-                remove_unnecessary_wildcards(&caps[1]).into_owned(),
+                pattern,
+                remove_unnecessary_wildcards(pattern).into_owned(),
             );
-            let option_list: Vec<String> = split_filter_options(&caps[2])
+            let option_list: Vec<String> = split_filter_options(options)
                 .into_iter()
                 .map(|opt| {
                     // Only replace underscores in option name, not in value

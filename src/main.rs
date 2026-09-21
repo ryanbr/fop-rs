@@ -1274,6 +1274,11 @@ pub(crate) static REGEX_ELEMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^(/[^#]+/)(##|#@#|#\?#|#@\?#|#\$#|#@\$#|#%#|#@%#)(.+)$"#).unwrap()
 });
 
+/// The option-list definition the sorter shipped with, kept as the reference
+/// that `split_options_as_pattern` is held to. Nothing outside the tests reads
+/// it: scanning replaced it in `filter_tidy`, where `.*` and its backtracking
+/// made it the hottest thing in the program.
+#[cfg(test)]
 pub(crate) static OPTION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(.*[^\\]|)\$(~?[\w\-]+(?:=[^,\s]+)?(?:,~?[\w\-]+(?:=[^,\s]+)?)*)$").unwrap()
 });

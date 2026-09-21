@@ -346,6 +346,28 @@ fn is_standard_network_rule(line: &str) -> bool {
 /// needs a scan, not a regex.
 #[inline]
 pub(crate) fn split_options(line: &str) -> Option<(&str, &str)> {
+    split_options_inner(line, true)
+}
+
+/// The same split, tokenising the option list on every comma rather than only
+/// unescaped ones.
+///
+/// `OPTION_PATTERN`, which this replaces in the sorter, reads a value as
+/// `[^,\s]+`, so it stops at an escaped comma too: it reads
+/// `$replace=/a\,b/c/` as `replace=/a\` and `b/c/`, decides `b/c/` is no
+/// option key, and declines the whole line. 282 rules of 2.6M across four
+/// corpora are shaped that way -- `$replace=` bodies, mostly -- and they take
+/// the sorter's no-options path today, their option lists left as written.
+/// Keeping that, rather than quietly beginning to sort them, is what makes
+/// this swap free of any change in output; whether they *should* be sorted is
+/// its own question.
+#[inline]
+pub(crate) fn split_options_as_pattern(line: &str) -> Option<(&str, &str)> {
+    split_options_inner(line, false)
+}
+
+#[inline]
+fn split_options_inner(line: &str, escaped_commas: bool) -> Option<(&str, &str)> {
     let bytes = line.as_bytes();
     // Try each unescaped `$` from the right. The last one is usually the
     // marker, but a value may contain one -- `$removeparam=/^utm$/` ends in a
@@ -363,7 +385,9 @@ pub(crate) fn split_options(line: &str) -> Option<(&str, &str)> {
         }
         // Every option must be shaped like one, or this `$` was not the
         // marker: a shell `$PATH:/usr/bin` has a `:` no option key may carry.
-        let shaped = crate::fop_sort::split_unescaped_commas(options).into_iter().all(|option| {
+        // Iterated rather than collected: the plain split needs no Vec, and
+        // this runs for every `$` in every rule the sorter tidies.
+        let is_shaped = |option: &str| {
             let option = option.strip_prefix('~').unwrap_or(option);
             let (key, value) = match option.split_once('=') {
                 Some((k, v)) => (k, Some(v)),
@@ -376,7 +400,12 @@ pub(crate) fn split_options(line: &str) -> Option<(&str, &str)> {
                 // An empty value is not an option list to the pattern this
                 // replaces, which leaves `$domain=` to the anchored fallback.
                 && value.is_none_or(|v| !v.is_empty() && !v.bytes().any(|b| b.is_ascii_whitespace()))
-        });
+        };
+        let shaped = if escaped_commas {
+            crate::fop_sort::split_unescaped_commas(options).into_iter().all(is_shaped)
+        } else {
+            options.split(',').all(is_shaped)
+        };
         if shaped {
             return Some((pattern, options));
         }
