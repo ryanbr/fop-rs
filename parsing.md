@@ -58,10 +58,17 @@ Recognition is what licenses reading `#` as a comment, and in a file taken
 for a hosts file a generic `##.ad` rule would be read as one -- so the test
 is unanimity, not a majority, and not a sample of the first few lines.
 
-Only `#` runs (`####...`) and `#` before whitespace count as comments while
-deciding; `##.ad`, `#@#`, `#?#`, `#$#` and `#%#` are rules. A `!` comment
-and an `[Adblock Plus 2.0]` header are skipped rather than held against a
-file, so a hosts file carrying either is still recognised.
+`#` is the awkward character, since it opens a comment in a hosts file and
+a rule in a filter list. While deciding, a `#` line counts as a comment
+when it is `#` alone, a run of `#`, `#` before whitespace, `#` before
+punctuation (`#=====`), or a word followed by a space (`#Title: my hosts`).
+Anything that could begin a rule does not: `##.ad`, `#@#`, `#?#`, `#$#`,
+`#%#`, and a bare word such as `#ad-banner`, which is a legal substring
+rule. `##### AdAway #####` is genuinely ambiguous -- it parses as `##`
+plus a selector -- and disqualifies a file.
+
+A `!` comment and an `[Adblock Plus 2.0]` header are skipped rather than
+held against a file, so a hosts file carrying either is still recognised.
 
 Any address is an entry, not just the two a blocklist null-routes with: a
 hosts file's own preamble is written in neither. The Debian and Ubuntu

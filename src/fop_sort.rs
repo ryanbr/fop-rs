@@ -261,19 +261,35 @@ pub(crate) fn looks_like_hosts_file(content: &[u8]) -> bool {
     for raw in content.split(|&b| b == b'\n') {
         let Ok(line) = std::str::from_utf8(raw) else { return false };
         let line = line.trim();
-        // A hosts file comments with `#`, but so few of the `#` spellings are
-        // comments that the character cannot be skipped on sight: `##.ad` is a
-        // generic hide rule, and `#@#`, `#?#`, `#$#` and `#%#` are rules too.
-        // Skipping every `#` would read a list of generic rules as a file with
-        // no rules at all, and a handful of entries anywhere in it would then
-        // carry the whole file -- whose rules this would go on to comment out.
-        // Only a `#` run (a banner) and `#` before whitespace are comments.
+        // `#` opens a comment in a hosts file and a rule in a filter list, and
+        // the byte after it is most of what tells the two apart.
         //
-        // `!` and `[Adblock Plus 2.0]` are a filter list's own comment and
-        // header; they are skipped rather than counted against a file so a
-        // hosts file carrying either is still recognised.
-        let hash_comment = line.starts_with('#')
-            && (is_plain_comment(line) || line.bytes().all(|b| b == b'#'));
+        // A cosmetic separator is `#`, optionally one of `@?$%`, then `#`, so
+        // any of those may begin a rule and none is read as a comment here:
+        // `##.ad` has to go on disqualifying a file, or a list of generic
+        // rules would be read as a file with no rules at all and a stray entry
+        // would carry it -- whose rules this would then comment out.
+        //
+        // Of what is left, `#` alone and a run of `#` are banners and `# ` is
+        // the usual comment. A bare word is the awkward case: `#ad-banner` is
+        // a legal substring rule, so it keeps disqualifying, while `#=====`
+        // and `#Title: my hosts` are the banner styles hosts files are written
+        // in. Opening on punctuation or carrying a space separates them, and
+        // both are what a generated header looks like and a pattern does not.
+        let hash_comment = match line.as_bytes() {
+            [b'#', rest @ ..] => match rest.first() {
+                // `#` alone.
+                None => true,
+                // `##...`: a rule unless the whole line is the run.
+                Some(b'#') => rest.iter().all(|&b| b == b'#'),
+                // `#@#`, `#?#`, `#$#`, `#%#`.
+                Some(b'@' | b'?' | b'$' | b'%') => false,
+                Some(b) if b.is_ascii_whitespace() => true,
+                Some(b) if !b.is_ascii_alphanumeric() => true,
+                Some(_) => line.bytes().any(|b| b == b' ' || b == b'\t'),
+            },
+            _ => false,
+        };
         if line.is_empty()
             || hash_comment
             || line.starts_with('!')

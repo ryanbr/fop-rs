@@ -2028,10 +2028,31 @@ fn tidy_all<'c, F>(additions: &[fop_typos::Addition], config_for: &F, root: &Pat
 where
     F: Fn(&Path) -> fop_sort::SortConfig<'c> + Sync + ?Sized,
 {
+    // A file the sorter reads as a hosts file keeps every line as written,
+    // its comments included. `tidy_rule` judges a line on its own and cannot
+    // see that, so it answered for the filter-list reading -- `#Title: my
+    // hosts` as `#Title:myhosts` -- and the checks would have judged, and
+    // `--remove-bad-rules` deleted on, a form that is not in the file.
+    //
+    // Tested once per file rather than per addition, and passed in through the
+    // config, which `tidy_rule` already honours. The sort has run by now, but
+    // recognition asks only what the lines are, not what order they are in.
+    let hosts: std::collections::HashSet<&str> = additions
+        .iter()
+        .map(|a| a.file.as_str())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .filter(|f| {
+            std::fs::read(root.join(f)).is_ok_and(|b| fop_sort::looks_like_hosts_file(&b))
+        })
+        .collect();
     additions
         .par_iter()
         .map(|add| {
-            let config = config_for(&root.join(&add.file));
+            let mut config = config_for(&root.join(&add.file));
+            if hosts.contains(add.file.as_str()) {
+                config.localhost = true;
+            }
             fop_sort::tidy_rule(&add.content, &config).into_owned()
         })
         .collect()
