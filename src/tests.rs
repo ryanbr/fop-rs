@@ -685,14 +685,33 @@ fn test_is_localhost_entry() {
     assert!(is_localhost_entry("127.0.0.1 sub.domain.com"));
     assert!(is_localhost_entry("127.0.0.1 tracker.net"));
 
+    // Any address, not only the two a blocklist null-routes with: a hosts
+    // file's own preamble is written in neither. These are StevenBlack's,
+    // which this used to assert were not entries -- and so mangled.
+    assert!(is_localhost_entry("255.255.255.255 broadcasthost"));
+    assert!(is_localhost_entry("192.168.1.1 domain.com"));
+    assert!(is_localhost_entry("::1 localhost"));
+    assert!(is_localhost_entry("::1 ip6-localhost"));
+    assert!(is_localhost_entry("fe00::0 ip6-localnet"));
+    assert!(is_localhost_entry("ff02::3 ip6-allhosts"));
+    assert!(is_localhost_entry(":: ab"));
+
     // Invalid entries
     assert!(!is_localhost_entry("# comment"));
-    assert!(!is_localhost_entry("192.168.1.1 domain.com"));
     assert!(!is_localhost_entry("domain.com"));
     assert!(!is_localhost_entry("0.0.0.0"));
     assert!(!is_localhost_entry("0.0.0.0 "));
     assert!(!is_localhost_entry("127.0.0.1"));
     assert!(!is_localhost_entry(""));
+    // Address-shaped but not an address.
+    assert!(!is_localhost_entry("999.1.1.1 domain.com"));
+    assert!(!is_localhost_entry("1.2.3 domain.com"));
+    assert!(!is_localhost_entry("::zz host"));
+    // A filter rule that happens to carry a space must not read as one.
+    assert!(!is_localhost_entry("example.com##div > p"));
+    assert!(!is_localhost_entry("*$csp=default-src 'none'"));
+    assert!(!is_localhost_entry("! a comment with spaces"));
+    assert!(!is_localhost_entry("example.com#$#body { color: red; }"));
 }
 
 #[test]

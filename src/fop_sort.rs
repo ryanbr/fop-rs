@@ -151,28 +151,52 @@ fn cmp_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
     }
 }
 
-/// Fast check for localhost entry without regex
+/// Where a hosts entry's address ends, if the line is one.
 ///
-/// The sort calls this on every rule it writes, so the answer for a filter
-/// rule has to cost as little as possible. Both forms start with a digit and
-/// almost no filter rule does -- they open with `|`, `@`, `/`, `.`, `#` or a
-/// letter -- so one byte settles it before either prefix is compared.
+/// A hosts entry is an IP address, whitespace, then a hostname. Both halves
+/// matter: `0.0.0.0` and `127.0.0.1` are what a blocklist null-routes with,
+/// but a hosts file's own preamble is not written in either. StevenBlack's
+/// opens with `255.255.255.255 broadcasthost` and eight IPv6 lines -- `::1
+/// localhost`, `fe00::0 ip6-localnet`, `ff02::3 ip6-allhosts` -- and matching
+/// two addresses by name mangled every one of them, and left the file
+/// unrecognised besides, since recognition asks that every rule be an entry.
+///
+/// The sort calls this on every rule it writes, so a filter rule has to fall
+/// out cheaply. An address is at most 45 characters and holds only hex digits,
+/// `.` and `:`, so the scan for the separating whitespace doubles as the test
+/// that what precedes it could be an address at all: `example.com##div > p`
+/// stops on the `m`. Only what survives that is parsed.
+#[inline]
+pub(crate) fn hosts_entry_split(line: &str) -> Option<usize> {
+    const MAX_ADDR: usize = 45;
+    let bytes = line.as_bytes();
+    let limit = bytes.len().min(MAX_ADDR + 1);
+    let mut end = 0;
+    while end < limit {
+        let b = bytes[end];
+        if b == b' ' || b == b'\t' {
+            break;
+        }
+        if !(b.is_ascii_hexdigit() || b == b'.' || b == b':') {
+            return None;
+        }
+        end += 1;
+    }
+    // No separator inside the window: either the line is all address and has
+    // no host, or it is far too long to be one.
+    if end == 0 || end >= limit {
+        return None;
+    }
+    if line[..end].parse::<std::net::IpAddr>().is_err() {
+        return None;
+    }
+    (!line[end..].trim_start().is_empty()).then_some(end)
+}
+
+/// Whether a line is a hosts file entry: `IP<space>host`.
 #[inline]
 pub(crate) fn is_localhost_entry(line: &str) -> bool {
-    if !matches!(line.as_bytes().first(), Some(b'0' | b'1')) {
-        return false;
-    }
-    let rest = if let Some(r) = line.strip_prefix("0.0.0.0") {
-        r
-    } else if let Some(r) = line.strip_prefix("127.0.0.1") {
-        r
-    } else {
-        return false;
-    };
-    rest.as_bytes()
-        .first()
-        .is_some_and(|b| b.is_ascii_whitespace())
-        && !rest.trim_start().is_empty()
+    hosts_entry_split(line).is_some()
 }
 
 /// Whether a file reads as a hosts file rather than a filter list.
@@ -230,13 +254,14 @@ pub(crate) fn looks_like_hosts_file(content: &[u8]) -> bool {
     entries > 0
 }
 
-/// Extract domain from localhost entry without regex
+/// The host a hosts entry names, for ordering. Falls back to the whole line,
+/// which is what a line that is not an entry sorts on.
 #[inline]
 pub(crate) fn localhost_domain(line: &str) -> &str {
-    let rest = line.strip_prefix("0.0.0.0")
-        .or_else(|| line.strip_prefix("127.0.0.1"))
-        .unwrap_or(line);
-    rest.trim_start()
+    match hosts_entry_split(line) {
+        Some(end) => line[end..].trim_start(),
+        None => line.trim_start(),
+    }
 }
 
 /// Check if line is a TLD-only pattern (e.g. .com, ||.net^)
