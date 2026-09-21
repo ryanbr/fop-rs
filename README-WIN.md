@@ -68,7 +68,7 @@ npm install -g fop-cli
 --disable-ignored     Process all files (ignore IGNORE_FILES/IGNORE_DIRS)
 --no-sort             Skip sorting (only tidy and combine rules)
 --alt-sort            Alternative sorting (by selector for all rule types)
---localhost           Sort hosts file entries (0.0.0.0/127.0.0.1)
+--localhost           Force hosts-file handling (recognised on its own otherwise)
 --no-color            Disable colored output
 --ignorefiles=        Additional files to ignore (comma-separated)
 --ignoredirs=         Additional directories to ignore (comma-separated, partial names)

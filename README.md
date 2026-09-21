@@ -84,8 +84,8 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--disable-ignored` | Disable hardcoded ignored files and folders for testing |
 | `--no-sort` | Don't sort rules, just combine |
 | `--alt-sort` | More correct sorting method |
-| `--localhost` | Sort hosts file entries (0.0.0.0/127.0.0.1 domain) |
-| `--localhost-files=` | Specific files to sort as localhost format (comma-separated) |
+| `--localhost` | Treat every file as a hosts file: entries sorted by host, and any line that is not an entry is dropped. A hosts file is recognised on its own, so this is only needed to force it |
+| `--localhost-files=` | Force hosts-file handling on named files (comma-separated) |
 | `--parse-adguard` | Globally Parse AdGuard extended CSS (#$?#, #@$?#, $$, $@$) |
 | `--parse-adguard=FILE` | Files to parse as AdGuard extended CSS (comma-separated) |
 | `--no-color` | Disable colored output |
@@ -165,7 +165,7 @@ no-sort = false
 # Alternative sorting method
 alt-sort = false
 
-# Sort hosts file entries
+# Treat every file as a hosts file (not needed for recognition, only to force it)
 localhost = false
 
 # Disable colored output

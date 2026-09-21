@@ -29,7 +29,7 @@ Snapshot usage was surveyed in September 2026.
 | Line | Treated as | Notes |
 |------|-----------|-------|
 | `! ...` | Comment | Kept in place, and ends the section above it. Only the rules between two comments are sorted together. |
-| `# ...` | Comment | The hosts-file convention, for lists that use it. Needs the whitespace and something after it: `#foo` is a rule, `# foo` a comment, and a lone `#` is neither, so the line-length minimum removes it. A lone `!` is exempt. Add other characters with `--comments=`. |
+| `# ...` | Comment | The hosts-file convention, for lists that use it. Needs the whitespace and something after it: `#foo` is a rule, `# foo` a comment, and a lone `#` is neither, so the line-length minimum removes it. A lone `!` is exempt. Add other characters with `--comments=`. In a file recognised as a hosts file every `#` line is a comment, a lone `#` and a `####` banner included. |
 | `[Adblock Plus 2.0]` | Header | Kept in place; ends a section |
 | `%include file` | Include directive | Kept in place; ends a section |
 | `!#if`, `!#else`, `!#endif`, `!#include`, `!#safari_cb_affinity` | Comment | Rules never cross a directive. See [Directives and hints](#directives-and-hints). |
@@ -39,11 +39,45 @@ Snapshot usage was surveyed in September 2026.
 | `/regex/##selector` (uBO regex domain) | Left as written | |
 | `[$path=...]domain##selector` | Left as written | AdGuard's cosmetic modifiers |
 | `/regex/` or `/regex/$options` | Regex network rule | The pattern is left as written, spaces included |
-| `0.0.0.0 host` / `127.0.0.1 host` | Hosts entry | With `--localhost`: sorted by host, left as written |
+| `0.0.0.0 host`, `::1 host`, any IP then a host | Hosts entry | Always left exactly as written -- the space between address and host is the syntax, and tidying a rule would eat it. In a file recognised as a hosts file, also sorted by host. See [Hosts files](#hosts-files). |
 | Anything else | Network rule | Options sorted and normalised |
 | Empty line | Removed | Unless `--keep-empty-lines`, where it also ends a section |
 
 Windows line endings (CRLF) are converted to LF, with a warning.
+
+## Hosts files
+
+A hosts file is an address, whitespace, then a hostname, and lists of them
+ship beside filter lists -- listefr carries `hosts.txt` next to
+`liste_fr.txt`. FOP recognises one and reads it on its own terms: `#` starts
+a comment, and entries are ordered by host rather than by the whole line.
+
+A file qualifies only if **every** rule in it is an entry. One cosmetic or
+network rule anywhere disqualifies it, however many entries surround it.
+Recognition is what licenses reading `#` as a comment, and in a file taken
+for a hosts file a generic `##.ad` rule would be read as one -- so the test
+is unanimity, not a majority, and not a sample of the first few lines.
+
+Only `#` runs (`####...`) and `#` before whitespace count as comments while
+deciding; `##.ad`, `#@#`, `#?#`, `#$#` and `#%#` are rules. A `!` comment
+and an `[Adblock Plus 2.0]` header are skipped rather than held against a
+file, so a hosts file carrying either is still recognised.
+
+Any address is an entry, not just the two a blocklist null-routes with: a
+hosts file's own preamble is written in neither. The Debian and Ubuntu
+default block that StevenBlack's lists keep at the top carries
+`255.255.255.255 broadcasthost` and eight IPv6 lines -- `::1 ip6-localhost
+ip6-loopback`, `fe00::0 ip6-localnet`, `ff02::3 ip6-allhosts`. Several
+hostnames on one line, and tab separators, are kept as written.
+
+An entry is never tidied, in any mode and whether or not its file was
+recognised: `filter_tidy` strips whitespace from anything that is not a
+cosmetic rule, which would turn `0.0.0.0 keep.com` into `0.0.0.0keep.com`.
+
+Recognition decides formatting, never deletion. `--localhost` says the file
+is a hosts file and drops any line that is not an entry; recognition is a
+guess, so a stray rule in a recognised file is sorted as the rule it appears
+to be. `--localhost-files=` forces the flag for named files.
 
 ## Network filter options
 
@@ -411,6 +445,7 @@ rule is legal as written.
 | Bare domain | Advice | `example.com`. Did you mean `\|\|example.com^`? |
 | Host rule with no `\|\|` anchor | Advice | `rbush.shop^`, which also matches `lampedburbush.shop` |
 | Unanchored text that reads as nothing | Advice | `fdfdgfgdgfd^` |
+| Not a domain -- a bare word matches any URL containing it | Only under `--remove-non-domain-on-add`, which reports and removes it. Nothing is said about such a line otherwise, by design: it is a legal substring rule | `isCookiesAccepted`. A leading or trailing `-` or `_` exempts the line, which is how a deliberate substring rule is written. |
 
 ## Known limitations
 
