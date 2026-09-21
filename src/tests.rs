@@ -2818,7 +2818,7 @@ fn run_checks_non_domain(repo: &ScratchRepo) -> bool {
     let chars = vec!["!".to_string()];
     let config_for = |_: &std::path::Path| test_sort_config(&chars);
     crate::run_rule_checks(
-        &repo.cmd(), false, true, None, false, &config_for, true,
+        &repo.cmd(), false, true, false, &config_for, true,
         &["txt".to_string()], &[], &[], &[], false, false,
     )
 }
@@ -2828,7 +2828,7 @@ fn run_checks_with<'c>(
     config_for: &(dyn Fn(&std::path::Path) -> crate::fop_sort::SortConfig<'c> + Sync),
 ) -> bool {
     crate::run_rule_checks(
-        &repo.cmd(), true, false, None, false, config_for, true,
+        &repo.cmd(), true, false, false, config_for, true,
         &["txt".to_string()], &[], &[], &[], false, false,
     )
 }
@@ -3973,7 +3973,7 @@ fn test_narrow_flag_does_not_fail_on_defects_it_kept() {
     let config_for = |_: &std::path::Path| test_sort_config(&chars);
     // Interactive, which is where the false return actually stopped a commit.
     let ok = crate::run_rule_checks(
-        &repo.cmd(), false, true, None, false, &config_for, true,
+        &repo.cmd(), false, true, false, &config_for, true,
         &["txt".to_string()], &[], &[], &[], false, true,
     );
     let after = std::fs::read_to_string(repo.0.join("a.txt")).unwrap();
@@ -3990,7 +3990,7 @@ fn test_narrow_flag_does_not_fail_on_defects_it_kept() {
         "[Adblock Plus 2.0]\n! T\nisCookiesAccepted\n##\n||x.com^$fakeopt\nzoho.com##.ad\n",
     );
     let ok = crate::run_rule_checks(
-        &repo.cmd(), true, true, None, false, &config_for, true,
+        &repo.cmd(), true, true, false, &config_for, true,
         &["txt".to_string()], &[], &[], &[], false, true,
     );
     let after = std::fs::read_to_string(repo.0.join("a.txt")).unwrap();
@@ -4004,9 +4004,12 @@ fn test_narrow_flag_does_not_fail_on_defects_it_kept() {
 fn test_banned_list_is_not_checked_as_a_filter_list() {
     // The banned-domain list is a registry of names: bare entries are what
     // belongs there, and easylist's holds two without a dot. Checking it as a
-    // filter list would see --remove-non-domain-on-add delete them. The path
-    // is known from --check-banned-list, so it is skipped whether or not
-    // `ignorefiles` also names it.
+    // filter list would see --remove-non-domain-on-add delete them.
+    //
+    // It is skipped through `ignore_files`, which `--check-banned-list` adds
+    // its name to unconditionally, so that is what this passes. A second test
+    // of the path inside the checks used to stand here as well; it could never
+    // fire, the filter having rejected the file first.
     let repo = ScratchRepo::new("banned-not-checked");
     repo.write("banned.txt", "example.com\nfingerprintjs\n");
     repo.write("a.txt", "[Adblock Plus 2.0]\n! T\nzoho.com##.ad\n");
@@ -4019,8 +4022,8 @@ fn test_banned_list_is_not_checked_as_a_filter_list() {
     let chars = vec!["!".to_string()];
     let config_for = |_: &std::path::Path| test_sort_config(&chars);
     crate::run_rule_checks(
-        &repo.cmd(), false, true, Some("banned.txt"), false, &config_for, true,
-        &["txt".to_string()], &[], &[], &[], false, false,
+        &repo.cmd(), false, true, false, &config_for, true,
+        &["txt".to_string()], &["banned.txt".to_string()], &[], &[], false, false,
     );
     let banned = std::fs::read_to_string(repo.0.join("banned.txt")).unwrap();
     let list = std::fs::read_to_string(repo.0.join("a.txt")).unwrap();
@@ -4626,7 +4629,7 @@ fn run_checks_both(repo: &ScratchRepo) -> bool {
     let chars = vec!["!".to_string()];
     let config_for = |_: &std::path::Path| test_sort_config(&chars);
     crate::run_rule_checks(
-        &repo.cmd(), true, true, None, false, &config_for, true,
+        &repo.cmd(), true, true, false, &config_for, true,
         &["txt".to_string()], &[], &[], &[], false, true,
     )
 }

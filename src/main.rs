@@ -1806,7 +1806,6 @@ fn run_rule_checks<'c, F>(
     base_cmd: &[String],
     remove_bad_rules: bool,
     remove_non_domain: bool,
-    banned_list_file: Option<&str>,
     dry_run: bool,
     config_for: &F,
     no_color: bool,
@@ -1831,21 +1830,11 @@ where
             fop_git::get_added_lines(base_cmd)?
                 .into_iter()
                 .filter(|a| {
-                    // The banned-domain list is a registry of names, not a
-                    // filter list: its entries are bare by design, and
-                    // easylist's holds two without a dot. `ignorefiles`
-                    // usually excludes it already, but the path is known from
-                    // `check-banned-list` whether it does or not.
-                    // On a path boundary, not a bare suffix: a plain
-                    // `ends_with` would take `my-cleaned-domains.txt` for
-                    // `cleaned-domains.txt` and quietly stop checking it.
-                    let is_banned_list = |f: &str| {
-                        a.file == f
-                            || a.file.strip_suffix(f).is_some_and(|p| p.ends_with(['/', '\\']))
-                    };
-                    if banned_list_file.is_some_and(is_banned_list) {
-                        return false;
-                    }
+                    // The banned-domain list needs no test of its own here.
+                    // `--check-banned-list` puts its name in `ignore_files`
+                    // unconditionally, and `ignorefiles` matches on a partial
+                    // name by documented design, so the filter below has
+                    // already rejected it.
                     diff_path_is_filter_list(
                         &a.file,
                         file_extensions,
@@ -2391,7 +2380,6 @@ fn process_location(
                     base_cmd,
                     remove_bad_rules,
                     remove_non_domain_on_add,
-                    banned_list_file,
                     sort_config.dry_run,
                     &file_config,
                     no_color,
