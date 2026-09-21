@@ -169,8 +169,9 @@ fn cmp_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
 #[inline]
 pub(crate) fn hosts_entry_split(line: &str) -> Option<usize> {
     const MAX_ADDR: usize = 45;
+    const MAX_ZONE: usize = 32;
     let bytes = line.as_bytes();
-    let limit = bytes.len().min(MAX_ADDR + 1);
+    let limit = bytes.len().min(MAX_ADDR + 1 + MAX_ZONE + 1);
     let mut end = 0;
     while end < limit {
         let b = bytes[end];
@@ -178,16 +179,50 @@ pub(crate) fn hosts_entry_split(line: &str) -> Option<usize> {
             break;
         }
         if !(b.is_ascii_hexdigit() || b == b'.' || b == b':') {
+            // `%` opens a zone id, and is the only other byte an address can
+            // hold. Tested here rather than beside the separator so that the
+            // common path -- a rule, bailing on its first non-address byte --
+            // pays nothing for a form almost no line uses.
+            if b == b'%' {
+                break;
+            }
             return None;
         }
         end += 1;
     }
+    let addr_end = end;
+    // A link-local address carries the interface it is scoped to: `fe80::1%lo0`,
+    // which is how macOS writes localhost. The zone is part of the entry but
+    // not part of the address -- `IpAddr` rejects a line holding one -- so it
+    // is scanned separately and left off the parse. Its own characters are an
+    // interface name, not an address's.
+    if end < limit && bytes[end] == b'%' {
+        end += 1;
+        let zone_start = end;
+        while end < limit {
+            let b = bytes[end];
+            if b == b' ' || b == b'\t' {
+                break;
+            }
+            if !(b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.') {
+                return None;
+            }
+            end += 1;
+        }
+        // An interface name, so: present, and not unbounded. Without the
+        // length test MAX_ZONE names a bound nothing applies -- the scan would
+        // stop only at the shared window, letting a short address carry a zone
+        // of 70-odd characters.
+        if end == zone_start || end - zone_start > MAX_ZONE {
+            return None;
+        }
+    }
     // No separator inside the window: either the line is all address and has
     // no host, or it is far too long to be one.
-    if end == 0 || end >= limit {
+    if addr_end == 0 || addr_end > MAX_ADDR || end >= limit {
         return None;
     }
-    if line[..end].parse::<std::net::IpAddr>().is_err() {
+    if line[..addr_end].parse::<std::net::IpAddr>().is_err() {
         return None;
     }
     (!line[end..].trim_start().is_empty()).then_some(end)

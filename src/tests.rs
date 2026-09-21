@@ -4620,3 +4620,149 @@ fn test_a_bad_address_after_good_ones_still_disqualifies() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Both removal flags on, interactive, so a refusal is visible as `false`.
+fn run_checks_both(repo: &ScratchRepo) -> bool {
+    let chars = vec!["!".to_string()];
+    let config_for = |_: &std::path::Path| test_sort_config(&chars);
+    crate::run_rule_checks(
+        &repo.cmd(), true, true, None, false, &config_for, true,
+        &["txt".to_string()], &[], &[], &[], false, true,
+    )
+}
+
+#[test]
+fn test_a_line_two_checks_agree_on_does_not_block_the_commit() {
+    // One line, one reason: where a standard check speaks, the bare-word check
+    // stays quiet. A word with no vowel is both -- `is_bare_token` advice and
+    // `is_non_domain_word` -- so intake left it to the advice, and advice is
+    // never removed. The re-check afterwards asked only "is this a bare word?"
+    // and so counted the line it had just been told was kept, reported it as a
+    // removal failure and refused the commit. No flag could clear it: nothing
+    // deletes advice, so the run could not be made to succeed at all.
+    let repo = rule_check_repo(
+        "twochecks",
+        "! t\n||seed.example.com^$script\n",
+        "! t\n||seed.example.com^$script\ndfghjklm\n",
+    );
+    assert!(run_checks_both(&repo), "a line kept as advice was counted as a removal failure");
+    // Kept, because it is advice -- the point is that it does not also refuse.
+    let after = std::fs::read_to_string(repo.0.join("a.txt")).unwrap();
+    assert!(after.contains("dfghjklm"), "advice was deleted: {}", after);
+}
+
+#[test]
+fn test_the_bare_word_check_is_not_silenced_by_another_file() {
+    // `additions` spans every file the diff touches and a line number is only
+    // unique within one, so keying "already spoken for" on the number alone
+    // let a problem in one file silence the bare-word check at the same line
+    // of another. The word was then never reported and never deleted -- while
+    // the re-check still counted it and refused, naming nothing. Re-running
+    // never converged.
+    let repo = ScratchRepo::new("crossfile");
+    repo.write("a.txt", "! t\nx.com##.a\n||seed.example.com^$script\n");
+    repo.write("b.txt", "! t\ny.com##.b\n||seed2.example.com^$script\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-q", "-m", "base"]);
+    // Both defects land on line 3 of their own file.
+    repo.write("a.txt", "! t\nx.com##.a\n||bad.com^$thrid-party\n");
+    repo.write("b.txt", "! t\ny.com##.b\nisCookiesAccepted\n");
+    assert!(run_checks_both(&repo), "the run refused after silently skipping a line");
+    let b = std::fs::read_to_string(repo.0.join("b.txt")).unwrap();
+    assert!(
+        !b.contains("isCookiesAccepted"),
+        "a bare word at the same line number as another file's defect was skipped: {}",
+        b
+    );
+}
+
+#[test]
+fn test_a_zone_id_address_is_an_entry() {
+    // A link-local address carries the interface it is scoped to --
+    // `fe80::1%lo0`, which is how macOS writes localhost. The address scan
+    // accepted only hex digits, `.` and `:`, so the line was not an entry:
+    // mangled where every other address was now kept, deleted outright under
+    // `--localhost`, and -- since recognition asks that every rule be an entry
+    // -- one such line stopped the whole file being read as a hosts file.
+    assert!(is_localhost_entry("fe80::1%lo0 localhost"));
+    assert!(is_localhost_entry("fe80::1%eth0 host.example"));
+    assert!(is_localhost_entry("fe80::abcd%en1\tname"));
+    // The zone is not part of the address, and `IpAddr` will not parse one, so
+    // it is split off before the parse rather than passed to it.
+    assert_eq!(localhost_domain("fe80::1%lo0 localhost"), "localhost");
+    // A zone on nothing, or an address that does not parse without it.
+    assert!(!is_localhost_entry("fe80::1% localhost"));
+    assert!(!is_localhost_entry("%lo0 localhost"));
+    assert!(!is_localhost_entry("zzzz::1%lo0 localhost"));
+    // And a filter rule carrying a `%` is still not an entry.
+    assert!(!is_localhost_entry("||x.com^$removeparam=a%20b c"));
+    assert!(!is_localhost_entry("example.com##div[a=\"%\"] > p"));
+    // The zone is an interface name, so it is bounded; without the length test
+    // a short address could carry one as long as the whole window allows.
+    let zone = |n: usize| format!("fe80::1%{} host.example", "a".repeat(n));
+    assert!(is_localhost_entry(&zone(32)));
+    assert!(!is_localhost_entry(&zone(33)));
+}
+
+#[test]
+fn test_a_zone_id_line_does_not_disqualify_a_hosts_file() {
+    // The whole-file consequence of the above: recognition requires every rule
+    // to be an entry, so one unrecognised address formatted the entire file as
+    // a filter list.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-zone-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("hosts.txt");
+    std::fs::write(
+        &file,
+        concat!(
+            "# hosts\n",
+            "0.0.0.0 zulu.example\n",
+            "fe80::1%lo0 localhost\n",
+            "127.0.0.1 alpha.example\n",
+        ),
+    )
+    .unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let sorted = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        sorted.contains("fe80::1%lo0 localhost"),
+        "the zone-id entry was rewritten: {}",
+        sorted
+    );
+    // Recognised, so ordered on the host: alpha, localhost, zulu. Ordered on
+    // the whole line it would lead with `0.0.0.0`.
+    let first = sorted.lines().find(|l| !l.starts_with('#') && !l.trim().is_empty());
+    assert_eq!(
+        first,
+        Some("127.0.0.1 alpha.example"),
+        "the file was not read as a hosts file: {}",
+        sorted
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_remove_non_domain_from_a_config_file_implies_checking() {
+    // The CLI arm turned on `check_rules_on_add` for this flag; the config arm
+    // did not, and the block that couples removing to checking named only the
+    // broad flag. `remove-non-domain-on-add = true` in a `.fopconfig` was
+    // therefore a silent no-op -- the checks it removes from never ran. The
+    // coupling now lives in one method that the parse calls after either flag
+    // has arrived, by whichever route.
+    let mut args = crate::Args { remove_non_domain_on_add: true, ..Default::default() };
+    args.removal_implies_checking();
+    assert!(
+        args.check_rules_on_add,
+        "the narrow removal flag did not imply checking, so it would do nothing"
+    );
+    // The broad flag still does too, and neither turns it on unasked.
+    let mut broad = crate::Args { remove_bad_rules: true, ..Default::default() };
+    broad.removal_implies_checking();
+    assert!(broad.check_rules_on_add);
+    let mut neither = crate::Args::default();
+    neither.removal_implies_checking();
+    assert!(!neither.check_rules_on_add, "checking was turned on with no removal flag");
+}

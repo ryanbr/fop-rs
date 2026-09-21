@@ -299,6 +299,11 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 // =============================================================================
 
 #[derive(Debug, Clone)]
+// Only so a test can build an Args and drive one method on it. Deliberately
+// not available to a real run: the derived value is not what a parse produces
+// -- `rebase_on_fail` defaults to true and `benchmark_runs` to 5 -- so code
+// reaching for it would get a configuration no caller ever asked for.
+#[cfg_attr(test, derive(Default))]
 struct Args {
     /// Directories to process
     directories: Vec<PathBuf>,
@@ -324,7 +329,7 @@ struct Args {
     parse_adguard: bool,
     /// Files to parse as AdGuard extended CSS (comma-separated)
     parse_adguard_files: Vec<String>,
-    /// Sort localhost/hosts file entries (0.0.0.0/127.0.0.1)
+    /// Force hosts-file handling on every file, dropping what is not an entry
     localhost: bool,
     /// Disable colored output
     no_color: bool,
@@ -408,7 +413,7 @@ struct Args {
     ci: bool,
     /// Show applied configuration
     show_config: bool,
-    /// Files to sort as localhost/hosts format (comma-separated)
+    /// Files to force hosts-file handling on (comma-separated)
     localhost_files: Vec<String>,
     /// Predefined commit message history for arrow key selection
     history: Vec<String>,
@@ -607,6 +612,19 @@ fn parse_comment_chars(config: &HashMap<String, String>, key: &str) -> Vec<Strin
 }
 
 impl Args {
+    /// Removing implies checking, however the flag arrived.
+    ///
+    /// Both removal flags, not just the broad one. The CLI arm for the narrow
+    /// flag set `check_rules_on_add` itself and the config arm did not, so
+    /// `remove-non-domain-on-add = true` in a `.fopconfig` was a silent no-op:
+    /// the checks it removes from never ran. Coupling it here covers every way
+    /// either flag can arrive.
+    fn removal_implies_checking(&mut self) {
+        if self.remove_bad_rules || self.remove_non_domain_on_add {
+            self.check_rules_on_add = true;
+        }
+    }
+
     fn parse() -> (Self, Option<String>) {
         // Collect args once so we don't re-iterate env::args() multiple times.
         let argv: Vec<String> = env::args().skip(1).collect();
@@ -1008,9 +1026,7 @@ impl Args {
         }
 
         // Removing implies checking, however the flag arrived.
-        if args.remove_bad_rules {
-            args.check_rules_on_add = true;
-        }
+        args.removal_implies_checking();
 
         if let Some(from_config) = repo_config {
             if let Err(e) = restrict_repo_config(&mut args.git_binary, &mut args.warning_output, &args.output_diff, from_config) {
@@ -1041,8 +1057,8 @@ impl Args {
         println!("        --alt-sort      Alternative sorting (by selector for all rule types)");
         println!("        --parse-adguard Parse AdGuard extended CSS (#$?#, #@$?#, $$, $@$)");
         println!("        --parse-adguard=  Files to parse as AdGuard extended CSS (comma-separated)");
-        println!("        --localhost     Sort hosts file entries (0.0.0.0/127.0.0.1 domain)");
-        println!("        --localhost-files=  Files to sort as localhost format (comma-separated)");
+        println!("        --localhost     Treat every file as a hosts file, dropping what is not an entry");
+        println!("        --localhost-files=  Files to force hosts-file handling on (comma-separated)");
         println!("        --no-color      Disable colored output");
         println!("        --commit-mask=N Mask URLs in commit messages (1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike)");
         println!("        --no-commit-mask    Disable URL masking even if .fopconfig sets commit-mask");
@@ -1769,6 +1785,18 @@ fn ci_git_cmd(git_binary: Option<&str>, location: &Path) -> Vec<String> {
     ]
 }
 
+/// The (file, line) pairs a check has already spoken about.
+///
+/// One line gets one reason: where a standard check flagged a line, the
+/// bare-word check stays quiet, and the re-check after a removal has to honour
+/// the same rule or it counts a line nobody was going to delete. Keyed by file
+/// and line together -- a line number repeats across the files of one diff.
+fn spoken_for<'a>(
+    problems: &[(&'a crate::fop_typos::Addition, fop_rules::RuleProblem)],
+) -> std::collections::HashSet<(&'a str, usize)> {
+    problems.iter().map(|(add, _)| (add.file.as_str(), add.line_num)).collect()
+}
+
 /// Run the addition checks, returning false when the caller should stop.
 ///
 /// `interactive` is false in sort-only mode, where there is no commit to
@@ -1844,10 +1872,16 @@ where
         // Opt-in, and judged on the sorted form like every other check, so a
         // line is flagged as it would be written. Skipped where a check
         // already spoke: one line, one reason.
-        let already: std::collections::HashSet<usize> =
-            problems.iter().map(|(add, _)| add.line_num).collect();
+        // Keyed by file as well as line: `additions` spans every file the
+        // diff touches and a line number is only unique within one, so a
+        // problem at `a.txt:3` silenced the bare word at `b.txt:3` -- which
+        // then went unreported and undeleted, while the re-check below still
+        // counted it and refused the commit without naming it.
+        let already = spoken_for(&problems);
         for (add, as_sorted) in additions.iter().zip(&tidied) {
-            if !already.contains(&add.line_num) && fop_rules::is_non_domain_word(as_sorted) {
+            if !already.contains(&(add.file.as_str(), add.line_num))
+                && fop_rules::is_non_domain_word(as_sorted)
+            {
                 problems.push((add, fop_rules::RuleProblem::new(fop_rules::NON_DOMAIN_REASON, "")));
             }
         }
@@ -1937,18 +1971,27 @@ where
         // the line above saying they had been kept, and returned false, which
         // in interactive mode stopped the commit over nothing.
         let after_tidied = tidy_all(&after, config_for, &root);
-        let mut left = check_as_sorted(&after, &after_tidied)
-            .iter()
-            .filter(|(_, p)| deletes(p))
-            .count();
+        let after_problems = check_as_sorted(&after, &after_tidied);
+        let mut left = after_problems.iter().filter(|(_, p)| deletes(p)).count();
         // `check_as_sorted` runs the standard checks only, so a bare word that
         // survived removal would go unseen there. Ask again on the same terms
-        // the flag set.
+        // the flag set -- including the rule that one line gets one reason.
+        //
+        // Without that rule a line both checks speak about was counted here
+        // though it was never a candidate: a word with no vowel is advice
+        // (`is_bare_token`) as well as a bare word, so intake left it to the
+        // advice, the advice was kept as advice always is, and this then
+        // called it a removal failure and stopped the commit -- with nothing
+        // the caller could pass to get past it, since no flag deletes advice.
         if remove_non_domain {
+            let already = spoken_for(&after_problems);
             left += after
                 .iter()
                 .zip(&after_tidied)
-                .filter(|(_, as_sorted)| fop_rules::is_non_domain_word(as_sorted))
+                .filter(|(add, as_sorted)| {
+                    !already.contains(&(add.file.as_str(), add.line_num))
+                        && fop_rules::is_non_domain_word(as_sorted)
+                })
                 .count();
         }
         if left > 0 {
