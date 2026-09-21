@@ -4572,3 +4572,51 @@ fn test_explicit_localhost_keeps_entries_and_drops_only_the_rest() {
         kept
     );
 }
+
+#[test]
+fn test_a_bad_address_after_good_ones_still_disqualifies() {
+    // A hosts file is recognised only if every rule in it is an entry, and an
+    // entry's address has to parse. A malformed one disqualifies the file
+    // wherever it sits, not only on the first rule -- the lines above it are
+    // no warrant for the ones below.
+    //
+    // Asserted end to end rather than on the predicate, which
+    // test_is_localhost_entry already covers: what matters is that the
+    // file-level decision turns on it. That decision is observable through the
+    // ordering, since a recognised file sorts on the host and an ordinary one
+    // on the whole line, and these lines come out in a different order under
+    // each.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-badaddr-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("hosts.txt");
+    std::fs::write(
+        &file,
+        concat!(
+            "0.0.0.0 zulu.example.com\n",
+            "0.0.0.0 yankee.example.com\n",
+            "127.0.0.1 alpha.example.com\n",
+            "999.1.1.1 bad.example.com\n",
+        ),
+    )
+    .unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let sorted = std::fs::read_to_string(&file).unwrap();
+    let lines: Vec<&str> = sorted.lines().filter(|l| !l.trim().is_empty()).collect();
+    // Ordered on the whole line -- `0` then `1` then `9` -- not on the host,
+    // which would lead with alpha.
+    assert_eq!(
+        lines.first(),
+        Some(&"0.0.0.0 yankee.example.com"),
+        "file was read as a hosts file despite a malformed address: {:?}",
+        lines
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with("127.0.0.1 alpha")),
+        "a valid entry was not kept as written: {:?}",
+        lines
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
