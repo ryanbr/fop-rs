@@ -2732,6 +2732,10 @@ fn test_tidy_rule_matches_the_sorter() {
         "example.com##+js(trusted-set-cookie, consent, true)",
         // Dropped domains are warned about; the warning must not escape.
         "a.b,good.com##.ad",
+        // A hosts entry: the sorter keeps it as written, and the checks have
+        // to judge that form, not the one a filter-list tidy would make of it.
+        "0.0.0.0 example.com",
+        "127.0.0.1 tracker.example.org",
         // Comments in either character, hash-space included: the sorter and
         // `tidy_rule` decide comment-ness separately, and this test missed the
         // hash-space case drifting between them until a line of it was added.
@@ -4409,3 +4413,143 @@ fn test_typo_fix_skips_cosmetic_rules_with_regex_domains() {
     assert_eq!(filter_tidy("@@||a.com^$image.script", true), "@@||a.com^$image,script");
 }
 
+
+#[test]
+fn test_a_hosts_file_survives_without_the_localhost_flag() {
+    // `filter_tidy` strips whitespace from anything that is not an element
+    // rule, so every entry in a hosts file sorted as a filter list came out as
+    // `0.0.0.0host` -- silently, since nothing downstream reads a mangled
+    // entry as an error. listefr carries hosts.txt beside liste_fr.txt, so one
+    // `fop .` over that repo rewrote all 6079 of its entries.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-hosts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("hosts.txt");
+    std::fs::write(
+        &file,
+        concat!(
+            "################################\n",
+            "# Title : Test hosts\n",
+            "################################\n",
+            "0.0.0.0 zulu.example.com\n",
+            "0.0.0.0 alpha.example.com\n",
+            "127.0.0.1 mike.example.org\n",
+        ),
+    )
+    .unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let sorted = std::fs::read_to_string(&file).unwrap();
+    let rules: Vec<&str> =
+        sorted.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).collect();
+    // Kept as written -- the space between address and host is the syntax.
+    assert_eq!(
+        rules,
+        vec![
+            "0.0.0.0 alpha.example.com",
+            "127.0.0.1 mike.example.org",
+            "0.0.0.0 zulu.example.com",
+        ],
+        "hosts entries not kept and ordered by host: {:?}",
+        rules
+    );
+    // The `#` banner stays a comment, so it is not read as `##` plus an id
+    // selector and the entries below it stay one section.
+    assert!(sorted.starts_with("################################\n# Title : Test hosts\n"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_a_filter_list_is_not_taken_for_a_hosts_file() {
+    // Detection licenses reading `#` as a comment, so a filter list must never
+    // trip it: in a file taken for a hosts file every `##.ad` rule is read as
+    // a comment and written back untouched. That is invisible if you only look
+    // for the line -- a comment is written verbatim -- so these rules are ones
+    // the tidier changes, and the test asserts they were changed.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-nothosts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // A list whose rules are all generic hide rules, with entries mixed in.
+    // Every rule here opens with `#`, so skipping `#` on sight would leave the
+    // entries as the only lines counted and carry the whole file.
+    let file = dir.join("a.txt");
+    let mut content = String::new();
+    for i in 0..60 {
+        content.push_str(&format!("0.0.0.0 d{}.example.com\n", i));
+    }
+    content.push_str("##div  >  p\n");
+    content.push_str("##.ad  >  .banner\n");
+    std::fs::write(&file, &content).unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let sorted = std::fs::read_to_string(&file).unwrap();
+    for (raw, tidied) in [("##div  >  p", "##div > p"), ("##.ad  >  .banner", "##.ad > .banner")] {
+        assert!(
+            sorted.lines().any(|l| l == tidied),
+            "{:?} was not tidied to {:?}: the file was taken for a hosts file\n{}",
+            raw, tidied, sorted
+        );
+    }
+    // And the entries are still kept as written: the line-level guard does not
+    // depend on the file being recognised.
+    assert!(
+        sorted.lines().any(|l| l == "0.0.0.0 d0.example.com"),
+        "hosts entry mangled in a file that is not a hosts file"
+    );
+
+    // The same list with the entries at the top, which is what a head sample
+    // would see: still a filter list.
+    let file2 = dir.join("b.txt");
+    let mut content2 = String::new();
+    for i in 0..60 {
+        content2.push_str(&format!("0.0.0.0 d{}.example.com\n", i));
+    }
+    content2.push_str("example.com##div  >  p\n");
+    std::fs::write(&file2, &content2).unwrap();
+    crate::fop_sort::fop_sort(&file2, &config).unwrap();
+    let sorted2 = std::fs::read_to_string(&file2).unwrap();
+    assert!(
+        sorted2.lines().any(|l| l == "example.com##div > p"),
+        "a rule past the head was not tidied: the head was sampled\n{}",
+        sorted2
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_explicit_localhost_keeps_entries_and_drops_only_the_rest() {
+    // `--localhost` does two things: keep the entries as written, and drop
+    // what is not an entry. Splitting the first out so it applies in every
+    // mode left the second reading `if config.localhost { remove }` -- which
+    // removed the entries too, emptying the file the flag exists to sort. No
+    // test covered the flag end to end, so the whole suite passed.
+    let chars = vec!["!".to_string()];
+    let config = crate::fop_sort::SortConfig { localhost: true, ..test_sort_config(&chars) };
+    let dir = std::env::temp_dir().join(format!("fop-test-lhflag-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("hosts.txt");
+    std::fs::write(
+        &file,
+        concat!(
+            "# a heading\n",
+            "0.0.0.0 zulu.example.com\n",
+            "||not-an-entry.example.com^$script\n",
+            "0.0.0.0 alpha.example.com\n",
+        ),
+    )
+    .unwrap();
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    let sorted = std::fs::read_to_string(&file).unwrap();
+    let kept: Vec<&str> =
+        sorted.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).collect();
+    assert_eq!(
+        kept,
+        vec!["0.0.0.0 alpha.example.com", "0.0.0.0 zulu.example.com"],
+        "--localhost did not keep exactly the entries: {:?}",
+        kept
+    );
+}

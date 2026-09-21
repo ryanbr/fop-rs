@@ -152,8 +152,16 @@ fn cmp_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
 }
 
 /// Fast check for localhost entry without regex
+///
+/// The sort calls this on every rule it writes, so the answer for a filter
+/// rule has to cost as little as possible. Both forms start with a digit and
+/// almost no filter rule does -- they open with `|`, `@`, `/`, `.`, `#` or a
+/// letter -- so one byte settles it before either prefix is compared.
 #[inline]
 pub(crate) fn is_localhost_entry(line: &str) -> bool {
+    if !matches!(line.as_bytes().first(), Some(b'0' | b'1')) {
+        return false;
+    }
     let rest = if let Some(r) = line.strip_prefix("0.0.0.0") {
         r
     } else if let Some(r) = line.strip_prefix("127.0.0.1") {
@@ -165,6 +173,61 @@ pub(crate) fn is_localhost_entry(line: &str) -> bool {
         .first()
         .is_some_and(|b| b.is_ascii_whitespace())
         && !rest.trim_start().is_empty()
+}
+
+/// Whether a file reads as a hosts file rather than a filter list.
+///
+/// Hosts files ship beside filter lists -- listefr carries `hosts.txt` next to
+/// `liste_fr.txt` -- and they need `#` read as a comment and entries ordered by
+/// host, which is what `--localhost` turns on. Left to the filter-list rules a
+/// hosts file still sorts, so nothing looks wrong, but `#` stops being a
+/// comment: a `####...` banner parses as `##` plus an id selector, so the run
+/// of entries under it is no longer a section of its own.
+///
+/// Every rule has to be an entry, not merely the first few. Sampling the head
+/// would call a file a hosts file on the strength of its opening lines, and in
+/// a file taken for one `#` starts a comment -- which would turn every generic
+/// `##.ad` rule below the sample into a comment. The scan is what licenses
+/// that reading, so it reads the whole file.
+///
+/// It stays cheap because a filter list disqualifies itself on its first rule,
+/// which is within a few lines of the top; only a file that really is all
+/// entries is read to the end. The bytes are the caller's, already in memory,
+/// so no I/O is repeated.
+///
+/// This decides formatting, never deletion. `--localhost` drops a line that is
+/// not an entry, and a guess must not do that; see the sort loop.
+pub(crate) fn looks_like_hosts_file(content: &[u8]) -> bool {
+    let mut entries = 0usize;
+    for raw in content.split(|&b| b == b'\n') {
+        let Ok(line) = std::str::from_utf8(raw) else { return false };
+        let line = line.trim();
+        // A hosts file comments with `#`, but so few of the `#` spellings are
+        // comments that the character cannot be skipped on sight: `##.ad` is a
+        // generic hide rule, and `#@#`, `#?#`, `#$#` and `#%#` are rules too.
+        // Skipping every `#` would read a list of generic rules as a file with
+        // no rules at all, and a handful of entries anywhere in it would then
+        // carry the whole file -- whose rules this would go on to comment out.
+        // Only a `#` run (a banner) and `#` before whitespace are comments.
+        //
+        // `!` and `[Adblock Plus 2.0]` are a filter list's own comment and
+        // header; they are skipped rather than counted against a file so a
+        // hosts file carrying either is still recognised.
+        let hash_comment = line.starts_with('#')
+            && (is_plain_comment(line) || line.bytes().all(|b| b == b'#'));
+        if line.is_empty()
+            || hash_comment
+            || line.starts_with('!')
+            || (line.starts_with('[') && line.ends_with(']'))
+        {
+            continue;
+        }
+        if !is_localhost_entry(line) {
+            return false;
+        }
+        entries += 1;
+    }
+    entries > 0
 }
 
 /// Extract domain from localhost entry without regex
@@ -2037,7 +2100,15 @@ pub(crate) fn tidy_rule<'a>(line: &'a str, config: &SortConfig) -> Cow<'a, str> 
         || (line.starts_with('[') && line.ends_with(']'));
     // Hosts entries are not filter rules, and `[$...]` modifiers pass through
     // the sort untouched.
-    if line.is_empty() || is_comment || config.localhost || line.starts_with("[$") {
+    // `is_localhost_entry` rather than `config.localhost`: the sorter keeps a
+    // hosts entry as written in every mode, and this has to judge the line the
+    // sorter will write, not the one a filter-list tidy would make of it.
+    if line.is_empty()
+        || is_comment
+        || config.localhost
+        || is_localhost_entry(line)
+        || line.starts_with("[$")
+    {
         return Cow::Borrowed(line);
     }
     if line.starts_with('/') && REGEX_ELEMENT_PATTERN.is_match(line) {
@@ -2153,6 +2224,10 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     if original_content.windows(2).any(|w| w == b"\r\n") {
         crate::CRLF_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
+
+    // `--localhost` for a file that plainly is one. The bytes are already
+    // read, so this costs no extra I/O; see looks_like_hosts_file.
+    let localhost = config.localhost || looks_like_hosts_file(&original_content);
 
     let reader = BufReader::new(Cursor::new(&original_content));
     let mut output = match create_file_no_follow(&temp_file) {
@@ -2275,7 +2350,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 filter_lines,
                 config.no_sort,
                 config.alt_sort,
-                config.localhost,
+                localhost,
                 config.parse_adguard,
             )?;
             lines_checked = 1;
@@ -2310,7 +2385,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                         filter_lines,
                         config.no_sort,
                         config.alt_sort,
-                        config.localhost,
+                        localhost,
                         config.parse_adguard,
                     )?;
                     lines_checked = 1;
@@ -2325,7 +2400,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         // Comments and special lines
         let is_comment = config.comment_chars.iter().any(|c| line.starts_with(c))
             || is_plain_comment(line)
-            || (config.localhost
+            || (localhost
                 && line.starts_with('#')
                 && !config.comment_chars.iter().any(|c| c == "#"));
         if is_comment
@@ -2340,7 +2415,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     filter_lines,
                     config.no_sort,
                     config.alt_sort,
-                    config.localhost,
+                    localhost,
                     config.parse_adguard,
                 )?;
                 lines_checked = 1;
@@ -2354,19 +2429,30 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             continue;
         }
 
-        // Validate localhost entries when in localhost mode
-        if config.localhost {
-            if !is_localhost_entry(line) {
-                write_warning(&format!("Removed invalid localhost entry: {}", line));
-                continue;
-            }
-            // A hosts entry is `IP<space>host`, and the space is the syntax --
-            // `filter_tidy` strips whitespace from anything that is not an
-            // element rule, which turned `0.0.0.0 keep.com` into
-            // `0.0.0.0keep.com` and broke every hosts file fop sorted in this
-            // mode. There is nothing in such a line for the tidier to do, so
-            // it is kept as written.
+        // A hosts entry is `IP<space>host`, and the space is the syntax --
+        // `filter_tidy` strips whitespace from anything that is not an element
+        // rule, which turns `0.0.0.0 keep.com` into `0.0.0.0keep.com`. That
+        // held in every mode, so a hosts file sorted without `--localhost`
+        // came out with every entry run together, and silently: nothing
+        // downstream reads a mangled entry as an error. There is nothing in
+        // such a line for the tidier to do, so it is kept as written whether
+        // or not the file was recognised as a hosts file.
+        //
+        // Ahead of every other check, as the `--localhost` block it replaces
+        // was: an entry is not a filter rule, so no rule check has anything to
+        // say about it.
+        if is_localhost_entry(line) {
             section.push(line.to_string());
+            continue;
+        }
+
+        // Dropping what is left is for an explicit --localhost only. That flag
+        // is the caller stating the file is a hosts file, so a line that is
+        // not an entry is a mistake in it. Detection is a guess, and a guess
+        // must not delete a rule: in a detected file the line is sorted as the
+        // filter rule it appears to be.
+        if config.localhost {
+            write_warning(&format!("Removed invalid localhost entry: {}", line));
             continue;
         }
 
@@ -2552,7 +2638,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             filter_lines,
             config.no_sort,
             config.alt_sort,
-            config.localhost,
+            localhost,
             config.parse_adguard,
         )?;
     }
