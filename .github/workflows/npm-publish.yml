@@ -259,8 +259,17 @@ jobs:
         run: |
           VERSION=${{ needs.build-linux-windows.outputs.version }}
 
-          # macOS x86_64 (Intel) - no PGO (cross-compiled from ARM runner)
-          cargo build --release --target x86_64-apple-darwin
+          # macOS x86_64 (Intel) + PGO. The profile is gathered on the ARM
+          # runner, which is why this build went without one -- but an
+          # instrumentation profile is branch and call counts keyed to the IR,
+          # applied before codegen, and FOP has no `cfg(target_arch)` anywhere,
+          # so the IR it describes is the same shape for either target. A
+          # function the profile does not cover just falls back to the default
+          # heuristics; it is not an error.
+          #
+          # No `target-cpu`: this is the baseline Intel binary and has to run
+          # on anything x86_64.
+          RUSTFLAGS="-Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release --target x86_64-apple-darwin
           cp target/x86_64-apple-darwin/release/fop "fop-${VERSION}-macos-x86_64"
 
           # macOS ARM64 (Apple Silicon - optimized for M1+) + PGO
