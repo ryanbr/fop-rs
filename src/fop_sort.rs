@@ -1585,24 +1585,10 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
         // Split at the first `#` that begins a separator, not at the first
         // separator appearing anywhere: a selector may carry `#?#` inside an
         // attribute value, and splitting there would group the wrong rules.
-        //
-        // The scan stops at whatever separator it meets, mergeable or not.
-        // Stepping over one it cannot merge would find the `##` formed by that
-        // separator's trailing `#` and an ID selector's leading `#` -- reading
-        // `a.com#@##ad` as domains `a.com#@`, separator `##`, and merging two
-        // exceptions after all.
         let split = (!line.starts_with('!') && !line.starts_with('['))
             .then(|| {
-                let mut from = 0;
-                while let Some(hash) = line[from..].find('#') {
-                    let at = from + hash;
-                    if let Some((sep, mergeable)) = cosmetic_separator(&line[at..]) {
-                        return mergeable
-                            .then(|| (&line[..at], sep, &line[at + sep.len()..]));
-                    }
-                    from = at + 1;
-                }
-                None
+                let (at, sep, mergeable) = find_cosmetic_separator(&line)?;
+                mergeable.then(|| (&line[..at], sep, &line[at + sep.len()..]))
             })
             .flatten();
         let Some((domains, separator, selector)) = split else {
@@ -1670,17 +1656,22 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
 
 /// Convert extended selectors between syntaxes.
 ///
-/// `abp` rewrites ABP operators to their uBO equivalents (`:-abp-contains(`
-/// -> `:has-text(`). It does not touch separators: uBO reads `##` and `#@#`
-/// for the rules it produces.
+/// Either flag promotes a hiding rule's separator to `#?#`, because all three
+/// engines read it: ABP for element hiding emulation -- easylist's own
+/// `easylist_specific_hide_abp.txt` writes 268 of them -- AdGuard, and uBO,
+/// whose `extFlagsFromAnchor` maps `?` to `AST_FLAG_EXT_STRONG` and which
+/// errors that a filter "requires '#?#' separator syntax" where one is needed.
+/// `##` is the uBO-only spelling of the three, so a rule carrying
+/// `:has-text()` is more portable with the promotion than without it.
 ///
-/// `adguard` promotes a `:has-text()` rule's separator — `##` -> `#?#` and
-/// `#@#` -> `#@?#`. Those spellings are AdGuard's, so they are only right for
-/// a list AdGuard consumes, and are a separate switch rather than a side
-/// effect of `abp`: a rule can hit them while having nothing for `abp` to
-/// convert.
+/// `abp` additionally renames ABP operators to their uBO equivalents
+/// (`:-abp-contains(` -> `:has-text(`).
+///
+/// Only `adguard` promotes an exception's separator, `#@#` -> `#@?#`. That
+/// spelling is AdGuard's alone: ABP has no exception form for extended
+/// selectors and writes plain `#@#`, and there is not one `#@?#` in easylist.
 pub(crate) fn convert_selectors(rule: &str, abp: bool, adguard: bool) -> String {
-    let mut out = if abp && rule.contains(":-abp-") {
+    let out = if abp && rule.contains(":-abp-") {
         rule.replace(":-abp-contains(", ":has-text(")
             .replace(":-abp-has(", ":has(")
     } else {
@@ -1688,16 +1679,50 @@ pub(crate) fn convert_selectors(rule: &str, abp: bool, adguard: bool) -> String 
     };
 
     // Only :has-text() needs the procedural separator; :has() alone is native
-    // CSS and works with ##. HTML filtering rules (##^) are uBO-specific — skip.
-    if adguard && out.contains(":has-text(") && !out.contains("##^") {
-        if out.contains("##") && !out.contains("#?#") {
-            out = out.replacen("##", "#?#", 1);
-        }
-        if out.contains("#@#") && !out.contains("#@?#") {
-            out = out.replacen("#@#", "#@?#", 1);
-        }
+    // CSS and works with ##. HTML filtering rules (##^) are uBO-specific --
+    // there is no `#?#^` -- so they are skipped.
+    if !out.contains(":has-text(") {
+        return out;
     }
-    out
+    // At the separator, not at the first `##` in the line. A selector may hold
+    // one -- `#@#[data-x="##"]` -- and an exception's own separator holds
+    // none, so replacing the first match rewrote the attribute value instead.
+    let Some((at, sep, _)) = find_cosmetic_separator(&out) else {
+        return out;
+    };
+    let promoted = match sep {
+        "##" if abp || adguard => "#?#",
+        "#@#" if adguard => "#@?#",
+        _ => return out,
+    };
+    // `##^` is uBO's HTML filtering and has no procedural spelling.
+    if out[at + sep.len()..].starts_with('^') {
+        return out;
+    }
+    format!("{}{}{}", &out[..at], promoted, &out[at + sep.len()..])
+}
+
+/// Where a line's cosmetic separator starts, which one it is, and whether it
+/// is one `combine_has_text_rules` may merge.
+///
+/// Finds the first `#` that begins a separator rather than the first `#` in
+/// the line: a domain list holds none, but a selector can, and a caller
+/// rewriting a rule at its separator must not rewrite it anywhere else.
+///
+/// The scan stops at whatever separator it meets, mergeable or not. Stepping
+/// over one it cannot merge would find the `##` formed by that separator's
+/// trailing `#` and an ID selector's leading `#` -- reading `a.com#@##ad` as
+/// domains `a.com#@`, separator `##`, and merging two exceptions after all.
+pub(crate) fn find_cosmetic_separator(line: &str) -> Option<(usize, &'static str, bool)> {
+    let mut from = 0;
+    while let Some(hash) = line[from..].find('#') {
+        let at = from + hash;
+        if let Some((sep, mergeable)) = cosmetic_separator(&line[at..]) {
+            return Some((at, sep, mergeable));
+        }
+        from = at + 1;
+    }
+    None
 }
 
 /// Combine filters with identical rules but different domains.

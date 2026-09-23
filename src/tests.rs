@@ -1270,18 +1270,21 @@ fn test_has_text_google_promo_example() {
 }
 
 #[test]
-fn test_convert_selectors_separators_belong_to_adguard() {
+fn test_convert_selectors_promotes_has_text_separators() {
     use crate::fop_sort::convert_selectors as f;
     const ABP_HIDE: &str = "example.com##.ad:-abp-contains(Anzeige)";
     const ABP_EXC: &str = "example.com#@#.ad:-abp-contains(Anzeige)";
-    // --abp-convert renames operators only; uBO reads ## and #@# for these.
-    assert_eq!(f(ABP_HIDE, true, false), "example.com##.ad:has-text(Anzeige)");
+    // Either flag promotes a hiding rule to #?#: ABP, AdGuard and uBO all
+    // read it, and ## is the uBO-only spelling. An exception stays #@# here --
+    // #@?# is AdGuard's alone, and ABP has no exception form for these.
+    assert_eq!(f(ABP_HIDE, true, false), "example.com#?#.ad:has-text(Anzeige)");
     assert_eq!(f(ABP_EXC, true, false), "example.com#@#.ad:has-text(Anzeige)");
-    // --adguard-convert promotes both separators to AdGuard's spelling.
+    // --adguard-convert promotes the exception separator too.
     assert_eq!(f(ABP_HIDE, true, true), "example.com#?#.ad:has-text(Anzeige)");
     assert_eq!(f(ABP_EXC, true, true), "example.com#@?#.ad:has-text(Anzeige)");
     // It is independent: a rule with nothing for --abp-convert to convert is
     // still promoted, and no operator is renamed.
+    // Promotion needs no operator to rename, under either flag.
     let ubo_hide = "racurs.ua##.c:has(> .h:has-text(/новини|новости/i))";
     let ubo_exc = "racurs.ua#@#.c:has(> .h:has-text(/новини|новости/i))";
     assert_eq!(f(ubo_hide, false, true), "racurs.ua#?#.c:has(> .h:has-text(/новини|новости/i))");
@@ -1309,6 +1312,23 @@ fn test_convert_selectors_separators_belong_to_adguard() {
         // A non-element rule is untouched.
         assert_eq!(f("||example.com/ads^", abp, true), "||example.com/ads^");
     }
+    // At the separator, not the first `##` in the line. A selector can hold
+    // one, and an exception's separator holds none, so replacing the first
+    // match rewrote the attribute value and left the separator alone.
+    assert_eq!(
+        f("example.com#@#[data-x=\"##\"]:has-text(y)", true, false),
+        "example.com#@#[data-x=\"##\"]:has-text(y)"
+    );
+    assert_eq!(
+        f("example.com#@#[data-x=\"##\"]:has-text(y)", false, true),
+        "example.com#@?#[data-x=\"##\"]:has-text(y)"
+    );
+    assert_eq!(
+        f("example.com##[data-x=\"##\"]:has-text(y)", true, false),
+        "example.com#?#[data-x=\"##\"]:has-text(y)"
+    );
+    // The separator is `##` and `#ad` is an id selector, not a second one.
+    assert_eq!(f("example.com###ad:has-text(x)", true, false), "example.com#?##ad:has-text(x)");
     // :has() alone is native CSS — plain ## is right even under --adguard-convert.
     assert_eq!(
         f("example.com##.ad:-abp-has(.x)", true, true),
