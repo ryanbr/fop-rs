@@ -4851,3 +4851,55 @@ fn test_the_checks_judge_a_hosts_comment_as_the_sorter_writes_it() {
         }
     }
 }
+
+#[test]
+fn test_duplicate_lines_are_removed_and_recorded() {
+    // Nothing covered duplicate removal: breaking it so that every duplicate
+    // survives left the whole suite green. It is the first step of every
+    // section, and it also feeds the list --pr-show-changes prints, so both
+    // halves are asserted here -- which copy survives, and that the removal
+    // was recorded.
+    use crate::fop_sort::{SORT_CHANGES, TRACK_CHANGES};
+    use std::sync::atomic::Ordering::Relaxed;
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    let chars = vec!["!".to_string()];
+    // --no-sort, so the surviving order is the order they arrived in and the
+    // assertion is about which copy is kept, not about sorting.
+    let config = crate::fop_sort::SortConfig { no_sort: true, ..test_sort_config(&chars) };
+    let dir = std::env::temp_dir().join(format!("fop-test-dupes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("a.txt");
+    std::fs::write(
+        &file,
+        "! t\nzulu.example##.a\nalpha.example##.b\nzulu.example##.a\nbravo.example##.c\nzulu.example##.a\n",
+    )
+    .unwrap();
+
+    if let Ok(mut c) = SORT_CHANGES.lock() {
+        c.duplicates_removed.clear();
+    }
+    TRACK_CHANGES.store(true, Relaxed);
+    crate::fop_sort::fop_sort(&file, &config).unwrap();
+    TRACK_CHANGES.store(false, Relaxed);
+
+    let sorted = std::fs::read_to_string(&file).unwrap();
+    let rules: Vec<&str> = sorted.lines().filter(|l| !l.starts_with('!') && !l.trim().is_empty()).collect();
+    // One copy survives, and it is the first: the two later ones go.
+    assert_eq!(
+        rules,
+        vec!["zulu.example##.a", "alpha.example##.b", "bravo.example##.c"],
+        "duplicates were not removed, or the wrong copy was kept: {:?}",
+        rules
+    );
+    // And the removal is recorded for the PR description.
+    let changes = SORT_CHANGES.lock().unwrap();
+    assert!(
+        changes.duplicates_removed.contains("zulu.example##.a"),
+        "the duplicate was not recorded: {:?}",
+        changes.duplicates_removed
+    );
+    drop(changes);
+    let _ = std::fs::remove_dir_all(&dir);
+}

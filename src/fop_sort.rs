@@ -2364,23 +2364,26 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         let track_changes = TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed);
         let mut dupes_local: HashSet<String> = HashSet::new();
 
-        // Remove duplicates while preserving order if no_sort
-        let mut unique: Vec<String> = {
-            let mut seen = HashSet::with_capacity(section.len());
-            section
-                .drain(..)
-                .filter(|x| {
-                    if !seen.insert(x.clone()) {
-                        if track_changes {
-                            dupes_local.insert(x.clone());
-                        }
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .collect()
+        // Remove duplicates while preserving order if no_sort.
+        //
+        // Decided over borrowed lines and applied afterwards, rather than
+        // cloning each line into the set as it goes: a line that survives was
+        // cloned for the set and dropped, and a duplicate was cloned twice.
+        // The set cannot borrow from a vector being drained, so the answer is
+        // taken first and the lines moved after, which also hands a duplicate
+        // to the tracker rather than copying it.
+        let keep: Vec<bool> = {
+            let mut seen: HashSet<&str> = HashSet::with_capacity(section.len());
+            section.iter().map(|s| seen.insert(s.as_str())).collect()
         };
+        let mut unique: Vec<String> = Vec::with_capacity(section.len());
+        for (line, keep) in section.drain(..).zip(keep) {
+            if keep {
+                unique.push(line);
+            } else if track_changes {
+                dupes_local.insert(line);
+            }
+        }
 
         // Merge tracked duplicates into global changes once
         if track_changes && !dupes_local.is_empty() {
