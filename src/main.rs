@@ -1444,9 +1444,10 @@ pub(crate) static EXCEPTION_BARE_OPTIONS: [&str; 13] = [
 pub(crate) static KNOWN_OPTION_PREFIXES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "addheader", "app", "cookie", "csp", "denyallow", "domain", "from",
-        "header", "hls", "ipaddress", "jsonprune", "method", "permissions",
-        "reason", "redirect", "redirect-rule", "referrerpolicy", "removeheader",
-        "removeparam", "replace", "requestheader", "responseheader", "rewrite",
+        "header", "hls", "ipaddress", "jsonprune", "method", "path",
+        "permissions", "reason", "redirect", "redirect-rule", "referrerpolicy",
+        "removeheader", "removeparam", "replace", "requestheader",
+        "responseheader", "rewrite",
         "sitekey", "stealth", "tag", "to", "top", "uritransform", "urlskip",
         "urltransform", "xmlprune",
         // AdGuard DNS filtering, and uBO's deprecated removeparam alias.

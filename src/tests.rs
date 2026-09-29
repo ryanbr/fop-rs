@@ -1411,6 +1411,11 @@ fn test_check_rule_leaves_valid_rules_alone() {
         "||example.com^$removeparam=/^utm_/",
         "||example.com^$csp=script-src 'none'",
         "||example.com^$redirect=noopjs",
+        // AdGuard's $path, which is a rule-list prefix in every list we sort
+        // but is equally valid as a basic option. Missing from the prefix
+        // table, it was an "unknown option" and `--remove-bad-rules` deleted it.
+        "||example.com^$path=/ads",
+        "||example.com^$path=/ads,third-party",
         "/ads/banner.gif",
         "||example.com/path#fragment",
         "@@||example.com^$~third-party",
