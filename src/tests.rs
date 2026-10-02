@@ -2618,28 +2618,51 @@ fn test_added_lines_on_an_unborn_branch() {
 }
 
 #[test]
-fn test_added_lines_on_an_unborn_sha256_branch() {
-    // The empty tree has a different id under SHA-256; a hard-coded SHA-1 one
-    // does not exist there, the diff failed, and the checks did not run.
-    let dir = std::env::temp_dir().join(format!("fop-test-sha256-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let repo = ScratchRepo(dir);
-    let init = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repo.0)
-        .args(["init", "-q", "--object-format=sha256"])
-        .output()
-        .unwrap();
-    if !init.status.success() {
-        // A git too old for SHA-256 repositories has nothing to test here.
-        return;
+fn test_added_lines_on_an_unborn_branch_under_either_object_format() {
+    // The empty tree has a different id under each algorithm, and a hard-coded
+    // SHA-1 one does not exist in a SHA-256 repository: the diff failed and the
+    // add-time checks silently did not run. Both are named explicitly rather
+    // than left to `git init`'s default, which is SHA-1 today and SHA-256 from
+    // Git 3.0 -- otherwise whichever one stops being the default stops being
+    // tested, and nothing fails to say so.
+    for format in ["sha1", "sha256"] {
+        let dir = std::env::temp_dir()
+            .join(format!("fop-test-{}-{}", format, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = ScratchRepo(dir);
+        let init = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo.0)
+            .args(["init", "-q", &format!("--object-format={}", format)])
+            .output()
+            .unwrap();
+        if !init.status.success() {
+            // A git too old for this algorithm has nothing to test here.
+            continue;
+        }
+        // Confirmed rather than assumed: a silent fall back to the default
+        // would leave this passing while testing the other algorithm twice,
+        // which is the shape of failure that let the hard-coded id survive.
+        let seen = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo.0)
+            .args(["rev-parse", "--show-object-format"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&seen.stdout).trim(),
+            format,
+            "init accepted --object-format={} but the repository is not that",
+            format
+        );
+        repo.write("a.txt", "||first.com^\n");
+        repo.git(&["add", "a.txt"]);
+        let added = crate::fop_git::get_added_lines(&repo.cmd())
+            .unwrap_or_else(|| panic!("diff failed under {}", format));
+        assert_eq!(added.len(), 1, "under {}", format);
+        assert_eq!(added[0].content, "||first.com^", "under {}", format);
     }
-    repo.write("a.txt", "||first.com^\n");
-    repo.git(&["add", "a.txt"]);
-    let added = crate::fop_git::get_added_lines(&repo.cmd()).expect("diff failed");
-    assert_eq!(added.len(), 1);
-    assert_eq!(added[0].content, "||first.com^");
 }
 
 #[test]
