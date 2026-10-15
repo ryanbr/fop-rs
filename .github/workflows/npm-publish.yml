@@ -314,11 +314,32 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v5
 
+      - name: Take the release notes from the changelog
+        run: |
+          VERSION=${{ needs.build-linux-windows.outputs.version }}
+          # The section this version's heading opens, up to the next one.
+          awk -v v="## [$VERSION]" '
+            index($0, v) == 1 { inside = 1; next }
+            inside && /^## \[/ { exit }
+            inside { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          # A missing section is a slip in setting the heading before the
+          # release. It does not fail the job: the version bump, the tag and
+          # the binaries are already pushed by now, so stopping here would
+          # leave a tag with no release and nothing on npm. Say so loudly and
+          # ship a body that points at the file instead.
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "::warning::No changelog section for $VERSION; falling back"
+            echo "See [CHANGELOG.md](https://github.com/ryanbr/fop-rs/blob/main/CHANGELOG.md)." > /tmp/release-notes.md
+          fi
+          wc -c /tmp/release-notes.md
+
       - name: Create GitHub Release
 
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build-linux-windows.outputs.version }}
+          body_path: /tmp/release-notes.md
           files: |
             linux-windows-binaries/*
             macos-binaries/*
