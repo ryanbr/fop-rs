@@ -248,7 +248,17 @@ jobs:
           # Train on a real sort, as the Linux job does: `cargo test` without
           # RUSTFLAGS rebuilds uninstrumented and contributes no profile at
           # all, leaving only build-script data behind.
-          RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
+          #
+          # --no-default-features drops mimalloc from the training binary
+          # alone. rustc 1.99.0 segfaults a worker thread when mimalloc is the
+          # global allocator in a `-Cprofile-generate` build on Darwin; 1.98.1
+          # does not, macOS 15 and 26 both do it, and the uninstrumented
+          # binary is fine, so it is the compiler and the allocator together.
+          # The binaries below keep mimalloc: a profile is branch and call
+          # counts for FOP's own functions, which the allocator does not
+          # change, and both builds sort AdguardFilters and uAssets to
+          # byte-identical output. Linux trains with mimalloc, being unaffected.
+          RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release --no-default-features
           cp -r test-lists /tmp/pgo-train
           ./target/release/fop --no-commit /tmp/pgo-train
           rm -rf /tmp/pgo-train

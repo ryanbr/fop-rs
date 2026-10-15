@@ -20,7 +20,10 @@ md5 = "0.8"
 owo-colors = "4"
 similar = "2"
 urlencoding ="2.1"
-mimalloc = { version = "0.1", default-features = false }
+mimalloc = { version = "0.1", default-features = false, optional = true }
+
+[features]
+default = ["mimalloc"]
 
 # Only to turn on ANSI escape processing for the console; see
 # enable_ansi_on_windows in main.rs. Already in the Windows dependency graph,

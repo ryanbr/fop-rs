@@ -11,6 +11,10 @@
 
 #![allow(clippy::write_with_newline)]
 
+// On by default. It comes off only to build the PGO training binary on
+// macOS, where rustc 1.99.0 segfaults a worker thread when mimalloc is the
+// allocator in a `-Cprofile-generate` build; the shipped binary keeps it.
+#[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
