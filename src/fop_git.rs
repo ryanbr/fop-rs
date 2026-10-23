@@ -227,7 +227,9 @@ pub struct RepoDefinition {
     pub check_changes: &'static [&'static str],
     pub difference: &'static [&'static str],
     pub commit: &'static [&'static str],
-    pub pull: &'static [&'static str],
+    pub fetch: &'static [&'static str],
+    pub rebase: &'static [&'static str],
+    pub upstream: &'static str,
     pub push: &'static [&'static str],
 }
 
@@ -239,7 +241,9 @@ pub const GIT: RepoDefinition = RepoDefinition {
     check_changes: &["status", "-s", "--untracked-files=no"],
     difference: &["diff"],
     commit: &["commit", "-a", "-m"],
-    pull: &["pull", "--rebase"],
+    fetch: &["fetch"],
+    rebase: &["rebase"],
+    upstream: "@{upstream}",
     push: &["push"],
 };
 
@@ -1440,6 +1444,46 @@ fn git_command(base_cmd: &[String]) -> Command {
     cmd
 }
 
+/// Fetch, then rebase the branch onto its upstream.
+///
+/// `git pull --rebase` is one command for this and was what ran here, but it
+/// works in two steps with FETCH_HEAD between them: the fetch writes every ref
+/// it brought and marks the ones to merge, then the rebase reads them back.
+/// That file is shared and unlocked, so a second git fetch in the same
+/// repository landing in the gap leaves two refs marked for merge and the pull
+/// dies with "Cannot rebase onto multiple branches" -- which is what easylist
+/// saw, the lists being sorted by loops that run several scripts over one
+/// clone. Raced against a single concurrent fetch, the pull failed 59 times in
+/// 60; this form, 0 in 60, because a remote-tracking ref is read in place of
+/// that file. The commit was never at risk either way, the pull being advisory
+/// and the push going ahead regardless, but a scary fatal in the log and a
+/// skipped rebase are worth not having.
+///
+/// The two commands report as one: their streams are joined so a caller prints
+/// what `git pull` printed, and a fetch that fails returns on its own, there
+/// being nothing newly fetched to rebase onto.
+fn fetch_and_rebase(
+    base_cmd: &[String],
+    repo: &RepoDefinition,
+    autostash: bool,
+) -> std::io::Result<std::process::Output> {
+    let fetched = git_command(base_cmd).args(repo.fetch).output()?;
+    if !fetched.status.success() {
+        return Ok(fetched);
+    }
+    let mut cmd = git_command(base_cmd);
+    cmd.args(repo.rebase);
+    if autostash {
+        cmd.arg("--autostash");
+    }
+    let rebased = cmd.arg(repo.upstream).output()?;
+    Ok(std::process::Output {
+        status: rebased.status,
+        stdout: [fetched.stdout, rebased.stdout].concat(),
+        stderr: [fetched.stderr, rebased.stderr].concat(),
+    })
+}
+
 /// Execute pull and push.
 #[inline]
 pub(crate) fn pull_and_push(
@@ -1452,47 +1496,49 @@ pub(crate) fn pull_and_push(
     quiet: bool,
 ) -> PushOutcome {
     let mut outcome = PushOutcome::Pushed;
-    for (i, op) in [repo.pull, repo.push].iter().enumerate() {
-        let output = git_command(base_cmd).args(*op).output();
+    let echo = |out: &std::process::Output| {
+        if !git_quiet && !out.stdout.is_empty() {
+            print!("{}", String::from_utf8_lossy(&out.stdout));
+        }
+        if !git_quiet && !out.stderr.is_empty() {
+            eprint!("{}", String::from_utf8_lossy(&out.stderr));
+        }
+    };
 
-        match output {
-            Ok(out) if out.status.success() => {
-                if !git_quiet && !out.stdout.is_empty() {
-                    print!("{}", String::from_utf8_lossy(&out.stdout));
-                }
-                if !git_quiet && !out.stderr.is_empty() {
-                    eprint!("{}", String::from_utf8_lossy(&out.stderr));
-                }
+    match fetch_and_rebase(base_cmd, repo, false) {
+        Ok(out) if out.status.success() => echo(&out),
+        Ok(out) => {
+            let stderr_text = String::from_utf8_lossy(&out.stderr);
+            if !stderr_text.is_empty() {
+                eprint!("{}", stderr_text);
             }
-            Ok(out) => {
-                let stderr_text = String::from_utf8_lossy(&out.stderr);
-                if i == 1 {
-                    outcome = PushOutcome::Rejected(stderr_text.into_owned());
-                    continue;
-                }
-                if !stderr_text.is_empty() {
-                    eprint!("{}", stderr_text);
-                }
-                // A pull that stopped in a conflict has left a rebase in progress
-                // and HEAD detached. Pushing from there only fails, in a cascade
-                // of errors that never mention the conflict.
-                if has_unmerged_paths(base_cmd) {
-                    eprintln!(
-                        "\nThe pull after committing hit a conflict with changes pushed since, \
-                         so nothing was pushed. Your commit is safe, but not yet published."
-                    );
-                    print_rebase_conflict_help();
-                    return PushOutcome::Stopped;
-                }
-                // Pull failed — surface a suggested fix without blocking the push,
-                // since in many cases (leftover rebase state, no upstream changes)
-                // the push still goes through fine.
-                diagnose_pull_failure(&stderr_text, quiet);
+            // A rebase that stopped in a conflict is still in progress, with
+            // HEAD detached. Pushing from there only fails, in a cascade of
+            // errors that never mention the conflict.
+            if has_unmerged_paths(base_cmd) {
+                eprintln!(
+                    "\nThe pull after committing hit a conflict with changes pushed since, \
+                     so nothing was pushed. Your commit is safe, but not yet published."
+                );
+                print_rebase_conflict_help();
+                return PushOutcome::Stopped;
             }
-            Err(e) => {
-                eprintln!("Git command failed: {}", e);
-                if i == 1 { outcome = PushOutcome::Rejected(String::new()); }
-            }
+            // Surface a suggested fix without blocking the push, since in many
+            // cases (leftover rebase state, no upstream changes) the push still
+            // goes through fine.
+            diagnose_pull_failure(&stderr_text, quiet);
+        }
+        Err(e) => eprintln!("Git command failed: {}", e),
+    }
+
+    match git_command(base_cmd).args(repo.push).output() {
+        Ok(out) if out.status.success() => echo(&out),
+        Ok(out) => {
+            outcome = PushOutcome::Rejected(String::from_utf8_lossy(&out.stderr).into_owned());
+        }
+        Err(e) => {
+            eprintln!("Git command failed: {}", e);
+            outcome = PushOutcome::Rejected(String::new());
         }
     }
     outcome
@@ -1547,6 +1593,11 @@ fn diagnose_pull_failure(stderr_text: &str, quiet: bool) {
         eprintln!("    git rebase --abort          # if so, abort it");
         eprintln!("    # If the directory is stale and 'abort' says no rebase in progress:");
         eprintln!("    rm -fr .git/rebase-merge");
+    } else if stderr_text.contains("no upstream") || stderr_text.contains("does not point to a branch") {
+        // `git pull` printed the fix itself; `git rebase` states the fact and
+        // stops, so the fix is said here.
+        eprintln!("\nPull failed: this branch has no upstream to rebase onto. Suggested fix:");
+        eprintln!("    git branch --set-upstream-to=origin/<branch>   # or: git checkout <branch>");
     } else if stderr_text.contains("rebase-apply") {
         eprintln!("\nPull failed: leftover rebase-apply / am state. Suggested fix:");
         eprintln!("    git am --abort              # or: git rebase --abort");
@@ -1637,9 +1688,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
         }
     }
     for attempt in 1..=PUSH_RETRIES {
-        let Ok(output) = git_command(base_cmd)
-            .args(["pull", "--rebase", "--autostash"])
-            .output() else {
+        let Ok(output) = fetch_and_rebase(base_cmd, repo, true) else {
             eprintln!("Rebase failed to execute. Run manually:");
             eprintln!("    git pull --rebase --autostash && git push");
             return false;
@@ -1653,7 +1702,7 @@ fn rebase_and_retry_push(base_cmd: &[String], repo: &RepoDefinition, quiet: bool
             let has_conflict = stderr_text.contains("CONFLICT")
                 || stderr_text.contains("could not apply")
                 || stderr_text.contains("Merge conflict");
-            let no_upstream = stderr_text.contains("no upstream branch")
+            let no_upstream = stderr_text.contains("no upstream")
                 || stderr_text.contains("no tracking information");
             eprintln!("\nRebase failed. Suggested fix:");
             if no_upstream {
@@ -1819,11 +1868,7 @@ pub fn commit_changes(
         }
 
         // Pull latest before committing to avoid orphaned commits from post-commit rebase
-        let _ = Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
-            .args(repo.pull)
-            .arg("--autostash")
-            .output();
+        let _ = fetch_and_rebase(base_cmd, repo, true);
 
         // `commit -a` below stages everything in the tree. If the pull left a
         // conflict, that is the markers -- committed and then pushed, with
@@ -1932,11 +1977,7 @@ pub fn commit_changes(
             }
 
             // Pull latest before committing to avoid orphaned commits from post-commit rebase
-            let _ = Command::new(&base_cmd[0])
-                .args(&base_cmd[1..])
-                .args(repo.pull)
-                .arg("--autostash")
-                .output();
+            let _ = fetch_and_rebase(base_cmd, repo, true);
 
             if has_unmerged_paths(base_cmd) {
                 report_unresolved_merge(base_cmd);

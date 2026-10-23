@@ -3748,6 +3748,72 @@ fn test_pull_and_push_rebases_onto_a_clean_change() {
 }
 
 #[test]
+fn test_the_sync_before_a_push_does_not_go_through_git_pull() {
+    // `git pull --rebase` fetches, writes FETCH_HEAD, then reads it back to
+    // find what to rebase onto, and refuses when two refs there are marked for
+    // merge: "fatal: Cannot rebase onto multiple branches". FETCH_HEAD is
+    // shared and unlocked, so easylist hit exactly that when another of the
+    // scripts looping over the same clone fetched inside the window; raced
+    // against one concurrent fetch, the pull failed 59 times in 60. Fetching
+    // and then rebasing onto the upstream ref reads a ref instead of that
+    // file, and the window is gone: 0 failures in the same 60.
+    //
+    // Neither half of that is testable directly. The race needs a second
+    // process inside a sub-millisecond window, and every state this test could
+    // set up beforehand -- a FETCH_HEAD carrying two merge heads -- is
+    // overwritten by the sync's own fetch before anything reads it, so it
+    // passes either way. Naming two merge refs in config reaches the same
+    // refusal without a race, but there `git push` refuses too ("the current
+    // branch main has multiple upstream branches"), so it holds no release
+    // either. What is left to hold is the shape: the sync must not be a
+    // `git pull`, that being the command which reads FETCH_HEAD back.
+    use crate::fop_git::{pull_and_push, PushOutcome};
+    let (remote, clone) = remote_and_clone("pp-shape");
+    let log = clone.0.join("git-argv.log");
+    let wrapper = clone.0.join("git-wrapper.sh");
+    std::fs::write(
+        &wrapper,
+        format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\nexec git \"$@\"\n", log.display()),
+    )
+    .unwrap();
+    std::process::Command::new("chmod").arg("+x").arg(&wrapper).status().unwrap();
+
+    clone.write("list.txt", "! Title: t\n||a.com^\n||b.com^\n||c.com^\n");
+    clone.git(&["commit", "-qam", "mine"]);
+    push_from_elsewhere(&remote, "pp-shape-other", "other.txt", "y\n");
+
+    // The same base command the program builds, with git swapped for the
+    // wrapper -- which logs its arguments and delegates, so this is the real
+    // sync, not a simulation of one.
+    let base = vec![
+        wrapper.display().to_string(),
+        "-C".into(),
+        clone.0.display().to_string(),
+    ];
+    assert!(matches!(pull_and_push(&base, &crate::fop_git::GIT, true, true), PushOutcome::Pushed));
+    assert_eq!(
+        remote.git(&["log", "--format=%s", "main"]).lines().collect::<Vec<_>>(),
+        ["mine", "elsewhere", "init"],
+        "the rebase did not happen, or the push did not land"
+    );
+
+    let argv = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = argv.lines().map(|l| l.trim_start_matches(&format!("-C {} ", clone.0.display()))).collect();
+    assert!(
+        !lines.iter().any(|l| l.starts_with("pull")),
+        "the sync went through git pull, which reads FETCH_HEAD back: {:?}",
+        lines
+    );
+    assert!(lines.iter().any(|l| l.starts_with("fetch")), "nothing was fetched: {:?}", lines);
+    assert!(
+        lines.iter().any(|l| l.starts_with("rebase") && l.contains("@{upstream}")),
+        "nothing was rebased onto the upstream: {:?}",
+        lines
+    );
+    assert!(lines.iter().any(|l| l.starts_with("push")), "nothing was pushed: {:?}", lines);
+}
+
+#[test]
 fn test_repo_config_may_not_run_or_write_outside() {
     // A .fopconfig in the working directory may be a pull request's: it may
     // not choose the program run as git, nor aim a write outside the tree.
