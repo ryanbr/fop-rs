@@ -2,7 +2,7 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
-## [Unreleased]
+## [6.1.1] - 2026-10-24
 
 - Take `rustyline` 19 and the nine compatible updates on offer, and hold `similar` at 2 again. rustyline 19 is the only major bump worth having: it compiles unchanged, the lock file stays at 57 packages with the same crates behind it -- `nix` 0.31, `radix_trie`, `home`, `utf8parse` and the rest, nothing added -- and the binary grows 64 bytes. The commit prompt was driven over a pipe to cover `DefaultEditor::new` and `readline`, which prompted, accepted a comment, committed and pushed; arrow-key history on a real terminal remains the one path nothing here can exercise. `similar` 3.2.0 is held for the reason 6.1.0 held 3.0, re-measured rather than taken from the note: 3,403,664 bytes against 2,997,904, so 405,760 bytes and 13.5% of the binary `install.js` downloads, for no behaviour anyone has asked for. The rest are routine -- `cc` 1.4.7 to 1.10.0, `libc` 0.2.189 to 0.2.191, `zerocopy` 0.8.57 to 0.8.63 and six others. Output is byte-identical to released 6.1.0 across AdguardFilters and uAssets with the same warnings, 200 tests pass, clippy is clean.
 
