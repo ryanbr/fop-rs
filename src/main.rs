@@ -315,6 +315,8 @@ struct Args {
     no_commit: bool,
     /// Skip uBO to ABP option conversion
     no_ubo_convert: bool,
+    /// Keep a domain another entry in the same list already covers
+    no_drop_covered_domains: bool,
     /// Skip commit message format validation
     no_msg_check: bool,
     /// Disable IGNORE_FILES and IGNORE_DIRS checks
@@ -443,6 +445,34 @@ struct Args {
     file_overrides: ahash::AHashMap<String, FileOverrides>,
 }
 
+/// The sort settings a run's arguments ask for. Its own function so a test
+/// can hold the mapping; `file_config` builds each file's config from it.
+fn sort_config_from(args: &Args) -> SortConfig<'_> {
+    SortConfig {
+        convert_ubo: !args.no_ubo_convert,
+        drop_covered_domains: !args.no_drop_covered_domains,
+        no_sort: args.no_sort,
+        alt_sort: args.alt_sort,
+        parse_adguard: args.parse_adguard,
+        localhost: args.localhost,
+        comment_chars: &args.comment_chars,
+        backup: args.backup,
+        keep_empty_lines: args.keep_empty_lines,
+        ignore_dot_domains: args.ignore_dot_domains,
+        abp_convert: args.abp_convert,
+        adguard_convert: args.adguard_convert,
+        convert_trusted: args.convert_trusted,
+        fix_typos: args.fix_typos,
+        ignore_line_minimum: args.ignore_line_minimum,
+        quiet: args.quiet,
+        no_color: args.no_color,
+        dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed || args.benchmark,
+        output_changed: args.output_changed,
+        add_timestamp: !args.add_timestamp.is_empty(),
+        benchmark: args.benchmark,
+    }
+}
+
 /// Per-file configuration overrides from [filename] sections
 #[derive(Debug, Clone, Default)]
 struct FileOverrides {
@@ -453,6 +483,7 @@ struct FileOverrides {
     add_checksum: Option<bool>,
     add_timestamp: Option<bool>,
     no_ubo_convert: Option<bool>,
+    no_drop_covered_domains: Option<bool>,
     abp_convert: Option<bool>,
     adguard_convert: Option<bool>,
     convert_trusted: Option<bool>,
@@ -477,6 +508,7 @@ impl FileOverrides {
         if let Some(v) = self.adguard_convert { config.adguard_convert = v; }
         if let Some(v) = self.convert_trusted { config.convert_trusted = v; }
         if let Some(v) = self.no_ubo_convert { config.convert_ubo = !v; }
+        if let Some(v) = self.no_drop_covered_domains { config.drop_covered_domains = !v; }
         if let Some(true) = self.add_timestamp { config.add_timestamp = true; }
     }
 }
@@ -492,6 +524,7 @@ fn apply_file_override(entry: &mut FileOverrides, key: &str, value: &str) {
         "add-checksum" => entry.add_checksum = Some(b),
         "add-timestamp" => entry.add_timestamp = Some(b),
         "no-ubo-convert" => entry.no_ubo_convert = Some(b),
+        "no-drop-covered-domains" => entry.no_drop_covered_domains = Some(b),
         "abp-convert" => entry.abp_convert = Some(b),
         "adguard-convert" => entry.adguard_convert = Some(b),
         "convert-trusted" => entry.convert_trusted = Some(b),
@@ -661,6 +694,7 @@ impl Args {
             directories: Vec::new(),
             no_commit: parse_bool(&config, "no-commit", false),
             no_ubo_convert: parse_bool(&config, "no-ubo-convert", false),
+            no_drop_covered_domains: parse_bool(&config, "no-drop-covered-domains", false),
             no_msg_check: parse_bool(&config, "no-msg-check", false),
             disable_ignored: parse_bool(&config, "disable-ignored", false),
             abp_convert: parse_bool(&config, "abp-convert", false),
@@ -776,6 +810,7 @@ impl Args {
                 "-V" | "--version" => args.version = true,
                 "-n" | "--no-commit" | "--just-sort" | "--justsort" => args.no_commit = true,
                 "--no-ubo-convert" => args.no_ubo_convert = true,
+                "--no-drop-covered-domains" => args.no_drop_covered_domains = true,
                 "--no-msg-check" => args.no_msg_check = true,
                 "--disable-ignored" => args.disable_ignored = true,
                 "--no-sort" => args.no_sort = true,
@@ -1055,6 +1090,7 @@ impl Args {
         println!("    -n, --no-commit     Just sort files, skip Git commit prompts");
         println!("        --just-sort     Alias for --no-commit");
         println!("        --no-ubo-convert  Skip uBO to ABP option conversion");
+        println!("        --no-drop-covered-domains  Keep a domain another entry in the list already covers");
         println!("        --no-msg-check  Skip commit message format validation (M:/A:/P:)");
         println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
@@ -1173,6 +1209,7 @@ impl Args {
         println!("  pr-show-changes = {}", self.pr_show_changes);
         println!("  check-banned-list = {:?}", self.check_banned_list);
         println!("  no-ubo-convert  = {}", self.no_ubo_convert);
+        println!("  no-drop-covered-domains = {}", self.no_drop_covered_domains);
         println!("  no-msg-check    = {}", self.no_msg_check);
         println!("  disable-ignored = {}", self.disable_ignored);
         println!("  no-sort         = {}", self.no_sort);
@@ -1247,6 +1284,7 @@ impl Args {
                 if let Some(v) = overrides.add_checksum { println!("    add-checksum = {}", v); }
                 if let Some(v) = overrides.add_timestamp { println!("    add-timestamp = {}", v); }
                 if let Some(v) = overrides.no_ubo_convert { println!("    no-ubo-convert = {}", v); }
+                if let Some(v) = overrides.no_drop_covered_domains { println!("    no-drop-covered-domains = {}", v); }
                 if let Some(v) = overrides.abp_convert { println!("    abp-convert = {}", v); }
                 if let Some(v) = overrides.adguard_convert { println!("    adguard-convert = {}", v); }
                 if let Some(v) = overrides.convert_trusted { println!("    convert-trusted = {}", v); }
@@ -2341,6 +2379,7 @@ fn process_location(
     let file_config = |path: &Path| -> SortConfig {
         let mut config = SortConfig {
             convert_ubo: sort_config.convert_ubo,
+            drop_covered_domains: sort_config.drop_covered_domains,
             no_sort: sort_config.no_sort,
             alt_sort: sort_config.alt_sort,
             parse_adguard: is_adguard_file(path, sort_config.parse_adguard, parse_adguard_files),
@@ -2997,28 +3036,7 @@ fn main() {
     };
 
     // Build sort config
-    let sort_config = SortConfig {
-        convert_ubo: !args.no_ubo_convert,
-        no_sort: args.no_sort,
-        alt_sort: args.alt_sort,
-        parse_adguard: args.parse_adguard,
-        localhost: args.localhost,
-        comment_chars: &args.comment_chars,
-        backup: args.backup,
-        keep_empty_lines: args.keep_empty_lines,
-        ignore_dot_domains: args.ignore_dot_domains,
-        abp_convert: args.abp_convert,
-        adguard_convert: args.adguard_convert,
-        convert_trusted: args.convert_trusted,
-        fix_typos: args.fix_typos,
-        ignore_line_minimum: args.ignore_line_minimum,
-        quiet: args.quiet,
-        no_color: args.no_color,
-        dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed || args.benchmark,
-        output_changed: args.output_changed,
-        add_timestamp: !args.add_timestamp.is_empty(),
-        benchmark: args.benchmark,
-    };
+    let sort_config = sort_config_from(&args);
 
     let diff_output: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 

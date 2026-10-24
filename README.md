@@ -6,7 +6,7 @@ A Rust port of the EasyList FOP tool for sorting and cleaning ad-blocking filter
 
 - **Filter sorting**: Alphabetically sorts blocking rules and element hiding rules
 - **Domain combining**: Merges rules with identical selectors/patterns but different domains
-- **Covered subdomains**: Drops a domain another entry in the same list already covers, since a rule on `domain.com` applies to every host under it: `sub.domain.com##.ad` beside `domain.com##.ad` leaves `domain.com##.ad`. An exclusion keeps its entry, so `domain.com,~sub.domain.com` is untouched
+- **Covered subdomains**: Drops a domain another entry in the same list already covers, since a rule on `domain.com` applies to every host under it: `sub.domain.com##.ad` beside `domain.com##.ad` leaves `domain.com##.ad`. An exclusion keeps its entry, so `domain.com,~sub.domain.com` is untouched. `--no-drop-covered-domains` turns it off
 - **Option normalization**: Converts uBO-specific options to standard ABP format (can be disabled)
 - **Wildcard cleanup**: Removes unnecessary wildcards from filters
 - **Validation**: Removes invalid/overly-broad rules (TLD-only, too short, etc.)
@@ -81,6 +81,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `-n, --no-commit` | Just sort files, skip Git commit prompts |
 | `--just-sort` | Alias for `--no-commit` |
 | `--no-ubo-convert` | Skip uBO to ABP option conversion (keep `xhr`, `3p`, `1p`, etc.) |
+| `--no-drop-covered-domains` | Keep a domain another entry in the same list already covers, instead of dropping it |
 | `--no-msg-check` | Skip commit message format validation (M:/A:/P:) |
 | `--disable-ignored` | Disable hardcoded ignored files and folders for testing |
 | `--no-sort` | Don't sort rules, just combine |
@@ -156,6 +157,9 @@ no-commit = false
 
 # Skip uBO to ABP option conversion
 no-ubo-convert = false
+
+# Keep a domain another entry in the same list already covers
+no-drop-covered-domains = false
 
 # Skip commit message format validation
 no-msg-check = false
@@ -295,7 +299,7 @@ add-checksum = true
 add-timestamp = true
 ```
 
-Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`, `ignore-line-minimum`.
+Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`, `ignore-line-minimum`, `no-drop-covered-domains`.
 
 ### Commit Message URL Masking
 

@@ -338,6 +338,10 @@ pub fn is_tld_only(line: &str) -> bool {
 /// Configuration for sorting operations
 pub struct SortConfig<'a> {
     pub convert_ubo: bool,
+    /// Drop a domain another entry in the same list already covers.
+    /// `--no-drop-covered-domains` turns it off and leaves every entry as
+    /// written.
+    pub drop_covered_domains: bool,
     pub no_sort: bool,
     pub alt_sort: bool,
     /// Convert ABP extended selectors to uBO format
@@ -984,8 +988,9 @@ fn has_regex_pattern(filter: &str) -> bool {
     pattern.len() > 1 && pattern.starts_with('/') && pattern.ends_with('/')
 }
 
-/// Sort and clean filter options.
-pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
+/// Sort and clean filter options. `drop_covered` says whether to drop a
+/// `domain=` entry another entry in the same list already covers.
+pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool, drop_covered: bool) -> String {
     // Skip filters with regex values in options (contain =/.../ patterns)
     // ||example.com$removeparam=/^\\$ja=/
     // ||example.com$removeparam=/regex/
@@ -1184,7 +1189,9 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                     .collect();
 
                 sort_domains(&mut unique_domains);
-                drop_covered_domains(&mut unique_domains);
+                if drop_covered {
+                    drop_covered_domains(&mut unique_domains);
+                }
 
                 final_options.push(format!("domain={}", unique_domains.join("|")));
             }
@@ -1255,8 +1262,14 @@ pub(crate) const EXTENDED_PSEUDO: [&str; 23] = [
     ":matches-css-after(",
 ];
 
-/// Sort domains and clean element hiding rules
-pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
+/// Sort domains and clean element hiding rules. `drop_covered` says whether
+/// to drop a domain another entry in the same list already covers.
+pub(crate) fn element_tidy(
+    domains: &str,
+    separator: &str,
+    selector: &str,
+    drop_covered: bool,
+) -> String {
     let selector = selector.trim();
     let mut domains = domains.to_ascii_lowercase();
 
@@ -1297,7 +1310,9 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
 
         sort_domains(&mut valid_domains);
         valid_domains.dedup();
-        drop_covered_domains(&mut valid_domains);
+        if drop_covered {
+            drop_covered_domains(&mut valid_domains);
+        }
         domains = valid_domains.join(",");
     }
 
@@ -1925,20 +1940,22 @@ pub(crate) fn combine_filters(
     uncombined: Vec<String>,
     domain_pattern: &Regex,
     separator: &str,
+    drop_covered: bool,
 ) -> Vec<String> {
     // No combining needed for single filter
     if uncombined.len() <= 1 {
         return uncombined;
     }
     if !TRACK_CHANGES.load(std::sync::atomic::Ordering::Relaxed) {
-        return combine_filters_linear(uncombined, domain_pattern, separator);
+        return combine_filters_linear(uncombined, domain_pattern, separator, drop_covered);
     }
     // Recorded locally and handed over once: one lock per call, not per step
     let room = SORT_CHANGES
         .lock()
         .map_or(0, |changes| PR_CHANGES_SHOWN.saturating_sub(changes.domains_combined.len()));
     let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
-    let combined = combine_filters_recorded(uncombined, domain_pattern, separator, &mut record);
+    let combined =
+        combine_filters_recorded(uncombined, domain_pattern, separator, drop_covered, &mut record);
     if record.count > 0 {
         with_tracked_changes(|changes| {
             // Other files may have filled it since
@@ -1965,6 +1982,7 @@ pub(crate) fn combine_filters_recorded(
     mut uncombined: Vec<String>,
     domain_pattern: &Regex,
     separator: &str,
+    drop_covered: bool,
     record: &mut CombineRecord,
 ) -> Vec<String> {
     let mut combined: Vec<String> = Vec::with_capacity(uncombined.len());
@@ -1980,8 +1998,13 @@ pub(crate) fn combine_filters_recorded(
             // The line at `i` may be one a merge wrote, and handing it over
             // would otherwise lose that: left unmerged there, it would come
             // back as an input line and never be pruned.
-            let merged =
-                combine_filters_linear_from(rest, domain_pattern, separator, merged_into[i]);
+            let merged = combine_filters_linear_from(
+                rest,
+                domain_pattern,
+                separator,
+                drop_covered,
+                merged_into[i],
+            );
             record.count += rest_len - merged.len();
             combined.extend(merged);
             break;
@@ -1997,7 +2020,7 @@ pub(crate) fn combine_filters_recorded(
             }
         }
         let line = std::mem::take(&mut uncombined[i]);
-        combined.push(if merged_into[i] {
+        combined.push(if merged_into[i] && drop_covered {
             prune_line(line, domain_pattern, separator)
         } else {
             line
@@ -2248,8 +2271,9 @@ pub(crate) fn combine_filters_linear(
     uncombined: Vec<String>,
     domain_pattern: &Regex,
     separator: &str,
+    drop_covered: bool,
 ) -> Vec<String> {
-    combine_filters_linear_from(uncombined, domain_pattern, separator, false)
+    combine_filters_linear_from(uncombined, domain_pattern, separator, drop_covered, false)
 }
 
 /// `combine_filters_linear`, told whether the first rule is itself a line
@@ -2258,6 +2282,7 @@ fn combine_filters_linear_from(
     mut uncombined: Vec<String>,
     domain_pattern: &Regex,
     separator: &str,
+    drop_covered: bool,
     first_is_merged: bool,
 ) -> Vec<String> {
     let lines = {
@@ -2310,13 +2335,16 @@ fn combine_filters_linear_from(
         .map(|line| match line {
             MergedLine::Original(idx) => {
                 let line = std::mem::take(&mut uncombined[idx]);
-                if idx == 0 && first_is_merged {
+                if idx == 0 && first_is_merged && drop_covered {
                     prune_line(line, domain_pattern, separator)
                 } else {
                     line
                 }
             }
-            MergedLine::New(line) => prune_line(line, domain_pattern, separator),
+            MergedLine::New(line) if drop_covered => {
+                prune_line(line, domain_pattern, separator)
+            }
+            MergedLine::New(line) => line,
         })
         .collect()
 }
@@ -2431,7 +2459,11 @@ pub(crate) fn tidy_rule<'a>(line: &'a str, config: &SortConfig) -> Cow<'a, str> 
         return Cow::Borrowed(line);
     }
     if line.starts_with('/') && REGEX_ELEMENT_PATTERN.is_match(line) {
-        return Cow::Owned(filter_tidy(line, config.convert_ubo));
+        return Cow::Owned(filter_tidy(
+            line,
+            config.convert_ubo,
+            config.drop_covered_domains,
+        ));
     }
     let element_caps = if !may_be_element_rule(line, config.parse_adguard) {
         None
@@ -2444,7 +2476,12 @@ pub(crate) fn tidy_rule<'a>(line: &'a str, config: &SortConfig) -> Cow<'a, str> 
     };
     let mut tidied = match element_caps {
         Some(caps) => {
-            let mut tidied = element_tidy(&caps[1].to_ascii_lowercase(), &caps[2], &caps[3]);
+            let mut tidied = element_tidy(
+                &caps[1].to_ascii_lowercase(),
+                &caps[2],
+                &caps[3],
+                config.drop_covered_domains,
+            );
             if config.abp_convert || config.adguard_convert {
                 tidied = convert_selectors(&tidied, config.abp_convert, config.adguard_convert);
             }
@@ -2455,7 +2492,7 @@ pub(crate) fn tidy_rule<'a>(line: &'a str, config: &SortConfig) -> Cow<'a, str> 
             }
             tidied
         }
-        None => filter_tidy(line, config.convert_ubo),
+        None => filter_tidy(line, config.convert_ubo, config.drop_covered_domains),
     };
     if config.fix_typos {
         let (fixed, fixes) = fop_typos::fix_all_typos(&tidied);
@@ -2572,7 +2609,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                          no_sort: bool,
                          alt_sort: bool,
                          localhost: bool,
-                         parse_adguard: bool|
+                         parse_adguard: bool,
+                         drop_covered: bool|
      -> io::Result<()> {
         if section.is_empty() {
             return Ok(());
@@ -2636,7 +2674,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             } else {
                 &*ELEMENT_DOMAIN_PATTERN
             };
-            let combined = combine_filters(merged, combine_pattern, ",");
+            let combined = combine_filters(merged, combine_pattern, ",", drop_covered);
             for filter in combined {
                 write!(output, "{}\n", filter)?;
             }
@@ -2645,7 +2683,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             if !no_sort {
                 unique.sort_by(|a, b| cmp_ascii_case_insensitive(a, b));
             }
-            let combined = combine_filters(unique, &FILTER_DOMAIN_PATTERN, "|");
+            let combined = combine_filters(unique, &FILTER_DOMAIN_PATTERN, "|", drop_covered);
             for filter in combined {
                 write!(output, "{}\n", filter)?;
             }
@@ -2674,6 +2712,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 config.alt_sort,
                 localhost,
                 config.parse_adguard,
+                config.drop_covered_domains,
             )?;
             lines_checked = 1;
             filter_lines = 0;
@@ -2709,6 +2748,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                         config.alt_sort,
                         localhost,
                         config.parse_adguard,
+                        config.drop_covered_domains,
                     )?;
                     lines_checked = 1;
                     filter_lines = 0;
@@ -2739,6 +2779,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     config.alt_sort,
                     localhost,
                     config.parse_adguard,
+                    config.drop_covered_domains,
                 )?;
                 lines_checked = 1;
                 filter_lines = 0;
@@ -2792,7 +2833,11 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
 
         // Handle regex domain rules (uBO) - pass through unchanged
         if line.starts_with('/') && REGEX_ELEMENT_PATTERN.is_match(line) {
-            section.push(filter_tidy(line, config.convert_ubo));
+            section.push(filter_tidy(
+                line,
+                config.convert_ubo,
+                config.drop_covered_domains,
+            ));
             continue;
         }
 
@@ -2816,7 +2861,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 lines_checked += 1;
             }
 
-            let mut tidied = element_tidy(&domains, separator, selector);
+            let mut tidied =
+                element_tidy(&domains, separator, selector, config.drop_covered_domains);
 
             // Convert extended selectors between syntaxes
             if config.abp_convert || config.adguard_convert {
@@ -2932,7 +2978,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             lines_checked += 1;
         }
 
-        let mut tidied = filter_tidy(line, config.convert_ubo);
+        let mut tidied = filter_tidy(line, config.convert_ubo, config.drop_covered_domains);
 
         // Fix typos if enabled (network rules)
         if config.fix_typos {
@@ -2962,6 +3008,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             config.alt_sort,
             localhost,
             config.parse_adguard,
+            config.drop_covered_domains,
         )?;
     }
 

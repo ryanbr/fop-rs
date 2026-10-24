@@ -12,9 +12,22 @@ use crate::fop_sort::is_tld_only;
 use crate::fop_datestamp::{is_timestamp_line, is_version_line};
 
 use crate::fop_sort::{
-    convert_ubo_options, filter_tidy, is_localhost_entry, localhost_domain,
-    malformed_rule_reason, remove_unnecessary_wildcards, sort_domains,
+    convert_ubo_options, is_localhost_entry, localhost_domain, malformed_rule_reason,
+    remove_unnecessary_wildcards, sort_domains,
 };
+
+/// The sorter always says whether to drop a domain the list already covers,
+/// from `--no-drop-covered-domains`. A test that is not about that passes
+/// through here and gets the default, which is to drop it; the ones that are
+/// call `fop_sort`'s own function and say.
+fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
+    crate::fop_sort::filter_tidy(filter_in, convert_ubo, true)
+}
+
+/// `element_tidy` with the default, as `filter_tidy` above.
+fn element_tidy(domains: &str, separator: &str, selector: &str) -> String {
+    crate::fop_sort::element_tidy(domains, separator, selector, true)
+}
 
 // =============================================================================
 // Main.rs Tests
@@ -983,7 +996,6 @@ fn test_filter_tidy_ancestor_marker() {
 
 #[test]
 fn test_a_domain_covers_its_subdomains_in_one_list() {
-    use crate::fop_sort::element_tidy;
     // domain.com applies to every host under it, so the longer entry carries
     // nothing of its own, whichever order the two are written in.
     assert_eq!(element_tidy("sub.domain.com,domain.com", "##", ".ad"), "domain.com##.ad");
@@ -1001,7 +1013,6 @@ fn test_a_domain_covers_its_subdomains_in_one_list() {
 
 #[test]
 fn test_an_exclusion_is_what_a_subdomain_entry_is_for() {
-    use crate::fop_sort::element_tidy;
     // The rule does not apply on the subdomain, so the entry has to stay
     assert_eq!(
         element_tidy("domain.com,~sub.domain.com", "##", ".ad"),
@@ -1023,7 +1034,6 @@ fn test_an_exclusion_is_what_a_subdomain_entry_is_for() {
 
 #[test]
 fn test_an_entry_labels_cannot_settle_takes_no_part() {
-    use crate::fop_sort::element_tidy;
     // `domain.*` matches a host under any public suffix, which comparing
     // labels does not predict, so an entry that looks to sit under one is
     // left where it is
@@ -1062,7 +1072,6 @@ fn test_an_entry_labels_cannot_settle_takes_no_part() {
 
 #[test]
 fn test_a_network_domain_list_drops_covered_entries() {
-    use crate::fop_sort::filter_tidy;
     assert_eq!(
         filter_tidy("||ads.com^$domain=sub.domain.com|domain.com", false),
         "||ads.com^$domain=domain.com"
@@ -1087,6 +1096,7 @@ fn test_two_rules_merge_onto_the_domain_that_covers_both() {
             ],
             &crate::ELEMENT_DOMAIN_PATTERN,
             ",",
+            true,
         ),
         vec!["domain.com##.ddfdsfsd"]
     );
@@ -1101,6 +1111,7 @@ fn test_two_rules_merge_onto_the_domain_that_covers_both() {
             ],
             &crate::ELEMENT_DOMAIN_PATTERN,
             ",",
+            true,
         ),
         vec!["domain.com,other.com##.ad"]
     );
@@ -1110,8 +1121,128 @@ fn test_two_rules_merge_onto_the_domain_that_covers_both() {
             vec!["sub.domain.com##.one".to_string(), "domain.com##.two".to_string()],
             &crate::ELEMENT_DOMAIN_PATTERN,
             ",",
+            true,
         ),
         vec!["sub.domain.com##.one", "domain.com##.two"]
+    );
+}
+
+#[test]
+fn test_the_prune_can_be_turned_off() {
+    // `--no-drop-covered-domains` reaches all three places a covered domain
+    // is dropped, and changes nothing else about the line.
+    use crate::fop_sort::{combine_filters, element_tidy, filter_tidy};
+    // A rule's own list
+    assert_eq!(
+        element_tidy("sub.domain.com,domain.com", "##", ".ad", false),
+        "domain.com,sub.domain.com##.ad"
+    );
+    // A network `domain=` list
+    assert_eq!(
+        filter_tidy("||ads.com^$domain=sub.domain.com|domain.com", false, false),
+        "||ads.com^$domain=domain.com|sub.domain.com"
+    );
+    // The line a merge wrote
+    assert_eq!(
+        combine_filters(
+            vec![
+                "subdomain.domain.com##.ddfdsfsd".to_string(),
+                "domain.com##.ddfdsfsd".to_string(),
+            ],
+            &crate::ELEMENT_DOMAIN_PATTERN,
+            ",",
+            false,
+        ),
+        vec!["domain.com,subdomain.domain.com##.ddfdsfsd"]
+    );
+    // Everything else the tidy does still happens
+    assert_eq!(
+        element_tidy("B.com,a.com", "##", "div  >  p", false),
+        "a.com,b.com##div > p"
+    );
+}
+
+#[test]
+fn test_the_flag_reaches_the_sort_config() {
+    // The command line's side of the option: the default drops, and
+    // `--no-drop-covered-domains` is what turns it off.
+    let default = crate::Args::default();
+    assert!(
+        crate::sort_config_from(&default).drop_covered_domains,
+        "the default is to drop"
+    );
+    let opted_out = crate::Args { no_drop_covered_domains: true, ..Default::default() };
+    assert!(!crate::sort_config_from(&opted_out).drop_covered_domains);
+}
+
+#[test]
+fn test_a_file_section_can_keep_covered_domains() {
+    // `no-drop-covered-domains` as a per-file option: a `[list.txt]` section
+    // reaches the config the file is sorted with, so one file in a tree can
+    // opt out while the rest do not.
+    let chars = vec!["!".to_string()];
+    let mut config = test_sort_config(&chars);
+    assert!(config.drop_covered_domains, "the default is to drop");
+    let mut overrides = crate::FileOverrides::default();
+    crate::apply_file_override(&mut overrides, "no-drop-covered-domains", "true");
+    overrides.apply_to(&mut config);
+    assert!(!config.drop_covered_domains);
+    // ... and the option says what it says, rather than merely being present
+    let mut back = crate::FileOverrides::default();
+    crate::apply_file_override(&mut back, "no-drop-covered-domains", "false");
+    back.apply_to(&mut config);
+    assert!(config.drop_covered_domains);
+}
+
+#[test]
+fn test_sort_drops_covered_domains_unless_the_config_says_not_to() {
+    // The flag end to end: the same file sorted both ways, so what the
+    // option is wired to is the sort itself and not just the helpers.
+    let chars = vec!["!".to_string()];
+    let dir = std::env::temp_dir().join(format!("fop-test-covered-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let written = |drop_covered: bool| -> Vec<String> {
+        let mut config = test_sort_config(&chars);
+        config.drop_covered_domains = drop_covered;
+        let file = dir.join("list.txt");
+        std::fs::write(
+            &file,
+            "[Adblock Plus 2.0]\n! Title: t\nsubdomain.domain.com##.ddfdsfsd\n\
+             domain.com##.ddfdsfsd\nmail.ru,lady.mail.ru##.banner\n\
+             ||ads.com^$domain=sub.other.com|other.com\n",
+        )
+        .unwrap();
+        crate::fop_sort::fop_sort(&file, &config).unwrap();
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .lines()
+            .skip(2)
+            .map(str::to_string)
+            .collect()
+    };
+    let dropped = written(true);
+    let kept = written(false);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(
+        dropped,
+        vec![
+            "mail.ru##.banner",
+            "domain.com##.ddfdsfsd",
+            "||ads.com^$domain=other.com",
+        ],
+        "{:?}",
+        dropped
+    );
+    assert_eq!(
+        kept,
+        vec![
+            "lady.mail.ru,mail.ru##.banner",
+            "domain.com,subdomain.domain.com##.ddfdsfsd",
+            "||ads.com^$domain=other.com|sub.other.com",
+        ],
+        "{:?}",
+        kept
     );
 }
 
@@ -1121,7 +1252,6 @@ fn test_two_rules_merge_onto_the_domain_that_covers_both() {
 
 #[test]
 fn test_attribute_selector_tilde_equals_preserved() {
-    use crate::fop_sort::element_tidy;
     
     // ~= means "attribute contains word" - should NOT add spaces
     let result = element_tidy("lowendtalk.com", "##", "#Panel a[rel~=\"sponsored\"]");
@@ -1130,7 +1260,6 @@ fn test_attribute_selector_tilde_equals_preserved() {
 
 #[test]
 fn test_attribute_selector_alt_tilde() {
-    use crate::fop_sort::element_tidy;
     
     let result = element_tidy("example.com", "##", "div[alt~=\"Ad\"]");
     assert!(result.contains("[alt~=\"Ad\"]"), "~= should be preserved, got: {}", result);
@@ -1142,7 +1271,6 @@ fn test_attribute_selector_alt_tilde() {
 
 #[test]
 fn test_star_not_preserved() {
-    use crate::fop_sort::element_tidy;
     
     let result = element_tidy("em.com.br", "##", "div > * > *:not(.comment-header)");
     assert!(result.contains("*:not("), "* before :not() should be preserved, got: {}", result);
@@ -1150,7 +1278,6 @@ fn test_star_not_preserved() {
 
 #[test]
 fn test_star_has_preserved() {
-    use crate::fop_sort::element_tidy;
     
     let result = element_tidy("example.com", "##", "div > *:has(.ad)");
     assert!(result.contains("*:has("), "* before :has() should be preserved, got: {}", result);
@@ -1162,7 +1289,6 @@ fn test_star_has_preserved() {
 
 #[test]
 fn test_has_with_attribute_selectors() {
-    use crate::fop_sort::element_tidy;
     
     // :has() with attribute selectors inside - should be preserved exactly
     let result = element_tidy("tripadvisor.com", "##", "div:has(> div[class=\"ui_columns is-multiline \"])");
@@ -1172,7 +1298,6 @@ fn test_has_with_attribute_selectors() {
 
 #[test]
 fn test_abp_extended_selectors() {
-    use crate::fop_sort::element_tidy;
     
     // :-abp-contains should be preserved
     let result = element_tidy("kijiji.ca", "#?#", "[data-testid^=\"listing-card-list-item-\"]:-abp-contains(TOP AD)");
@@ -1181,7 +1306,6 @@ fn test_abp_extended_selectors() {
 
 #[test]
 fn test_escaped_tailwind_classes() {
-    use crate::fop_sort::element_tidy;
     
     // Escaped brackets and colons in Tailwind-style classes
     let result = element_tidy("theepochtimes.com", "##", ".bg-\\[\\#f8f8f8\\]");
@@ -1194,7 +1318,6 @@ fn test_escaped_tailwind_classes() {
 
 #[test]
 fn test_adjacent_sibling_with_universal() {
-    use crate::fop_sort::element_tidy;
     
     // + * should be preserved (adjacent sibling with universal selector)
     let result = element_tidy("filecrypt.cc,filecrypt.co", "##", ".hghspd + *");
@@ -1203,7 +1326,6 @@ fn test_adjacent_sibling_with_universal() {
 
 #[test]
 fn test_attribute_selectors() {
-    use crate::fop_sort::element_tidy;
     
     // Various attribute selector types
     let result = element_tidy("example.com", "##", "[class$=\"-ad\"]");
@@ -1215,7 +1337,6 @@ fn test_attribute_selectors() {
 
 #[test]
 fn test_complex_has_selectors() {
-    use crate::fop_sort::element_tidy;
     
     // Complex :has() with nested attribute selectors
     let result = element_tidy("twitter.com,x.com", "##", "div[data-testid=\"cellInnerDiv\"] > div > div[class] > div[class][data-testid=\"placementTracking\"]");
@@ -1224,7 +1345,6 @@ fn test_complex_has_selectors() {
 
 #[test]
 fn test_has_with_href_contains() {
-    use crate::fop_sort::element_tidy;
     
     // :has() with href contains
     let result = element_tidy("wayfair.com", "##", "div[data-hb-id=\"Grid.Item\"]:has(a[href*=\"&sponsoredid=\"])");
@@ -1238,7 +1358,6 @@ fn test_has_with_href_contains() {
 
 #[test]
 fn test_adguard_js_injection_preserved() {
-    use crate::fop_sort::element_tidy;
 
     // #%# JS injection - selector preserved, domains sorted
     let result = element_tidy("z.com,a.com", "#%#", "//scriptlet('prevent-window-open')");
@@ -1248,7 +1367,6 @@ fn test_adguard_js_injection_preserved() {
 
 #[test]
 fn test_adguard_js_injection_braces_preserved() {
-    use crate::fop_sort::element_tidy;
 
     // #%# with JS braces - should be preserved exactly
     let result = element_tidy("example.com", "#%#", "(()=>{ window.test = true; })();");
@@ -1257,7 +1375,6 @@ fn test_adguard_js_injection_braces_preserved() {
 
 #[test]
 fn test_adguard_css_injection_preserved() {
-    use crate::fop_sort::element_tidy;
 
     // #$# CSS injection - selector preserved
     let result = element_tidy("example.com", "#$#", ".ad { display: none !important; }");
@@ -1266,7 +1383,6 @@ fn test_adguard_css_injection_preserved() {
 
 #[test]
 fn test_adguard_extended_css_preserved() {
-    use crate::fop_sort::element_tidy;
 
     // #$?# extended CSS injection - selector preserved
     let result = element_tidy("z.com,a.com", "#$?#", "div[style*=\"position: fixed\"] { remove: true; }");
@@ -1276,7 +1392,6 @@ fn test_adguard_extended_css_preserved() {
 
 #[test]
 fn test_adguard_html_filtering_preserved() {
-    use crate::fop_sort::element_tidy;
 
     // $$ HTML filtering - selector preserved, domains sorted
     let result = element_tidy("z.com,a.com", "$$", "script[tag-content=\"adConfig\"]");
@@ -1286,7 +1401,6 @@ fn test_adguard_html_filtering_preserved() {
 
 #[test]
 fn test_adguard_html_filtering_complex() {
-    use crate::fop_sort::element_tidy;
 
     // $$ with wildcard and min/max-length
     let result = element_tidy("site.com", "$$", "script[wildcard=\"*function*break;case*\"][min-length=\"25000\"][max-length=\"100000\"]");
@@ -1296,7 +1410,6 @@ fn test_adguard_html_filtering_complex() {
 
 #[test]
 fn test_adguard_exception_separators() {
-    use crate::fop_sort::element_tidy;
 
     // Exception variants
     let result = element_tidy("example.com", "#@$#", ".ad { display: none; }");
@@ -2297,7 +2410,6 @@ fn test_requestheader_is_known() {
 
 #[test]
 fn test_header_option_values_keep_their_spaces() {
-    use crate::fop_sort::filter_tidy;
     // `filter_tidy` strips whitespace from network rules, which is right for
     // `|| x .com ^` and wrong for a header value: `content-type:text/html;
     // charset=utf-8` means something different without its space.
@@ -2372,7 +2484,6 @@ fn test_abp_snippet_body_is_not_a_selector() {
 
 #[test]
 fn test_addheader_keeps_its_spaces() {
-    use crate::fop_sort::filter_tidy;
     // Cookie attributes are space-separated; stripping them rewrites the
     // header the rule sets.
     let rule = "||crazyshit.com^$addheader=response:set-cookie:__trx1_p=c; path=/; max-age=21600";
@@ -2391,7 +2502,6 @@ fn test_addheader_keeps_its_spaces() {
 
 #[test]
 fn test_regex_group_colon_is_not_a_pseudo_class() {
-    use crate::fop_sort::element_tidy;
     let tidy = |sel: &str| element_tidy("a.com", "#?#", sel);
     // `(?:` and `(?i:` open regex groups, so the `:` is not a pseudo-class.
     // AdGuard's BaseFilter carries this rule, and lowercasing the group's
@@ -2420,7 +2530,6 @@ fn test_regex_group_colon_is_not_a_pseudo_class() {
 
 #[test]
 fn test_contains_argument_is_left_alone() {
-    use crate::fop_sort::element_tidy;
     let tidy = |sel: &str| element_tidy("a.com", "#?#", sel);
     // `+` inside a `:contains()` argument is a regex quantifier or literal
     // text, not a sibling combinator. Padding it with spaces changed what
@@ -2438,7 +2547,6 @@ fn test_contains_argument_is_left_alone() {
 
 #[test]
 fn test_escaped_colon_is_not_a_pseudo_class() {
-    use crate::fop_sort::element_tidy;
     let tidy = |sel: &str| element_tidy("a.com", "##", sel);
     // `\:` is a literal colon in an id, and ids are case-sensitive. AdGuard's
     // ChineseFilter carries `###js\:cookies\:barInitWrapper`, which fop was
@@ -2459,7 +2567,6 @@ fn test_escaped_colon_is_not_a_pseudo_class() {
 
 #[test]
 fn test_adguard_noop_modifier_survives() {
-    use crate::fop_sort::filter_tidy;
     use crate::fop_rules::check_rule;
     // AdGuard's noop modifier is a run of underscores, used to keep a long
     // rule readable. The `_` -> `-` normalisation meant for option names like
@@ -2487,7 +2594,6 @@ fn test_adguard_noop_modifier_survives() {
 
 #[test]
 fn test_matches_attr_is_extended() {
-    use crate::fop_sort::element_tidy;
     // uBO's :matches-attr() takes literal/regex arguments, like the rest of
     // the matches-* family already in the extended list.
     for sel in [
@@ -2864,6 +2970,7 @@ fn test_ci_diff_base_uses_the_fork_point() {
 fn test_sort_config(comment_chars: &[String]) -> crate::fop_sort::SortConfig<'_> {
     crate::fop_sort::SortConfig {
         convert_ubo: true,
+        drop_covered_domains: true,
         no_sort: false,
         alt_sort: false,
         abp_convert: false,
@@ -2907,6 +3014,7 @@ fn test_tidy_rule_matches_the_sorter() {
         ("adguard_convert", crate::fop_sort::SortConfig { adguard_convert: true, ..test_sort_config(&chars) }),
         ("convert_trusted", crate::fop_sort::SortConfig { convert_trusted: true, ..test_sort_config(&chars) }),
         ("no_ubo_convert", crate::fop_sort::SortConfig { convert_ubo: false, ..test_sort_config(&chars) }),
+        ("no_drop_covered_domains", crate::fop_sort::SortConfig { drop_covered_domains: false, ..test_sort_config(&chars) }),
     ];
     let _ = &base;
     for (name, config) in &configs {
@@ -3120,7 +3228,7 @@ fn test_tidy_rule_is_silent() {
     let leaked = crate::WARNING_BUFFER.lock().unwrap().iter().any(|w| w.contains(marker));
     // The same work done by the sorter's own path does warn, so the assertion
     // above is not passing merely because nothing warns.
-    let _ = crate::fop_sort::element_tidy(&format!("a.b,{}", marker), "##", ".ad");
+    let _ = crate::fop_sort::element_tidy(&format!("a.b,{}", marker), "##", ".ad", true);
     let warned = crate::WARNING_BUFFER.lock().unwrap().iter().any(|w| w.contains(marker));
     assert!(!leaked, "tidy_rule printed a warning the sort will print again");
     assert!(warned, "element_tidy no longer warns, so this test proves nothing");
@@ -3241,7 +3349,7 @@ fn test_combine_filters_cosmetic_pinned() {
         ("single", pinned(&["a.com##.ad"]), pinned(&["a.com##.ad"])),
         ("empty", pinned(&[]), pinned(&[])),
     ] {
-        assert_eq!(combine_filters(input, el, ","), expected, "cosmetic case: {}", name);
+        assert_eq!(combine_filters(input, el, ",", true), expected, "cosmetic case: {}", name);
     }
 }
 
@@ -3260,7 +3368,7 @@ fn test_combine_filters_network_pinned() {
         ("no domain option", pinned(&["||x^$script", "||x^$script,domain=a.com"]), pinned(&["||x^$script", "||x^$script,domain=a.com"])),
         ("chain with a list", pinned(&["||x^$domain=c.com", "||x^$domain=a.com|b.com", "||x^$domain=d.com"]), pinned(&["||x^$domain=a.com|b.com|c.com|d.com"])),
     ] {
-        assert_eq!(combine_filters(input, net, "|"), expected, "network case: {}", name);
+        assert_eq!(combine_filters(input, net, "|", true), expected, "network case: {}", name);
     }
 }
 
@@ -3272,7 +3380,7 @@ fn test_combine_filters_records_each_pairwise_step() {
     let el = &*crate::ELEMENT_DOMAIN_PATTERN;
     let record_of = |group: Vec<String>, room: usize| {
         let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
-        let out = combine_filters_recorded(group, el, ",", &mut record);
+        let out = combine_filters_recorded(group, el, ",", true, &mut record);
         (out, record)
     };
     let (out, record) = record_of(pinned(&["c.pin7.test##.step", "a.pin7.test##.step", "b.pin7.test##.step"]), 40);
@@ -3318,7 +3426,7 @@ fn test_combine_filters_tracking_is_capped() {
     let el = &*crate::ELEMENT_DOMAIN_PATTERN;
     TRACK_CHANGES.store(true, Relaxed);
     let group: Vec<String> = (0..50).map(|i| format!("d{:02}.pin9.test##.cap", 49 - i)).collect();
-    let out = combine_filters(group, el, ",");
+    let out = combine_filters(group, el, ",", true);
     TRACK_CHANGES.store(false, Relaxed);
     let domains: Vec<String> = (0..50).map(|i| format!("d{:02}.pin9.test", i)).collect();
     assert_eq!(out, vec![format!("{}##.cap", domains.join(","))]);
@@ -3354,7 +3462,7 @@ fn test_pr_changes_counts_unlisted_merges() {
 fn test_pr_changes_lists_the_subdomains_dropped() {
     // The drop is recorded where it happens -- in a rule's own list and in a
     // line the merge wrote -- and reaches the PR description from both.
-    use crate::fop_sort::{combine_filters, element_tidy, SORT_CHANGES, TRACK_CHANGES};
+    use crate::fop_sort::{combine_filters, SORT_CHANGES, TRACK_CHANGES};
     use std::sync::atomic::Ordering::Relaxed;
     let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let body = {
@@ -3365,6 +3473,7 @@ fn test_pr_changes_lists_the_subdomains_dropped() {
             vec!["sub.pin10.test##.cap".to_string(), "pin10.test##.cap".to_string()],
             &crate::ELEMENT_DOMAIN_PATTERN,
             ",",
+            true,
         );
         assert_eq!(out, vec!["pin10.test##.cap"]);
         // ... and from one rule's own list
@@ -3399,7 +3508,9 @@ fn test_pr_changes_lists_the_subdomains_dropped() {
     assert!(body.contains("- `sub.pin10.test` covered by `pin10.test`"), "{}", body);
     // What the description lists is capped; the count covers them all
     assert_eq!(recorded.len(), crate::fop_sort::PR_CHANGES_SHOWN, "{}", recorded.len());
-    assert_eq!(counted, 47, "{}", counted);
+    // `>=`, as the merges test does: this turns the global record on, so a
+    // test running beside it can land a drop of its own in the count.
+    assert!(counted >= 47, "{}", counted);
 }
 
 #[test]
@@ -3781,11 +3892,14 @@ fn test_combine_filters_linear_matches_reference() {
             let pruned = combine_filters_reference(group.clone(), pattern, separator, true);
             merged_groups += usize::from(merged.len() < group.len());
             pruned_groups += usize::from(pruned != merged);
-            assert_eq!(combine_filters_linear(group.clone(), pattern, separator), pruned, "linear: {:?}", group);
+            assert_eq!(combine_filters_linear(group.clone(), pattern, separator, true), pruned, "linear: {:?}", group);
+            // ... and with the prune turned off, the merge as it stands
+            assert_eq!(combine_filters_linear(group.clone(), pattern, separator, false), merged, "kept: {:?}", group);
             // The tracked path, recording some or all of its steps
             let room = [0, 1, 2, usize::MAX][case % 4];
             let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
-            let recorded = combine_filters_recorded(group.clone(), pattern, separator, &mut record);
+            let recorded =
+                combine_filters_recorded(group.clone(), pattern, separator, true, &mut record);
             assert_eq!(recorded, pruned, "recorded, room {}: {:?}", room, group);
             assert_eq!(record.count, group.len() - merged.len(), "count, room {}: {:?}", room, group);
             // The prune may shorten a list, never drop a line
@@ -3793,7 +3907,7 @@ fn test_combine_filters_linear_matches_reference() {
             assert_eq!(record.steps.len(), room.min(record.count), "steps, room {}: {:?}", room, group);
             // What the sorter writes
             assert_eq!(
-                combine_filters(group.clone(), pattern, separator),
+                combine_filters(group.clone(), pattern, separator, true),
                 pruned,
                 "dispatched: {:?}",
                 group
@@ -3832,7 +3946,7 @@ fn test_combine_filters_linear_large_group() {
         // Rules with and without exclusions only merge among themselves,
         // so a handful of lines, not one
         assert!(expected.len() < 10, "{} lines", expected.len());
-        assert_eq!(combine_filters_linear(group, pattern, separator), expected);
+        assert_eq!(combine_filters_linear(group, pattern, separator, true), expected);
     }
 }
 
@@ -4317,11 +4431,11 @@ fn test_html_filter_is_not_read_as_options() {
     ];
     let rewritten: Vec<&str> = untouched
         .iter()
-        .filter(|rule| crate::fop_sort::filter_tidy(rule, true) != **rule)
+        .filter(|rule| crate::fop_sort::filter_tidy(rule, true, true) != **rule)
         .copied()
         .collect();
     // A network rule's unknown option is still worth saying
-    crate::fop_sort::filter_tidy("||example.com^$scirpt", true);
+    crate::fop_sort::filter_tidy("||example.com^$scirpt", true, true);
     let (selector_warnings, option_warning) = (
         warned_about("amp-consent") || warned_about("advertisement-module"),
         warned_about("scirpt"),
