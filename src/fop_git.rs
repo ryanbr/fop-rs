@@ -48,6 +48,7 @@ pub fn format_pr_changes() -> String {
         let estimated = (changes.typos_fixed.len() 
             + changes.domains_combined.len()
             + changes.has_text_merged.len()
+            + changes.domains_covered.len()
             + changes.duplicates_removed.len()) * 100;
         let mut body = String::with_capacity(estimated.min(8000));
 
@@ -85,6 +86,19 @@ pub fn format_pr_changes() -> String {
             body.push('\n');
         }
         
+        if !changes.domains_covered.is_empty() {
+            body.push_str("## Subdomains Dropped\n\n");
+            for (dropped, cover) in changes.domains_covered.iter().take(MAX_ITEMS) {
+                let _ = writeln!(body, "- `{}` covered by `{}`", dropped, cover);
+            }
+            // Only the listed drops are kept; the count covers them all
+            let shown = changes.domains_covered.len().min(MAX_ITEMS);
+            if changes.domains_covered_count > shown {
+                let _ = writeln!(body, "- ... and {} more", changes.domains_covered_count - shown);
+            }
+            body.push('\n');
+        }
+
         if !changes.duplicates_removed.is_empty() {
             body.push_str("## Duplicates Removed\n\n");
             for dup in changes.duplicates_removed.iter().take(MAX_ITEMS) {

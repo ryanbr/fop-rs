@@ -978,6 +978,144 @@ fn test_filter_tidy_ancestor_marker() {
 }
 
 // =============================================================================
+// Covered Subdomain Tests
+// =============================================================================
+
+#[test]
+fn test_a_domain_covers_its_subdomains_in_one_list() {
+    use crate::fop_sort::element_tidy;
+    // domain.com applies to every host under it, so the longer entry carries
+    // nothing of its own, whichever order the two are written in.
+    assert_eq!(element_tidy("sub.domain.com,domain.com", "##", ".ad"), "domain.com##.ad");
+    assert_eq!(element_tidy("domain.com,sub.domain.com", "##", ".ad"), "domain.com##.ad");
+    // A chain collapses onto the shortest entry
+    assert_eq!(element_tidy("a.b.c.com,b.c.com,c.com", "##", ".ad"), "c.com##.ad");
+    // Only where one really is under the other: a shared tail of bytes is
+    // not a shared tail of labels
+    assert_eq!(
+        element_tidy("notdomain.com,domain.com", "##", ".ad"),
+        "domain.com,notdomain.com##.ad"
+    );
+    assert_eq!(element_tidy("other.com,domain.com", "##", ".ad"), "domain.com,other.com##.ad");
+}
+
+#[test]
+fn test_an_exclusion_is_what_a_subdomain_entry_is_for() {
+    use crate::fop_sort::element_tidy;
+    // The rule does not apply on the subdomain, so the entry has to stay
+    assert_eq!(
+        element_tidy("domain.com,~sub.domain.com", "##", ".ad"),
+        "domain.com,~sub.domain.com##.ad"
+    );
+    // ... and a host under that exclusion puts the rule back on
+    assert_eq!(
+        element_tidy("domain.com,~sub.domain.com,deep.sub.domain.com", "##", ".ad"),
+        "deep.sub.domain.com,domain.com,~sub.domain.com##.ad"
+    );
+    // Two exclusions, where the outer already excludes everything the inner does
+    assert_eq!(element_tidy("~domain.com,~sub.domain.com", "##", ".ad"), "~domain.com##.ad");
+    // A domain listed both ways settles nothing about what sits under it
+    assert_eq!(
+        element_tidy("domain.com,~domain.com,sub.domain.com", "##", ".ad"),
+        "domain.com,~domain.com,sub.domain.com##.ad"
+    );
+}
+
+#[test]
+fn test_an_entry_labels_cannot_settle_takes_no_part() {
+    use crate::fop_sort::element_tidy;
+    // `domain.*` matches a host under any public suffix, which comparing
+    // labels does not predict, so an entry that looks to sit under one is
+    // left where it is
+    assert_eq!(element_tidy("domain.*,sub.domain.*", "##", ".ad"), "domain.*,sub.domain.*##.ad");
+    // An AdGuard ancestor-context marker is not a plain host restriction
+    assert_eq!(
+        element_tidy("domain.com>>,sub.domain.com>>", "##", ".ad"),
+        "domain.com>>,sub.domain.com>>##.ad"
+    );
+    // Nor is an entry carrying a path, which the cosmetic domain check lets
+    // through
+    assert_eq!(
+        element_tidy("domain.com/a,sub.domain.com/a", "##", ".ad"),
+        "domain.com/a,sub.domain.com/a##.ad"
+    );
+    // Across shapes nothing is covered either way: the marked and the plain
+    // entry are different hosts, and neither reads as the other's ancestor
+    assert_eq!(
+        element_tidy("domain.*,sub.domain.com", "##", ".ad"),
+        "domain.*,sub.domain.com##.ad"
+    );
+    assert_eq!(
+        element_tidy("domain.com>>,sub.domain.com", "##", ".ad"),
+        "domain.com>>,sub.domain.com##.ad"
+    );
+    assert_eq!(
+        element_tidy("domain.com,sub.domain.com>>", "##", ".ad"),
+        "domain.com,sub.domain.com>>##.ad"
+    );
+    // The rest of the list is still judged around them
+    assert_eq!(
+        element_tidy("domain.*,other.com,sub.other.com", "##", ".ad"),
+        "domain.*,other.com##.ad"
+    );
+}
+
+#[test]
+fn test_a_network_domain_list_drops_covered_entries() {
+    use crate::fop_sort::filter_tidy;
+    assert_eq!(
+        filter_tidy("||ads.com^$domain=sub.domain.com|domain.com", false),
+        "||ads.com^$domain=domain.com"
+    );
+    assert_eq!(
+        filter_tidy("||ads.com^$domain=domain.com|~sub.domain.com", false),
+        "||ads.com^$domain=domain.com|~sub.domain.com"
+    );
+}
+
+#[test]
+fn test_two_rules_merge_onto_the_domain_that_covers_both() {
+    use crate::fop_sort::combine_filters;
+    // A selector restricted to a subdomain, and the same selector added for
+    // the domain above it: one rule out, and it is the shorter entry that
+    // stays.
+    assert_eq!(
+        combine_filters(
+            vec![
+                "subdomain.domain.com##.ddfdsfsd".to_string(),
+                "domain.com##.ddfdsfsd".to_string(),
+            ],
+            &crate::ELEMENT_DOMAIN_PATTERN,
+            ",",
+        ),
+        vec!["domain.com##.ddfdsfsd"]
+    );
+    // A longer run, which goes through the linear path inside
+    assert_eq!(
+        combine_filters(
+            vec![
+                "a.domain.com##.ad".to_string(),
+                "b.domain.com##.ad".to_string(),
+                "domain.com##.ad".to_string(),
+                "other.com##.ad".to_string(),
+            ],
+            &crate::ELEMENT_DOMAIN_PATTERN,
+            ",",
+        ),
+        vec!["domain.com,other.com##.ad"]
+    );
+    // A selector the other rule does not carry keeps its own line
+    assert_eq!(
+        combine_filters(
+            vec!["sub.domain.com##.one".to_string(), "domain.com##.two".to_string()],
+            &crate::ELEMENT_DOMAIN_PATTERN,
+            ",",
+        ),
+        vec!["sub.domain.com##.one", "domain.com##.two"]
+    );
+}
+
+// =============================================================================
 // Attribute Selector Tests (preserve ~=)
 // =============================================================================
 
@@ -3212,6 +3350,82 @@ fn test_pr_changes_counts_unlisted_merges() {
     assert!(body.contains("- ... and 5 more"), "{}", body);
 }
 
+#[test]
+fn test_pr_changes_lists_the_subdomains_dropped() {
+    // The drop is recorded where it happens -- in a rule's own list and in a
+    // line the merge wrote -- and reaches the PR description from both.
+    use crate::fop_sort::{combine_filters, element_tidy, SORT_CHANGES, TRACK_CHANGES};
+    use std::sync::atomic::Ordering::Relaxed;
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let body = {
+        let saved = std::mem::take(&mut *SORT_CHANGES.lock().unwrap());
+        TRACK_CHANGES.store(true, Relaxed);
+        // From the merge of two rules...
+        let out = combine_filters(
+            vec!["sub.pin10.test##.cap".to_string(), "pin10.test##.cap".to_string()],
+            &crate::ELEMENT_DOMAIN_PATTERN,
+            ",",
+        );
+        assert_eq!(out, vec!["pin10.test##.cap"]);
+        // ... and from one rule's own list
+        assert_eq!(
+            element_tidy("deep.pin11.test,pin11.test", "##", ".cap"),
+            "pin11.test##.cap"
+        );
+        // One list dropping more than the description lists, so the rest are
+        // counted: 45 here and 2 above, against the 40 kept
+        let mut many = vec!["pin12.test".to_string()];
+        many.extend((0..45).map(|i| format!("s{:02}.pin12.test", i)));
+        assert_eq!(element_tidy(&many.join(","), "##", ".cap"), "pin12.test##.cap");
+        TRACK_CHANGES.store(false, Relaxed);
+        let recorded = SORT_CHANGES.lock().unwrap().domains_covered.clone();
+        let counted = SORT_CHANGES.lock().unwrap().domains_covered_count;
+        let body = crate::fop_git::format_pr_changes();
+        *SORT_CHANGES.lock().unwrap() = saved;
+        (body, recorded, counted)
+    };
+    let (body, recorded, counted) = body;
+    assert!(
+        recorded.contains(&("sub.pin10.test".to_string(), "pin10.test".to_string())),
+        "{:?}",
+        recorded
+    );
+    assert!(
+        recorded.contains(&("deep.pin11.test".to_string(), "pin11.test".to_string())),
+        "{:?}",
+        recorded
+    );
+    assert!(body.contains("## Subdomains Dropped"), "{}", body);
+    assert!(body.contains("- `sub.pin10.test` covered by `pin10.test`"), "{}", body);
+    // What the description lists is capped; the count covers them all
+    assert_eq!(recorded.len(), crate::fop_sort::PR_CHANGES_SHOWN, "{}", recorded.len());
+    assert_eq!(counted, 47, "{}", counted);
+}
+
+#[test]
+fn test_pr_changes_counts_unlisted_subdomain_drops() {
+    // As for the merges: the listed drops are kept, the rest are counted.
+    use crate::fop_sort::{SortChanges, SORT_CHANGES};
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let body = {
+        let mut changes = SORT_CHANGES.lock().unwrap();
+        let saved = std::mem::take(&mut *changes);
+        *changes = SortChanges {
+            domains_covered: (0..3)
+                .map(|i| (format!("s{}.a.test", i), "a.test".to_string()))
+                .collect(),
+            domains_covered_count: 10,
+            ..SortChanges::default()
+        };
+        drop(changes);
+        let body = crate::fop_git::format_pr_changes();
+        *SORT_CHANGES.lock().unwrap() = saved;
+        body
+    };
+    assert!(body.contains("- `s0.a.test` covered by `a.test`"), "{}", body);
+    assert!(body.contains("- ... and 7 more"), "{}", body);
+}
+
 /// combine_filters as it stood before the linear rewrite, verbatim apart
 /// from dropping the change record: the oracle both merge paths are held to.
 #[allow(clippy::all)]
@@ -3219,12 +3433,16 @@ fn combine_filters_reference(
     mut uncombined: Vec<String>,
     domain_pattern: &regex::Regex,
     separator: &str,
+    prune: bool,
 ) -> Vec<String> {
-    // No combining needed for single filter
+    // No combining needed for single filter, and nothing to prune: the one
+    // rule is an input line, pruned when it was tidied
     if uncombined.len() <= 1 {
         return uncombined;
     }
     let mut combined: Vec<String> = Vec::with_capacity(uncombined.len());
+    // Which lines the merge wrote, since those are the only ones pruned
+    let mut merged_into = vec![false; uncombined.len()];
 
     for i in 0..uncombined.len() {
         let domains1 = domain_pattern.captures(&uncombined[i]);
@@ -3255,7 +3473,13 @@ fn combine_filters_reference(
             || domains2.is_none()
             || domain1_str.is_empty()
         {
-            combined.push(std::mem::take(&mut uncombined[i]));
+            push_reference_line(
+            &mut combined,
+            std::mem::take(&mut uncombined[i]),
+            prune && merged_into[i],
+            domain_pattern,
+            separator,
+        );
             continue;
         }
 
@@ -3266,7 +3490,13 @@ fn combine_filters_reference(
             .unwrap_or("");
 
         if domain2_str.is_empty() {
-            combined.push(std::mem::take(&mut uncombined[i]));
+            push_reference_line(
+            &mut combined,
+            std::mem::take(&mut uncombined[i]),
+            prune && merged_into[i],
+            domain_pattern,
+            separator,
+        );
             continue;
         }
 
@@ -3279,7 +3509,13 @@ fn combine_filters_reference(
         // Check if domain patterns are compatible (same structure except domain list)
         let pattern1_with_domain2 = domains1_full.replace(domain1_str, domain2_str);
         if pattern1_with_domain2 != domains2_full {
-            combined.push(std::mem::take(&mut uncombined[i]));
+            push_reference_line(
+            &mut combined,
+            std::mem::take(&mut uncombined[i]),
+            prune && merged_into[i],
+            domain_pattern,
+            separator,
+        );
             continue;
         }
 
@@ -3288,7 +3524,13 @@ fn combine_filters_reference(
         let filter2_no_domain = domain_pattern.replace(&uncombined[i + 1], "");
 
         if filter1_no_domain != filter2_no_domain {
-            combined.push(std::mem::take(&mut uncombined[i]));
+            push_reference_line(
+            &mut combined,
+            std::mem::take(&mut uncombined[i]),
+            prune && merged_into[i],
+            domain_pattern,
+            separator,
+        );
             continue;
         }
 
@@ -3302,7 +3544,13 @@ fn combine_filters_reference(
         let domain2_only_excludes = domain2_exclude_count == domain2_total;
 
         if domain1_only_excludes != domain2_only_excludes {
-            combined.push(std::mem::take(&mut uncombined[i]));
+            push_reference_line(
+            &mut combined,
+            std::mem::take(&mut uncombined[i]),
+            prune && merged_into[i],
+            domain_pattern,
+            separator,
+        );
             continue;
         }
 
@@ -3343,11 +3591,88 @@ fn combine_filters_reference(
 
 
         uncombined[i + 1] = combined_filter;
+        merged_into[i + 1] = true;
 
         // Don't add current filter to combined - it will be processed as part of next iteration
     }
 
     combined
+}
+
+/// `combined.push`, pruning the line first where the sorter would.
+fn push_reference_line(
+    combined: &mut Vec<String>,
+    line: String,
+    prune: bool,
+    domain_pattern: &regex::Regex,
+    separator: &str,
+) {
+    combined.push(if prune {
+        drop_covered_reference(line, domain_pattern, separator)
+    } else {
+        line
+    });
+}
+
+/// drop_covered_domains over a line's domain list, stated the slow and
+/// obvious way: for each entry find the longest other entry it sits under,
+/// and drop it when that one carries the same `~`.
+fn drop_covered_reference(
+    line: String,
+    domain_pattern: &regex::Regex,
+    separator: &str,
+) -> String {
+    let plain =
+        |host: &str| !host.is_empty() && !host.ends_with(">>") && !host.contains(['*', '/', '~']);
+    let split = |entry: &str| match entry.strip_prefix('~') {
+        Some(host) => (host.to_string(), true),
+        None => (entry.to_string(), false),
+    };
+    {
+        {
+            let Some(list) = domain_pattern.captures(&line).and_then(|caps| caps.get(1)) else {
+                return line;
+            };
+            let entries: Vec<String> = list.as_str().split(separator).map(String::from).collect();
+            // A domain listed both ways leaves no ancestor polarity to read
+            let both_ways = entries.iter().any(|a| {
+                let (a_host, a_excluded) = split(a);
+                plain(&a_host)
+                    && entries.iter().any(|b| {
+                        let (b_host, b_excluded) = split(b);
+                        a_host == b_host && a_excluded != b_excluded
+                    })
+            });
+            let kept: Vec<&str> = entries
+                .iter()
+                .filter(|entry| {
+                    let (host, excluded) = split(entry);
+                    if both_ways || !plain(&host) {
+                        return true;
+                    }
+                    let mut nearest: Option<(usize, bool)> = None;
+                    for other in &entries {
+                        let (other_host, other_excluded) = split(other);
+                        if !plain(&other_host)
+                            || other_host == host
+                            || !host.ends_with(&format!(".{}", other_host))
+                        {
+                            continue;
+                        }
+                        if nearest.is_none_or(|(len, _)| other_host.len() > len) {
+                            nearest = Some((other_host.len(), other_excluded));
+                        }
+                    }
+                    !nearest.is_some_and(|(_, other_excluded)| other_excluded == excluded)
+                })
+                .map(|entry| entry.as_str())
+                .collect();
+            if kept.len() == entries.len() {
+                return line;
+            }
+            format!("{}{}{}", &line[..list.start()], kept.join(separator), &line[list.end()..])
+        }
+    }
 }
 
 /// Deterministic xorshift, so a failing case reproduces.
@@ -3366,12 +3691,19 @@ impl Xorshift {
     }
 }
 
-/// A domain list of 1-4 entries, mostly ordinary domains, sometimes the
+/// A domain list of 1-4 entries, mostly ordinary domains -- some of them
+/// under others, so that covered entries, exclusions that re-include a host
+/// and contradictory pairs all turn up -- and sometimes the
 /// shapes that send a rule down the pairwise path: `#`, `$`, `=` and the
 /// other separator bytes, repeated `~`, an entry that is also option text,
 /// and empty entries.
 fn fuzz_domains(rng: &mut Xorshift, separator: &str) -> String {
-    const ORDINARY: [&str; 9] = ["a.com", "b.com", "c.org", "d.net", "a.com", "~a.com", "~b.com", "~c.org", "x"];
+    const ORDINARY: [&str; 13] = [
+        "a.com", "b.com", "c.org", "d.net", "a.com", "~a.com", "~b.com", "~c.org", "x",
+        // Under a.com, so a list can hold an entry another covers, an entry
+        // an exclusion re-includes, and a domain listed both ways
+        "s.a.com", "~s.a.com", "deep.s.a.com", "s.b.com",
+    ];
     const AWKWARD: [&str; 11] = ["~~a.com", "a.com#", "a=b", "", "a$b", "~", "party", "script", "a?b", "a%b", "a@b"];
     let n = 1 + rng.next() % 4;
     (0..n)
@@ -3403,7 +3735,9 @@ fn fuzz_network_rule(rng: &mut Xorshift) -> String {
 
 #[test]
 fn test_combine_filters_linear_matches_reference() {
-    use crate::fop_sort::{combine_filters_linear, combine_filters_recorded, CombineRecord};
+    use crate::fop_sort::{
+        combine_filters, combine_filters_linear, combine_filters_recorded, CombineRecord,
+    };
     type FuzzCase<'a> = (&'a regex::Regex, &'a str, fn(&mut Xorshift) -> String);
     let patterns: [FuzzCase; 3] = [
         (&crate::ELEMENT_DOMAIN_PATTERN, ",", fuzz_element_rule),
@@ -3431,6 +3765,7 @@ fn test_combine_filters_linear_matches_reference() {
     };
     let mut rng = Xorshift(0x9e37_79b9_7f4a_7c15);
     let mut merged_groups = 0;
+    let mut pruned_groups = 0;
     let made_up = [(&overlapping, ",", overlap_rule), (&tailing, ",", tail_rule)];
     for (pattern, separator, rule) in patterns.into_iter().chain(made_up) {
         for case in 0..5_000 {
@@ -3440,20 +3775,36 @@ fn test_combine_filters_linear_matches_reference() {
             if case % 2 == 0 {
                 group.sort_by_cached_key(|s| pattern.replace(s, "").into_owned());
             }
-            let expected = combine_filters_reference(group.clone(), pattern, separator);
-            merged_groups += usize::from(expected.len() < group.len());
-            assert_eq!(combine_filters_linear(group.clone(), pattern, separator), expected, "linear: {:?}", group);
+            // The merge alone...
+            let merged = combine_filters_reference(group.clone(), pattern, separator, false);
+            // ... and the merge with its lines pruned, which is what is written
+            let pruned = combine_filters_reference(group.clone(), pattern, separator, true);
+            merged_groups += usize::from(merged.len() < group.len());
+            pruned_groups += usize::from(pruned != merged);
+            assert_eq!(combine_filters_linear(group.clone(), pattern, separator), pruned, "linear: {:?}", group);
             // The tracked path, recording some or all of its steps
             let room = [0, 1, 2, usize::MAX][case % 4];
             let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
             let recorded = combine_filters_recorded(group.clone(), pattern, separator, &mut record);
-            assert_eq!(recorded, expected, "recorded, room {}: {:?}", room, group);
-            assert_eq!(record.count, group.len() - expected.len(), "count, room {}: {:?}", room, group);
+            assert_eq!(recorded, pruned, "recorded, room {}: {:?}", room, group);
+            assert_eq!(record.count, group.len() - merged.len(), "count, room {}: {:?}", room, group);
+            // The prune may shorten a list, never drop a line
+            assert_eq!(pruned.len(), merged.len(), "the prune dropped a line: {:?}", group);
             assert_eq!(record.steps.len(), room.min(record.count), "steps, room {}: {:?}", room, group);
+            // What the sorter writes
+            assert_eq!(
+                combine_filters(group.clone(), pattern, separator),
+                pruned,
+                "dispatched: {:?}",
+                group
+            );
         }
     }
     // The fuzz must actually exercise merging, not just pass through
     assert!(merged_groups > 2_000, "only {} groups merged", merged_groups);
+    // ... and must reach lists holding a domain another covers, or the prune
+    // is being compared against itself doing nothing
+    assert!(pruned_groups > 500, "only {} groups pruned", pruned_groups);
 }
 
 #[test]
@@ -3477,7 +3828,7 @@ fn test_combine_filters_linear_large_group() {
                 shape.replace("{}", &domains.join(separator))
             })
             .collect();
-        let expected = combine_filters_reference(group.clone(), pattern, separator);
+        let expected = combine_filters_reference(group.clone(), pattern, separator, true);
         // Rules with and without exclusions only merge among themselves,
         // so a handful of lines, not one
         assert!(expected.len() < 10, "{} lines", expected.len());

@@ -6,6 +6,7 @@ A Rust port of the EasyList FOP tool for sorting and cleaning ad-blocking filter
 
 - **Filter sorting**: Alphabetically sorts blocking rules and element hiding rules
 - **Domain combining**: Merges rules with identical selectors/patterns but different domains
+- **Covered subdomains**: Drops a domain another entry in the same list already covers, since a rule on `domain.com` applies to every host under it: `sub.domain.com##.ad` beside `domain.com##.ad` leaves `domain.com##.ad`. An exclusion keeps its entry, so `domain.com,~sub.domain.com` is untouched
 - **Option normalization**: Converts uBO-specific options to standard ABP format (can be disabled)
 - **Wildcard cleanup**: Removes unnecessary wildcards from filters
 - **Validation**: Removes invalid/overly-broad rules (TLD-only, too short, etc.)

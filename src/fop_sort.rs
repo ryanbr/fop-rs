@@ -377,6 +377,8 @@ pub struct SortChanges {
     pub domains_combined: Vec<(Vec<String>, String)>,     // (original rules, combined rule), the first PR_CHANGES_SHOWN
     pub domains_combined_count: usize,                    // every merge step, recorded in full or not
     pub has_text_merged: Vec<(Vec<String>, String)>,      // (original rules, merged rule)
+    pub domains_covered: Vec<(String, String)>,           // (dropped domain, the entry covering it), the first PR_CHANGES_SHOWN
+    pub domains_covered_count: usize,                     // every drop, recorded in full or not
     pub duplicates_removed: ahash::AHashSet<String>,      // removed duplicate rules (deduped)
     pub banned_domains_found: Vec<(String, String, String)>,  // (domain, rule, file)
 }
@@ -535,6 +537,187 @@ pub(crate) fn sort_domains(domains: &mut [String]) {
         let b_has_marker = b_base.ends_with(">>");
         // base domain first; non-inverted before inverted; non-ancestor before ancestor
         (a_name, a_inv, a_has_marker).cmp(&(b_name, b_inv, b_has_marker))
+    });
+}
+
+/// Each entry of `entries` that another entry in the same list already
+/// covers, as (index, the entry covering it), in the order given. Empty when
+/// none is.
+///
+/// A cosmetic rule's domain, like a network rule's `domain=` entry, applies
+/// to the domain named and to every subdomain of it, so in
+/// `domain.com,sub.domain.com##.ad` the longer entry carries no host the
+/// shorter one does not. An exclusion is what gives a longer entry something
+/// of its own to say: `domain.com,~sub.domain.com` leaves the subdomain out,
+/// and `~sub.domain.com,deep.sub.domain.com` puts the rule back on one host
+/// under it. So the nearest listed ancestor decides, which is how a blocker
+/// resolves a host against the list to begin with: an entry is covered only
+/// when the closest entry above it carries the same `~`.
+///
+/// An entry whose hosts no label comparison can predict -- a wildcard
+/// (`example.*`), a regex, or an AdGuard ancestor-context marker
+/// (`example.com>>`) -- takes no part: it neither covers another entry nor
+/// is covered by one. The one list this refuses outright names a domain both
+/// ways (`a.com` and `~a.com`), where there is no ancestor polarity to read.
+fn covered_domains<S: AsRef<str>>(entries: &[S]) -> Vec<(usize, &str)> {
+    if entries.len() < 2 {
+        return Vec::new();
+    }
+    // An entry sits under another only by adding labels to it, so the entry
+    // covering it always holds fewer dots. A list whose entries all hold the
+    // same number can therefore cover nothing, which is most lists, and
+    // answering them takes one pass and no allocation.
+    let mut dots = None;
+    let mut varies = false;
+    for entry in entries {
+        let n = entry.as_ref().bytes().filter(|&b| b == b'.').count();
+        match dots {
+            None => dots = Some(n),
+            Some(first) => {
+                if first != n {
+                    varies = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !varies {
+        return Vec::new();
+    }
+    // host -> (the entry as written, whether it is an exclusion)
+    let mut listed: AHashMap<&str, (&str, bool)> = AHashMap::with_capacity(entries.len());
+    let mut any_subdomain = false;
+    for entry in entries {
+        let entry = entry.as_ref();
+        let (host, excluded) = entry.strip_prefix('~').map_or((entry, false), |h| (h, true));
+        if !plain_host(host) {
+            continue;
+        }
+        if let Some((_, was_excluded)) = listed.insert(host, (entry, excluded)) {
+            if was_excluded != excluded {
+                return Vec::new();
+            }
+        }
+        any_subdomain |= host.contains('.');
+    }
+    if !any_subdomain {
+        return Vec::new();
+    }
+
+    let mut covered = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        let entry = entry.as_ref();
+        let (host, excluded) = entry.strip_prefix('~').map_or((entry, false), |h| (h, true));
+        if !plain_host(host) {
+            continue;
+        }
+        // Up one label at a time. The first entry found is the nearest
+        // ancestor, and it settles the question whichever way it points.
+        let mut rest = host;
+        while let Some((_, parent)) = rest.split_once('.') {
+            if let Some(&(ancestor, ancestor_excluded)) = listed.get(parent) {
+                if ancestor_excluded == excluded {
+                    covered.push((i, ancestor));
+                }
+                break;
+            }
+            rest = parent;
+        }
+    }
+    covered
+}
+
+/// Whether `host` restricts a rule to a plain domain and its subdomains, so
+/// that comparing labels settles what it covers.
+fn plain_host(host: &str) -> bool {
+    !host.is_empty()
+        && !host.ends_with(">>")
+        && !host.bytes().any(|b| matches!(b, b'*' | b'/' | b'~'))
+}
+
+/// Drop from `domains` every entry another one already covers, recording
+/// what went where changes are tracked. Returns how many it dropped.
+///
+/// The list must already be sorted: which entry is named as the cover comes
+/// out the same either way, but a set's iteration order would otherwise
+/// decide the order the drops are recorded in.
+fn drop_covered_domains<S: AsRef<str>>(domains: &mut Vec<S>) -> usize {
+    let covered_at: Vec<usize> = {
+        let covered = covered_domains(domains.as_slice());
+        if covered.is_empty() {
+            return 0;
+        }
+        record_covered_domains(domains.as_slice(), &covered);
+        covered.into_iter().map(|(i, _)| i).collect()
+    };
+    let mut next = covered_at.iter().copied().peekable();
+    let mut i = 0;
+    domains.retain(|_| {
+        let covered = next.peek() == Some(&i);
+        if covered {
+            next.next();
+        }
+        i += 1;
+        !covered
+    });
+    covered_at.len()
+}
+
+/// Drop from a merged line the domains another entry in its own list covers.
+///
+/// Only a line a merge wrote comes here, and only once it is finished with.
+/// Pruning as the domains come together instead would not survive the two
+/// merge paths: the pairwise chain merges step by step and the linear path in
+/// one go, so a list that is prunable at one step but not at the next --
+/// `a.com,s.a.com` until a `~b.com` meets the `b.com` further along, which
+/// leaves no ancestor polarity to read -- would come out differently
+/// depending on which path ran, and which path runs is not something the
+/// output may depend on. Every other line is an input rule, pruned when it
+/// was tidied, so this costs one capture per line a merge produced rather
+/// than one per line written.
+fn prune_line(line: String, domain_pattern: &Regex, separator: &str) -> String {
+    match drop_covered_domains_in_line(&line, domain_pattern, separator) {
+        Cow::Borrowed(_) => line,
+        Cow::Owned(pruned) => pruned,
+    }
+}
+
+/// `prune_line` without the ownership, so it can say it changed nothing.
+fn drop_covered_domains_in_line<'a>(
+    line: &'a str,
+    domain_pattern: &Regex,
+    separator: &str,
+) -> Cow<'a, str> {
+    let Some(list) = domain_pattern.captures(line).and_then(|caps| caps.get(1)) else {
+        return Cow::Borrowed(line);
+    };
+    let mut domains: Vec<&str> = list.as_str().split(separator).collect();
+    if drop_covered_domains(&mut domains) == 0 {
+        return Cow::Borrowed(line);
+    }
+    let mut pruned = String::with_capacity(line.len());
+    pruned.push_str(&line[..list.start()]);
+    for (i, domain) in domains.iter().enumerate() {
+        if i > 0 {
+            pruned.push_str(separator);
+        }
+        pruned.push_str(domain);
+    }
+    pruned.push_str(&line[list.end()..]);
+    Cow::Owned(pruned)
+}
+
+/// Record dropped domains for the PR description, up to what it lists.
+fn record_covered_domains<S: AsRef<str>>(entries: &[S], covered: &[(usize, &str)]) {
+    with_tracked_changes(|changes| {
+        let room = PR_CHANGES_SHOWN.saturating_sub(changes.domains_covered.len());
+        changes.domains_covered.extend(
+            covered
+                .iter()
+                .take(room)
+                .map(|&(i, ancestor)| (entries[i].as_ref().to_string(), ancestor.to_string())),
+        );
+        changes.domains_covered_count += covered.len();
     });
 }
 
@@ -1001,6 +1184,7 @@ pub(crate) fn filter_tidy(filter_in: &str, convert_ubo: bool) -> String {
                     .collect();
 
                 sort_domains(&mut unique_domains);
+                drop_covered_domains(&mut unique_domains);
 
                 final_options.push(format!("domain={}", unique_domains.join("|")));
             }
@@ -1113,6 +1297,7 @@ pub(crate) fn element_tidy(domains: &str, separator: &str, selector: &str) -> St
 
         sort_domains(&mut valid_domains);
         valid_domains.dedup();
+        drop_covered_domains(&mut valid_domains);
         domains = valid_domains.join(",");
     }
 
@@ -1783,13 +1968,20 @@ pub(crate) fn combine_filters_recorded(
     record: &mut CombineRecord,
 ) -> Vec<String> {
     let mut combined: Vec<String> = Vec::with_capacity(uncombined.len());
+    // Which lines a merge wrote. Only those are pruned: every other line is
+    // an input rule, pruned already when it was tidied.
+    let mut merged_into = vec![false; uncombined.len()];
     for i in 0..uncombined.len() {
         if record.steps.len() >= record.room {
             // Nothing more will be listed: merge the rest in one pass. A chain
             // takes one step per rule merged away, so that is the count.
             let rest: Vec<String> = uncombined.drain(i..).collect();
             let rest_len = rest.len();
-            let merged = combine_filters_linear(rest, domain_pattern, separator);
+            // The line at `i` may be one a merge wrote, and handing it over
+            // would otherwise lose that: left unmerged there, it would come
+            // back as an input line and never be pruned.
+            let merged =
+                combine_filters_linear_from(rest, domain_pattern, separator, merged_into[i]);
             record.count += rest_len - merged.len();
             combined.extend(merged);
             break;
@@ -1800,10 +1992,16 @@ pub(crate) fn combine_filters_recorded(
                 record.steps.push((vec![uncombined[i].clone(), uncombined[i + 1].clone()], merged.clone()));
                 // The merged rule is tried against the next one in turn
                 uncombined[i + 1] = merged;
+                merged_into[i + 1] = true;
                 continue;
             }
         }
-        combined.push(std::mem::take(&mut uncombined[i]));
+        let line = std::mem::take(&mut uncombined[i]);
+        combined.push(if merged_into[i] {
+            prune_line(line, domain_pattern, separator)
+        } else {
+            line
+        });
     }
     combined
 }
@@ -2047,9 +2245,20 @@ enum MergeState<'a> {
 /// and rebuilding the line so far. A rule whose domains could make the
 /// shortcut differ takes the pairwise step instead (DomainRun::parse).
 pub(crate) fn combine_filters_linear(
+    uncombined: Vec<String>,
+    domain_pattern: &Regex,
+    separator: &str,
+) -> Vec<String> {
+    combine_filters_linear_from(uncombined, domain_pattern, separator, false)
+}
+
+/// `combine_filters_linear`, told whether the first rule is itself a line
+/// some earlier merge wrote, which the recorded path hands over mid-chain.
+fn combine_filters_linear_from(
     mut uncombined: Vec<String>,
     domain_pattern: &Regex,
     separator: &str,
+    first_is_merged: bool,
 ) -> Vec<String> {
     let lines = {
         let rules = uncombined.as_slice();
@@ -2096,9 +2305,18 @@ pub(crate) fn combine_filters_linear(
     };
     lines
         .into_iter()
+        // Every line here is finished, which is what makes pruning them
+        // safe to do one at a time
         .map(|line| match line {
-            MergedLine::Original(idx) => std::mem::take(&mut uncombined[idx]),
-            MergedLine::New(line) => line,
+            MergedLine::Original(idx) => {
+                let line = std::mem::take(&mut uncombined[idx]);
+                if idx == 0 && first_is_merged {
+                    prune_line(line, domain_pattern, separator)
+                } else {
+                    line
+                }
+            }
+            MergedLine::New(line) => prune_line(line, domain_pattern, separator),
         })
         .collect()
 }
