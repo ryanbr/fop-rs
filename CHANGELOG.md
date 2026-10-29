@@ -2,7 +2,7 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
-## [Unreleased]
+## [6.2.0] - 2026-10-29
 
 - Fail `--validate-checksum` on a file that has no checksum line. A file
   named to that flag is one the caller says carries a checksum, so holding
