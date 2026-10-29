@@ -4,6 +4,30 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Take the two compatible updates on offer and hold `similar` at 2 again.
+  `cargo update` moves `smallvec` 1.16.3 to 1.16.4 and `unicode-width` 0.2.2
+  to 0.2.3, both transitive, the lock file staying at 57 packages with the
+  same crates behind it and the binary losing 64 bytes (3,013,456 ->
+  3,013,392). Every other direct dependency is already at its newest release:
+  regex 1.13.1, walkdir 2.5.0, rustyline 19.0.0, rayon 1.12.0, ahash 0.8.12,
+  base64 0.23.1, md5 0.8.1, owo-colors 4.4.0, urlencoding 2.1.3 and mimalloc
+  0.1.52.
+
+  `similar` 3.2.1 is the one thing held back, and the cost was measured again
+  rather than carried over from 6.1.1's note: it compiles unchanged, but the
+  binary `install.js` downloads grows 523,456 bytes, 17.4%, and the lock file
+  goes from 57 packages to 61 -- `bstr`, `serde_core`, `serde_derive` and
+  `syn`, so a proc-macro and serde in the tree of a diff crate. That is worse
+  than the 405,760 bytes and 13.5% the previous 3.x cost, for no behaviour
+  anyone has asked for, so 2.7.0 stays.
+
+  Output is byte-identical across AdguardFilters, uAssets, easylist and
+  listefr, with the same single warning. The run log differs only in the
+  order of its `Sorted:` lines, which is not the update: the same binary run
+  twice over AdguardFilters orders those 162 lines differently as well, files
+  being sorted in parallel, while naming the same files and writing the same
+  output. Clippy is clean and 215 tests pass.
+
 - Take the Actions that had stayed on Node 20. The runners now force
   `actions/upload-artifact@v5` onto Node 24 and warn about it, and the same
   holds for two more the warning did not name: `actions/download-artifact@v5`
