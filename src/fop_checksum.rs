@@ -132,6 +132,7 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
     let lines: Vec<&str> = content.lines().collect();
     let line_count = lines.len();
     let checksum_idx = lines.iter().position(|line| is_checksum_line(line));
+    let checksum_lines = lines.iter().filter(|line| is_checksum_line(line)).count();
 
     // Extract old checksum for display
     let old_checksum: Option<String> = checksum_idx.and_then(|idx| {
@@ -149,26 +150,27 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
     let checksum = calculate_checksum(&hash_input(&content, &lines));
     let checksum_line = format!("{} Checksum: {}", prefix, checksum);
 
-    // Check if checksum would be unchanged
+    // Check if checksum would be unchanged. A second checksum line is itself
+    // something to put right, so a file holding one is not left alone however
+    // correct the first reads.
     if let Some(idx) = checksum_idx {
-        if lines[idx].ends_with(&checksum) {
+        if checksum_lines == 1 && lines[idx].ends_with(&checksum) {
             return Ok(None);
         }
     }
 
     // Build result - either replace existing or insert new
     let result_lines: Vec<String> = if let Some(idx) = checksum_idx {
-        // Replace existing checksum line
-        lines.iter()
-            .enumerate()
-            .map(|(i, line)| {
-                if i == idx {
-                    checksum_line.clone()
-                } else {
-                    line.to_string()
-                }
-            })
-            .collect()
+        // The checksum goes back where the first one was, and any further
+        // checksum lines go: a list carries one checksum, and a second line
+        // left behind is a wrong one left behind, which validators and
+        // readers alike have to guess about. `idx` indexes the filtered list
+        // too, every line before the first checksum line being kept.
+        let mut result: Vec<String> = Vec::with_capacity(without_checksum.len() + 1);
+        result.extend(without_checksum[..idx].iter().map(|line| line.to_string()));
+        result.push(checksum_line.clone());
+        result.extend(without_checksum[idx..].iter().map(|line| line.to_string()));
+        result
     } else {
         // Insert checksum after line 1 (matches Perl: $data =~ s/(\r?\n)/$1! Checksum: $checksum$1/)
         let mut result: Vec<String> = Vec::with_capacity(without_checksum.len() + 1);
@@ -192,6 +194,14 @@ pub fn add_checksum(filename: &Path, use_hash: bool, quiet: bool, no_color: bool
     }
 
     fs::write(filename, &result)?;
+
+    if !quiet && checksum_lines > 1 {
+        println!(
+            "Dropped {} extra checksum line(s) from {}",
+            checksum_lines - 1,
+            filename.display()
+        );
+    }
 
     if !quiet {
         if no_color {
@@ -296,6 +306,60 @@ mod tests {
         let before = list.read();
         assert_eq!(add_checksum(&list.0, false, true, true).unwrap(), None);
         assert_eq!(list.read(), before);
+    }
+
+
+    #[test]
+    fn test_add_checksum_leaves_one_checksum_line() {
+        // A list carries a single checksum. Two of them is malformed, and
+        // updating the first used to leave the second behind -- a wrong
+        // checksum still sitting in a file FOP had just written.
+        let two = "[Adblock Plus 2.0]\n! Checksum: AAAAAAAAAAAAAAAAAAAAAA\n! Title: Test\n\
+                   ! Checksum: BBBBBBBBBBBBBBBBBBBBBB\n||example.com^\n##.ad\n";
+        let list = TempList::new("twolines", two);
+        assert_eq!(add_checksum(&list.0, false, true, true).unwrap(),
+                   Some(TEST_LIST_CHECKSUM.to_string()));
+        // One line, where the first one was
+        assert_eq!(list.read(), format!(
+            "[Adblock Plus 2.0]\n! Checksum: {}\n! Title: Test\n||example.com^\n##.ad\n",
+            TEST_LIST_CHECKSUM));
+        assert_eq!(list.read().lines().filter(|l| is_checksum_line(l)).count(), 1);
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
+        // ... and the second pass has nothing left to do
+        assert_eq!(add_checksum(&list.0, false, true, true).unwrap(), None);
+    }
+
+    #[test]
+    fn test_add_checksum_drops_a_duplicate_under_a_correct_first_line() {
+        // The early return reads the first checksum line, which here is
+        // already right: the duplicate below it is the only thing wrong, so
+        // returning early would leave the file as it found it.
+        let with_dup = format!(
+            "[Adblock Plus 2.0]\n! Checksum: {}\n! Title: Test\n||example.com^\n\
+             ! Checksum: BBBBBBBBBBBBBBBBBBBBBB\n##.ad\n",
+            TEST_LIST_CHECKSUM);
+        let list = TempList::new("dupunderright", &with_dup);
+        assert_eq!(add_checksum(&list.0, false, true, true).unwrap(),
+                   Some(TEST_LIST_CHECKSUM.to_string()));
+        assert_eq!(list.read(), format!(
+            "[Adblock Plus 2.0]\n! Checksum: {}\n! Title: Test\n||example.com^\n##.ad\n",
+            TEST_LIST_CHECKSUM));
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
+    }
+
+    #[test]
+    fn test_add_checksum_drops_a_duplicate_on_the_last_line() {
+        // The filtered list is shorter than the file, so the position the
+        // checksum goes back to has to be read off the filtered one
+        let trailing = "[Adblock Plus 2.0]\n! Checksum: AAAAAAAAAAAAAAAAAAAAAA\n! Title: Test\n\
+                        ||example.com^\n##.ad\n! Checksum: BBBBBBBBBBBBBBBBBBBBBB\n";
+        let list = TempList::new("duplast", trailing);
+        assert_eq!(add_checksum(&list.0, false, true, true).unwrap(),
+                   Some(TEST_LIST_CHECKSUM.to_string()));
+        assert_eq!(list.read(), format!(
+            "[Adblock Plus 2.0]\n! Checksum: {}\n! Title: Test\n||example.com^\n##.ad\n",
+            TEST_LIST_CHECKSUM));
+        assert_eq!(verify_checksum(&list.0).unwrap(), ChecksumResult::Valid);
     }
 
     #[test]

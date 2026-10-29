@@ -4,6 +4,21 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Leave a list holding one checksum line. A file is meant to carry a single
+  `! Checksum:`, but `--add-checksum` found the first one, replaced it and
+  wrote the file back with any others still in place -- so a list that had
+  somehow collected two came out of FOP with a stale checksum still sitting in
+  it, and if the first line was already correct the run returned early and
+  changed nothing at all. The line now goes back where the first one was and
+  the rest go with it, and the run says how many it dropped rather than
+  deleting them quietly. A file whose checksum is already right is still not
+  written at all, mtime included; only a file that needs the change is touched.
+  Output is byte-identical across the lists carrying a checksum, where there
+  was never more than one. Three tests cover the shapes -- two lines, a
+  duplicate under a correct first line, a duplicate on the last line -- and
+  three of the four mutants are caught, the fourth being the notice itself,
+  which no test reads here any more than it reads the existing ones.
+
 - Drop a domain that another entry in the same list already covers. A cosmetic rule's domain, like a network rule's `domain=` entry, applies to the domain named and to every host under it, so `domain.com,sub.domain.com##.ad` hides on exactly the hosts `domain.com##.ad` alone does: adding `domain.com##.ddfdsfsd` beside an existing `subdomain.domain.com##.ddfdsfsd` now leaves the one rule, where before the two merged into a list carrying both. An exclusion is what gives a longer entry something of its own to say -- `domain.com,~sub.domain.com` does not apply on the subdomain, and `~sub.domain.com,deep.sub.domain.com` puts the rule back on one host under it -- so the nearest listed ancestor decides, which is how a blocker resolves a host against the list to begin with: an entry goes only when the closest entry above it carries the same `~`. A domain listed both ways (`a.com` beside `~a.com`) leaves no ancestor polarity to read, so that list is left alone, and an entry whose hosts no comparison of labels can predict -- `example.*`, a regex, or AdGuard's `example.com>>` -- neither covers another entry nor is covered by one.
 
   Where the prune runs is the whole of the design. A rule's own list is pruned when the rule is tidied; a line the merge wrote is pruned once, after the merge is finished with it. Pruning as the domains come together does not survive the two merge paths: the pairwise chain merges step by step and the linear path in one go, so a list that is prunable at one step but not at the next -- `a.com,s.a.com` until a `~b.com` meets the `b.com` further along -- comes out differently depending on which path ran. The fuzz that holds those paths equal found precisely that case; its domain pool had never held a parent and a child, which is why the question had not come up before. It holds four now, the reference states the rule independently and the slow way, and a counter fails the test if fewer than 500 of the 25,000 groups reach a prune. Handing a half-merged chain from the recorded path to the linear one loses the fact that its first line was merged, which would leave that line unpruned; the handover now says so, and mutants of it in both directions are caught.
