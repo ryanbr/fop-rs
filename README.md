@@ -133,8 +133,8 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--quiet` | Limit console output, less verbose |
 | `--limited-quiet` | Suppress directory listing only |
 | `--add-timestamp=FILES` | Update timestamp for specific files only (comma-separated) |
-| `--validate-checksum=FILES` | Validate checksum for specific files (exit 1 on failure) |
-| `--validate-checksum-and-fix=FILES` | Validate and fix invalid checksums |
+| `--validate-checksum=FILES` | Validate checksum for specific files; exit 1 if any is wrong, missing, or unreadable |
+| `--validate-checksum-and-fix=FILES` | Validate and fix invalid checksums, and add one where a file has none |
 | `--add-checksum=FILES` | Add/update checksum for specific files (comma-separated). A file is left untouched when its checksum is already right, and comes out holding exactly one checksum line |
 | `--add-timestamp` | Update timestamp in file header (Last Modified/Last Updated) |
 | `--config-file=` | Custom config file path |

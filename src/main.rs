@@ -445,6 +445,58 @@ struct Args {
     file_overrides: ahash::AHashMap<String, FileOverrides>,
 }
 
+/// Check the checksum of every file named by `--validate-checksum`, and say
+/// whether any of them failed, which is what the exit code is.
+///
+/// A file named here is one the caller says carries a checksum, so a file
+/// without one has failed: it is the state a download truncated mid-header
+/// leaves, and the state a list that never had `--add-checksum` run over it
+/// is in, and reporting it as nothing to check means a list ships unprotected
+/// with the run passing. An unreadable file fails for the same reason.
+fn validate_named_checksums(locations: &[PathBuf], named: &[String], quiet: bool) -> bool {
+    let mut any_failed = false;
+    for location in locations {
+        for entry in WalkDir::new(location)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+        {
+            let path = entry.path();
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            if named.iter().any(|f| filename == f.as_str())
+                || named.iter().any(|f| path.ends_with(f.as_str()))
+            {
+                match fop_checksum::verify_checksum(path) {
+                    Ok(fop_checksum::ChecksumResult::Valid) => {
+                        if !quiet {
+                            println!("Checksum OK: {}", path.display());
+                        }
+                    }
+                    Ok(fop_checksum::ChecksumResult::Invalid { expected, found }) => {
+                        eprintln!(
+                            "Checksum FAILED: {} (expected {}, found {})",
+                            path.display(),
+                            expected,
+                            found
+                        );
+                        any_failed = true;
+                    }
+                    Ok(fop_checksum::ChecksumResult::Missing) => {
+                        eprintln!("Checksum FAILED: {} (no checksum line)", path.display());
+                        any_failed = true;
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading {}: {}", path.display(), e);
+                        any_failed = true;
+                    }
+                }
+            }
+        }
+    }
+    any_failed
+}
+
 /// The sort settings a run's arguments ask for. Its own function so a test
 /// can hold the mapping; `file_config` builds each file's config from it.
 fn sort_config_from(args: &Args) -> SortConfig<'_> {
@@ -3169,48 +3221,10 @@ fn main() {
     }
 
     // Validate checksums if requested
-    if !args.validate_checksum.is_empty() {
-        let mut any_failed = false;
-
-        for location in &locations {
-            for entry in WalkDir::new(location)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.path().is_file())
-            {
-                let path = entry.path();
-                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-                if args.validate_checksum.iter().any(|f| filename == f.as_str())
-                    || args.validate_checksum.iter().any(|f| path.ends_with(f.as_str()))
-                {
-                    match fop_checksum::verify_checksum(path) {
-                        Ok(fop_checksum::ChecksumResult::Valid) => {
-                            if !args.quiet {
-                                println!("Checksum OK: {}", path.display());
-                            }
-                        }
-                        Ok(fop_checksum::ChecksumResult::Invalid { expected, found }) => {
-                            eprintln!("Checksum FAILED: {} (expected {}, found {})", path.display(), expected, found);
-                            any_failed = true;
-                        }
-                        Ok(fop_checksum::ChecksumResult::Missing) => {
-                            if !args.quiet {
-                                eprintln!("Warning: No checksum found in {}", path.display());
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error reading {}: {}", path.display(), e);
-                            any_failed = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        if any_failed {
-            std::process::exit(1);
-        }
+    if !args.validate_checksum.is_empty()
+        && validate_named_checksums(&locations, &args.validate_checksum, args.quiet)
+    {
+        std::process::exit(1);
     }
 
     // Standalone typo scan and fix mode

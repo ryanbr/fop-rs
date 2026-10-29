@@ -4,6 +4,25 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Fail `--validate-checksum` on a file that has no checksum line. A file
+  named to that flag is one the caller says carries a checksum, so holding
+  none is a failure: it is the state a truncated download leaves, and the
+  state a list that never had `--add-checksum` run over it is in, and
+  reporting it as nothing to check meant a list could ship unprotected with
+  the run passing and nothing but a warning on stderr to show for it. It now
+  reads `Checksum FAILED: <file> (no checksum line)` and exits 1, under
+  `--quiet` as much as without it, since a failure the caller silenced is
+  still a failure. An unreadable file already failed and still does, and a
+  name matching no file is still not a failure, which is how one shared
+  config can name lists that only some trees hold.
+  `--validate-checksum-and-fix` is untouched: a missing checksum is what it
+  is for, so it still writes one and exits 0. The stage is a function of its
+  own now, `validate_named_checksums`, returning whether anything failed, so
+  a test holds the verdicts rather than only a live run: correct passes,
+  wrong fails, missing fails, empty fails, unreadable fails, one bad file
+  among good ones fails the run. All four mutants are caught, and the exit
+  codes were walked through on the built binary as well.
+
 - Leave a list holding one checksum line. A file is meant to carry a single
   `! Checksum:`, but `--add-checksum` found the first one, replaced it and
   wrote the file back with any others still in place -- so a list that had

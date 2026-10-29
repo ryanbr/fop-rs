@@ -1163,6 +1163,47 @@ fn test_the_prune_can_be_turned_off() {
 }
 
 #[test]
+fn test_validate_checksum_fails_on_a_missing_one() {
+    // A file named to --validate-checksum is one the caller says carries a
+    // checksum, so holding none is a failure rather than nothing to check:
+    // otherwise a list that never had --add-checksum run over it ships
+    // unprotected with the run passing.
+    use std::path::PathBuf;
+    let dir = std::env::temp_dir().join(format!("fop-test-validate-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let write = |name: &str, body: &str| std::fs::write(dir.join(name), body).unwrap();
+
+    write("good.txt", "[Adblock Plus 2.0]\n! Title: Test\n||example.com^\n##.ad\n");
+    crate::fop_checksum::add_checksum(&dir.join("good.txt"), false, true, true).unwrap();
+    write("bad.txt", "[Adblock Plus 2.0]\n! Checksum: BBBBBBBBBBBBBBBBBBBBBB\n! Title: T\n||e.com^\n");
+    write("none.txt", "[Adblock Plus 2.0]\n! Title: Test\n||example.com^\n");
+    write("empty.txt", "");
+    // Not UTF-8, so reading it fails: a file FOP cannot read is a file whose
+    // checksum it cannot vouch for
+    std::fs::write(dir.join("binary.txt"), [0xffu8, 0xfe, 0x00, 0x41]).unwrap();
+
+    let locations = vec![PathBuf::from(&dir)];
+    let failed = |names: &[&str]| {
+        let named: Vec<String> = names.iter().map(|s| s.to_string()).collect();
+        crate::validate_named_checksums(&locations, &named, true)
+    };
+
+    assert!(!failed(&["good.txt"]), "a correct checksum passes");
+    assert!(failed(&["bad.txt"]), "a wrong checksum fails");
+    assert!(failed(&["none.txt"]), "no checksum line fails");
+    assert!(failed(&["empty.txt"]), "an empty file fails");
+    assert!(failed(&["binary.txt"]), "a file that cannot be read fails");
+    // One bad file fails the run, however many good ones are beside it
+    assert!(failed(&["good.txt", "none.txt"]), "one failure fails the run");
+    // A name matching no file is not itself a failure, which is how a shared
+    // config can name lists that only some trees hold
+    assert!(!failed(&["good.txt", "not-here.txt"]), "an absent name is not a failure");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_the_flag_reaches_the_sort_config() {
     // The command line's side of the option: the default drops, and
     // `--no-drop-covered-domains` is what turns it off.
