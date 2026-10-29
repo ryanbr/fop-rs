@@ -249,16 +249,19 @@ jobs:
           # RUSTFLAGS rebuilds uninstrumented and contributes no profile at
           # all, leaving only build-script data behind.
           #
-          # --no-default-features drops mimalloc from the training binary
-          # alone. rustc 1.99.0 segfaults a worker thread when mimalloc is the
-          # global allocator in a `-Cprofile-generate` build on Darwin; 1.98.1
-          # does not, macOS 15 and 26 both do it, and the uninstrumented
-          # binary is fine, so it is the compiler and the allocator together.
-          # The binaries below keep mimalloc: a profile is branch and call
-          # counts for FOP's own functions, which the allocator does not
-          # change, and both builds sort AdguardFilters and uAssets to
-          # byte-identical output. Linux trains with mimalloc, being unaffected.
-          RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release --no-default-features
+          # This trained without mimalloc for a while, because a
+          # `-Cprofile-generate` build segfaulted here under rustc 1.99.0 and
+          # dropping the allocator stopped it. The allocator was not the cause:
+          # `cc` forwarded `-Cprofile-generate` to the C compiler as
+          # `-fprofile-generate`, and on Darwin that is Apple clang, which
+          # writes raw profile version 10 where 1.99's LLVM 23 runtime expects
+          # version 11 -- the `Values` field of `__llvm_profile_data` moved
+          # from 0x28 to 0x30, so instrumented C read a pointer from the wrong
+          # offset (rust-lang/rust#163640, rust-lang/cc-rs#1986). mimalloc is
+          # the only C this crate builds, which is why removing it looked like
+          # the fix. cc 1.8.0 stopped forwarding the flag, so training matches
+          # the shipped binary again.
+          RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
           cp -r test-lists /tmp/pgo-train
           ./target/release/fop --no-commit /tmp/pgo-train
           rm -rf /tmp/pgo-train

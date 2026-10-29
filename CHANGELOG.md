@@ -4,6 +4,37 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Train the macOS PGO build with the allocator it ships with, the upstream bug
+  having been fixed. 6.1.0 put `--no-default-features` on that one build
+  because a `-Cprofile-generate` binary segfaulted on Darwin under rustc
+  1.99.0, and dropping mimalloc stopped it; the note left behind blamed the
+  compiler and the allocator together. That was the right observation and the
+  wrong cause. `cc` was forwarding `-Cprofile-generate` to the C compiler as
+  `-fprofile-generate`, and on Darwin that compiler is Apple clang, which
+  writes raw profile version 10 where 1.99's LLVM 23 runtime expects version
+  11: the `Values` field of `__llvm_profile_data` moved from offset 0x28 to
+  0x30, so instrumented C read a pointer from the wrong offset and faulted
+  (rust-lang/rust#163640, which is still open as a rustc issue, and
+  rust-lang/cc-rs#1986). mimalloc is the only C this crate builds, which is
+  exactly why removing it looked like the fix.
+
+  `cc` 1.8.0 stopped forwarding the flag and the lock file has held 1.10.0
+  since 6.1.1, so 6.1.1 and 6.2.0 both shipped with the workaround already
+  redundant. Checked on a macOS 26 arm64 runner under rustc 1.99.1 rather than
+  assumed: the training build with mimalloc compiles, runs a real sort of
+  `test-lists` to exit 0 where it used to exit 139, writes 11 profraw files
+  and merges them, and the aarch64 binary built from that profile runs. The
+  same run did it without mimalloc as a control, which also passed, so the
+  comparison means something.
+
+  With the flag goes the machinery that served it: mimalloc is no longer an
+  optional dependency, there is no `[features]` table, and the
+  `#[global_allocator]` is unconditional again as it was before 6.1.0. The
+  binary is the same size to the byte and sorts AdguardFilters, uAssets and
+  easylist to identical output; most of its bytes move, the crate's feature
+  set being part of what names its symbols. Clippy is clean and 215 tests
+  pass.
+
 - Take the two compatible updates on offer and hold `similar` at 2 again.
   `cargo update` moves `smallvec` 1.16.3 to 1.16.4 and `unicode-width` 0.2.2
   to 0.2.3, both transitive, the lock file staying at 57 packages with the
