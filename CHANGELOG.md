@@ -2,6 +2,22 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [Unreleased]
+
+- Take the Actions that had stayed on Node 20. The runners now force
+  `actions/upload-artifact@v5` onto Node 24 and warn about it, and the same
+  holds for two more the warning did not name: `actions/download-artifact@v5`
+  and `softprops/action-gh-release@v2` declare `node20` as well.
+  `actions/checkout@v5` and `actions/setup-node@v5` already run on Node 24,
+  and `dtolnay/rust-toolchain` is a composite action with no runtime of its
+  own, so those stay as they are. Each bump is the smallest one that reaches
+  Node 24 rather than the newest tag: upload-artifact v6 (v7 adds ESM and
+  unzipped single-file uploads, which nothing here asks for),
+  download-artifact v7 (v6 is still `node20` whatever its notes imply, and v8
+  turns a digest mismatch into a failed run by default -- defensible, but a
+  new way for a release to fail is not something to take on in passing), and
+  action-gh-release v3, which is the Node 24 move and nothing else.
+
 ## [6.2.0] - 2026-10-29
 
 - Fail `--validate-checksum` on a file that has no checksum line. A file
