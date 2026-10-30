@@ -35,6 +35,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Nothing ran the suite before this: the three jobs built and then
+      # trained PGO on a real sort, so a release could ship a failing test,
+      # and the Windows and macOS halves of anything platform-specific were
+      # never exercised at all. Release profile because these jobs compile it
+      # anyway; cargo uses unwinding for the test harness despite
+      # `panic = "abort"`.
+      - name: Run the test suite
+        run: cargo test --release
+
       - name: Install cross-compilation tools
         run: |
           sudo apt-get update
@@ -174,6 +183,15 @@ jobs:
         with:
           targets: aarch64-pc-windows-msvc
 
+      # Nothing ran the suite before this: the three jobs built and then
+      # trained PGO on a real sort, so a release could ship a failing test,
+      # and the Windows and macOS halves of anything platform-specific were
+      # never exercised at all. Release profile because these jobs compile it
+      # anyway; cargo uses unwinding for the test harness despite
+      # `panic = "abort"`.
+      - name: Run the test suite
+        run: cargo test --release
+
       # x86_64-pc-windows-msvc is this runner's own host and is the only
       # x64 Windows target rustup ships a profiler runtime for -- the gnu
       # target has none, so it cannot be instrumented at all. This builds an
@@ -239,6 +257,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      # Nothing ran the suite before this: the three jobs built and then
+      # trained PGO on a real sort, so a release could ship a failing test,
+      # and the Windows and macOS halves of anything platform-specific were
+      # never exercised at all. Release profile because these jobs compile it
+      # anyway; cargo uses unwinding for the test harness despite
+      # `panic = "abort"`.
+      - name: Run the test suite
+        run: cargo test --release
 
       - name: Install llvm-tools for PGO
         run: rustup component add llvm-tools-preview
