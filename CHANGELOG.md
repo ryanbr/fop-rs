@@ -4,6 +4,34 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Stop `--validate-checksum` following a symlink out of the tree. The stages
+  that add and fix checksums test a directory entry with `entry_is_file`,
+  which follows a link only while it stays inside the tree; this one used
+  `Path::is_file`, which follows one anywhere. A repository FOP sorts can
+  plant a symlink, so a list named to the flag could be `easylist.txt ->
+  ~/.ssh/id_rsa`: FOP read the target, hashed it, and printed the verdict,
+  which says whether that file exists and -- if it happened to carry a
+  `! Checksum:` line -- what its contents hash to. Read-only, and the flag is
+  command-line only so a repository cannot switch it on, but it is the one
+  checksum stage out of four that was not guarded. Present since the flag was
+  written.
+
+  Hard links are not covered, deliberately: git records one as an ordinary
+  file (mode 100644, the content, not a link), so a clone recreates a copy and
+  the repository-supplied case cannot deliver one; a hard link needs local
+  access to the filesystem already. The sort leaves a hard link's target alone
+  in any case, writing through a temp file and a rename rather than into the
+  shared inode.
+
+  Three mutants, all caught, and the mutation run earned its keep twice: the
+  first version of the test gave the out-of-tree file a valid checksum, so
+  following the link reported "OK" and the test could not tell the old
+  behaviour from the new one -- it now carries no checksum, so following it
+  fails and passing it over reports nothing. The third mutant exposed a real
+  gap: with the root left uncanonicalised, a tree reached through a symlinked
+  directory would read every in-tree link as pointing out of the tree and
+  quietly stop validating it, so there is a case for that too.
+
 - Train the macOS PGO build with the allocator it ships with, the upstream bug
   having been fixed. 6.1.0 put `--no-default-features` on that one build
   because a `-Cprofile-generate` binary segfaulted on Darwin under rustc

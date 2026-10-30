@@ -449,13 +449,21 @@ struct Args {
 /// leaves, and the state a list that never had `--add-checksum` run over it
 /// is in, and reporting it as nothing to check means a list ships unprotected
 /// with the run passing. An unreadable file fails for the same reason.
+///
+/// A symlink is followed only while it stays inside the tree, as the stages
+/// that add and fix checksums already require. `Path::is_file` follows one
+/// anywhere, so a list symlinked out of the tree had its target read and
+/// hashed, and the verdict printed: a planted `easylist.txt -> ~/.ssh/id_rsa`
+/// would report whether that file exists, and the checksum of its contents if
+/// it happened to carry a `! Checksum:` line.
 fn validate_named_checksums(locations: &[PathBuf], named: &[String], quiet: bool) -> bool {
     let mut any_failed = false;
     for location in locations {
+        let root = canonical_root(location);
         for entry in WalkDir::new(location)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_file())
+            .filter(|e| entry_is_file(e, &root))
         {
             let path = entry.path();
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");

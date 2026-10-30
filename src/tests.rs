@@ -1163,6 +1163,68 @@ fn test_the_prune_can_be_turned_off() {
 }
 
 #[test]
+#[cfg(unix)]
+fn test_validate_checksum_does_not_follow_a_link_out_of_the_tree() {
+    // A repository FOP sorts can plant a symlink. Following one out of the
+    // tree had --validate-checksum read and hash whatever it pointed at and
+    // print the verdict, which says whether that file exists and, if it
+    // carried a `! Checksum:` line, what its contents hash to. The stages
+    // that add and fix checksums already refuse this; this one did not.
+    use std::path::PathBuf;
+    let base = std::env::temp_dir().join(format!("fop-test-vlink-{}", std::process::id()));
+    let tree = base.join("tree");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&tree).unwrap();
+
+    // Something outside the tree, carrying NO checksum: following it would
+    // therefore report a failure, and passing it over reports nothing. A valid
+    // checksum here would make this test vacuous -- both behaviours would
+    // return "no failure" -- which is what the mutation run showed.
+    let outside = base.join("secret.txt");
+    std::fs::write(&outside, "[Adblock Plus 2.0]\n! Title: not yours\n||x.com^\n").unwrap();
+
+    // a list in the tree that is really a link to it
+    std::os::unix::fs::symlink(&outside, tree.join("linked.txt")).unwrap();
+    // an ordinary list in the tree, with a wrong checksum so it must still fail
+    std::fs::write(
+        tree.join("own.txt"),
+        "[Adblock Plus 2.0]\n! Checksum: BBBBBBBBBBBBBBBBBBBBBB\n! Title: t\n||y.com^\n",
+    )
+    .unwrap();
+    // and a link that stays inside the tree, which must still be checked
+    std::os::unix::fs::symlink(tree.join("own.txt"), tree.join("inside.txt")).unwrap();
+
+    let locations = vec![PathBuf::from(&tree)];
+    let failed = |names: &[&str]| {
+        let named: Vec<String> = names.iter().map(|s| s.to_string()).collect();
+        crate::validate_named_checksums(&locations, &named, true)
+    };
+
+    // the link out of the tree is not followed, so there is nothing to check
+    // and nothing to report
+    assert!(!failed(&["linked.txt"]), "a link out of the tree must be passed over");
+    // a real file in the tree is still judged
+    assert!(failed(&["own.txt"]), "a wrong checksum in the tree must still fail");
+    // and a link that stays inside is still judged, pointing at that same file
+    assert!(failed(&["inside.txt"]), "a link inside the tree must still be checked");
+
+    // The same tree reached through a symlinked directory, which is how a
+    // checkout under a symlinked home or mount is seen. The root has to be
+    // canonicalised for an in-tree link to still count as in-tree: compared
+    // against the uncanonicalised path, every link would read as pointing out
+    // of the tree and quietly stop being validated.
+    std::os::unix::fs::symlink(&tree, base.join("via-link")).unwrap();
+    let through_link = vec![base.join("via-link")];
+    let named = vec!["inside.txt".to_string()];
+    assert!(
+        crate::validate_named_checksums(&through_link, &named, true),
+        "a link inside the tree must still be checked when the tree is reached through a link"
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
 fn test_validate_checksum_fails_on_a_missing_one() {
     // A file named to --validate-checksum is one the caller says carries a
     // checksum, so holding none is a failure rather than nothing to check:
