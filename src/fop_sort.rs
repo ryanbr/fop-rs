@@ -679,6 +679,31 @@ fn drop_covered_domains<S: AsRef<str>>(domains: &mut Vec<S>) -> usize {
 /// output may depend on. Every other line is an input rule, pruned when it
 /// was tidied, so this costs one capture per line a merge produced rather
 /// than one per line written.
+/// The domain list a merge or a prune may act on, or `None` where there is
+/// none to take.
+///
+/// An AdGuard modifier prefix carries a `$` ahead of the rule itself --
+/// `[$domain=/mirror\d+\.com$/]##.ad` -- and `FILTER_DOMAIN_PATTERN` reads
+/// that `$domain=` as a network rule's option. Its capture is `[^,]+`, so it
+/// runs past the `]` to the end of the line and swallows the selector, and
+/// merging two such rules joined whole rules with `|`:
+///
+/// ```text
+/// [$domain=/tulipbettv\d+\.com$/]##.footer-links
+/// [$domain=/tulipbettv\d+\.com$/]##.odds-container
+///   -> [$domain=/tulipbettv\d+\.com$/]##.footer-links|/tulipbettv\d+\.com$/]##.odds-container
+/// ```
+///
+/// which is one unparseable rule where there were two good ones. `tidy_rule`
+/// already passes a `[$...]` line through untouched; this holds the merge and
+/// the prune to that same policy, so such a rule is only ever sorted.
+fn rule_domains<'a>(line: &'a str, domain_pattern: &Regex) -> Option<regex::Captures<'a>> {
+    if line.starts_with("[$") {
+        return None;
+    }
+    domain_pattern.captures(line)
+}
+
 fn prune_line(line: String, domain_pattern: &Regex, separator: &str) -> String {
     match drop_covered_domains_in_line(&line, domain_pattern, separator) {
         Cow::Borrowed(_) => line,
@@ -692,7 +717,7 @@ fn drop_covered_domains_in_line<'a>(
     domain_pattern: &Regex,
     separator: &str,
 ) -> Cow<'a, str> {
-    let Some(list) = domain_pattern.captures(line).and_then(|caps| caps.get(1)) else {
+    let Some(list) = rule_domains(line, domain_pattern).and_then(|caps| caps.get(1)) else {
         return Cow::Borrowed(line);
     };
     let mut domains: Vec<&str> = list.as_str().split(separator).collect();
@@ -2040,8 +2065,8 @@ fn cmp_domains(a: &str, b: &str) -> Ordering {
 /// Merge `second` into `first` if they differ only in their domains.
 /// One step of the chain, and the definition the linear path reproduces.
 fn combine_pair(first: &str, second: &str, domain_pattern: &Regex, separator: &str) -> Option<String> {
-    let domains1 = domain_pattern.captures(first)?;
-    let domains2 = domain_pattern.captures(second)?;
+    let domains1 = rule_domains(first, domain_pattern)?;
+    let domains2 = rule_domains(second, domain_pattern)?;
     let domain1_str = domains1.get(1).map_or("", |m| m.as_str());
     let domains1_full = domains1.get(0).map_or("", |m| m.as_str());
     if domain1_str.is_empty() {
@@ -2121,7 +2146,7 @@ impl<'a> DomainRun<'a> {
     /// on more than the domain list, so the step-by-step path must decide.
     fn parse(idx: usize, rules: &'a [String], domain_pattern: &Regex, separator: &str) -> Option<Self> {
         let line = rules[idx].as_str();
-        let caps = domain_pattern.captures(line)?;
+        let caps = rule_domains(line, domain_pattern)?;
         let full = caps.get(0)?.range();
         let dom = caps.get(1)?.range();
         let before = &line.as_bytes()[full.start..dom.start];

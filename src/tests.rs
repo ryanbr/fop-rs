@@ -1083,6 +1083,75 @@ fn test_a_network_domain_list_drops_covered_entries() {
 }
 
 #[test]
+fn test_an_adguard_modifier_prefix_is_never_merged_or_pruned() {
+    use crate::fop_sort::combine_filters;
+    // AdGuard puts a rule's modifiers in front of it, and that `$` is not a
+    // network rule's option separator. `FILTER_DOMAIN_PATTERN` captures
+    // `[^,]+` after `domain=`, which runs past the `]` and takes the selector
+    // with it, so merging these joined whole rules with `|` and left one
+    // unparseable line where there were good ones.
+    assert_eq!(
+        combine_filters(
+            vec![
+                r"[$domain=/tulipbettv\d+\.com$/]##.footer-links".to_string(),
+                r"[$domain=/tulipbettv\d+\.com$/]##.odds-container".to_string(),
+            ],
+            &crate::FILTER_DOMAIN_PATTERN,
+            "|",
+            true,
+        ),
+        vec![
+            r"[$domain=/tulipbettv\d+\.com$/]##.footer-links",
+            r"[$domain=/tulipbettv\d+\.com$/]##.odds-container",
+        ]
+    );
+    // Three or more take the linear path rather than the pairwise one
+    assert_eq!(
+        combine_filters(
+            vec![
+                r"[$domain=/mirror\d+\.com$/]##.a".to_string(),
+                r"[$domain=/mirror\d+\.com$/]##.b".to_string(),
+                r"[$domain=/mirror\d+\.com$/]#%#//scriptlet('prevent-window-open')".to_string(),
+            ],
+            &crate::FILTER_DOMAIN_PATTERN,
+            "|",
+            true,
+        ),
+        vec![
+            r"[$domain=/mirror\d+\.com$/]##.a",
+            r"[$domain=/mirror\d+\.com$/]##.b",
+            r"[$domain=/mirror\d+\.com$/]#%#//scriptlet('prevent-window-open')",
+        ]
+    );
+    // The prune reads a domain list the same way, so it is held off too: the
+    // covered entry inside the prefix stays, because nothing here is a list
+    // of domains to begin with.
+    assert_eq!(
+        combine_filters(
+            vec![r"[$domain=a.com|sub.a.com]##.ad".to_string()],
+            &crate::FILTER_DOMAIN_PATTERN,
+            "|",
+            true,
+        ),
+        vec![r"[$domain=a.com|sub.a.com]##.ad"]
+    );
+    // And an ordinary network rule still merges, so the guard has not been
+    // drawn too wide
+    assert_eq!(
+        combine_filters(
+            vec![
+                "||ads.example^$script,domain=a.com".to_string(),
+                "||ads.example^$script,domain=b.com".to_string(),
+            ],
+            &crate::FILTER_DOMAIN_PATTERN,
+            "|",
+            true,
+        ),
+        vec!["||ads.example^$script,domain=a.com|b.com"]
+    );
+}
+
+#[test]
 fn test_two_rules_merge_onto_the_domain_that_covers_both() {
     use crate::fop_sort::combine_filters;
     // A selector restricted to a subdomain, and the same selector added for

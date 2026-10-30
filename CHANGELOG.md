@@ -4,6 +4,39 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Stop the merge destroying AdGuard rules that carry a modifier prefix.
+  AdGuard writes a rule's modifiers in front of it, as
+  `[$domain=/mirror\d+\.com$/]example.com##.ad`, and that `$` is not a network
+  rule's option separator. `FILTER_DOMAIN_PATTERN` matched it anyway, and
+  because its capture is `[^,]+` it ran straight past the `]` and swallowed
+  the selector, so the merge read whole rules as one rule's domain list and
+  joined them with `|`:
+
+  ```text
+  [$domain=/tulipbettv\d+\.com$/]##.footer-links
+  [$domain=/tulipbettv\d+\.com$/]##.odds-container
+    -> [$domain=/tulipbettv\d+\.com$/]##.footer-links|/tulipbettv\d+\.com$/]##.odds-container
+  ```
+
+  One unparseable line where there were two good rules. On AdGuard's own
+  filters as they stand today that cost 101 lines: 58 corrupt lines holding
+  what had been 159 rules, across 9 files. `tidy_rule` already passed a
+  `[$...]` line through untouched, so the policy existed and the merge simply
+  did not follow it; `rule_domains` now holds the merge and the prune to it as
+  well, and such a rule is only ever sorted.
+
+  Not a regression from the covered-subdomain prune -- 6.1.1 does the same
+  thing, and `--no-drop-covered-domains` makes no difference. It needs a list
+  that uses the syntax: easylist, uAssets and listefr have no such rule
+  between them, and their output is byte-identical either way.
+
+  The 101 lines come back, every one of the 217 lines that differ is a
+  `[$...]` rule, and nothing else moves in 275,195 lines. Mutation testing
+  put the catch at `combine_pair`: guarding that site alone already leaves the
+  corpus correct, so the guards at `DomainRun::parse` and the prune are the
+  same policy applied uniformly rather than behaviour a test pins, and are
+  there so a later change to either path cannot bring the corruption back.
+
 - Stop `--validate-checksum` following a symlink out of the tree. The stages
   that add and fix checksums test a directory entry with `entry_is_file`,
   which follows a link only while it stays inside the tree; this one used
