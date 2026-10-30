@@ -1,0 +1,174 @@
+# Throwaway. Measures the two routes to a PGO'd Windows x64 binary against
+# the binary users actually get today, on a real Windows runner:
+#
+#   1. mingw + no profile      what install.js fetches now
+#   2. mingw + a Linux profile -Cprofile-use needs no profiler runtime, only
+#                              -Cprofile-generate does, so the target that
+#                              cannot be instrumented can still consume one
+#   3. MSVC  + no profile      control for the toolchain change alone
+#   4. MSVC  + PGO             what the release already builds and publishes
+#
+# The mingw binaries are cross-built on Linux because that is how they ship --
+# building them on Windows would measure something nobody downloads. Two dry
+# runs in Sept 2026 (c52f2a4, e1ac70a) failed trying to instrument mingw with
+# E0463; this does not attempt that.
+#
+# Delete the branch and this file once the numbers are in.
+name: Windows PGO measurement
+on:
+  push:
+    branches: [ci/windows-pgo-measure]
+
+jobs:
+  mingw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      - name: Install the mingw linker and llvm-tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mingw-w64-x86-64
+          rustup component add llvm-tools-preview
+
+      - name: Collect a profile on this Linux host
+        run: |
+          set -euo pipefail
+          RUSTFLAGS="-Cprofile-generate=$RUNNER_TEMP/pgo" cargo build --release
+          cp -r test-lists "$RUNNER_TEMP/train"
+          ./target/release/fop --no-commit "$RUNNER_TEMP/train" > /dev/null
+          rm -rf "$RUNNER_TEMP/train"
+          PROFDATA=$(find "$(rustc --print sysroot)" -name llvm-profdata | head -1)
+          "$PROFDATA" merge -o "$RUNNER_TEMP/pgo/merged.profdata" "$RUNNER_TEMP"/pgo/*.profraw
+          test -s "$RUNNER_TEMP/pgo/merged.profdata"
+          ls -l "$RUNNER_TEMP/pgo/merged.profdata"
+          cargo clean
+
+      - name: Build mingw, with and without the profile
+        run: |
+          set -euo pipefail
+          cargo build --release --target x86_64-pc-windows-gnu
+          cp target/x86_64-pc-windows-gnu/release/fop.exe fop-1-mingw-noprofile.exe
+          cargo clean
+          # Per-target RUSTFLAGS so build scripts stay out of it
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-Cprofile-use=$RUNNER_TEMP/pgo/merged.profdata" \
+            cargo build --release --target x86_64-pc-windows-gnu
+          cp target/x86_64-pc-windows-gnu/release/fop.exe fop-2-mingw-pgo.exe
+          ls -l fop-1-mingw-noprofile.exe fop-2-mingw-pgo.exe
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mingw-binaries
+          path: fop-*.exe
+          retention-days: 1
+
+  measure:
+    needs: mingw
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install llvm-tools for PGO
+        run: rustup component add llvm-tools-preview
+
+      # `$profile` is a PowerShell automatic variable, so this uses $pgo.
+      # A native command failing mid-script does not fail a pwsh step -- only
+      # the last command's exit code propagates -- so every run is checked.
+      # And the call operator reads a bare relative path as a command name,
+      # hence the leading .\ everywhere.
+      - name: Collect a profile on this Windows host (MSVC)
+        run: |
+          $pgo = "$env:RUNNER_TEMP\pgo"
+          $env:RUSTFLAGS = "-Cprofile-generate=$pgo"
+          cargo build --release
+          if ($LASTEXITCODE -ne 0) { throw "instrumented build failed" }
+          Copy-Item -Recurse test-lists "$env:RUNNER_TEMP\train"
+          & ".\target\release\fop.exe" --no-commit "$env:RUNNER_TEMP\train"
+          if ($LASTEXITCODE -ne 0) { throw "training run failed ($LASTEXITCODE)" }
+          Remove-Item -Recurse -Force "$env:RUNNER_TEMP\train"
+          $env:RUSTFLAGS = ""
+          $sysroot = rustc --print sysroot
+          $profdata = (Get-ChildItem "$sysroot\lib\rustlib\*\bin\llvm-profdata.exe" | Select-Object -First 1).FullName
+          if (-not $profdata) { throw "llvm-profdata not found" }
+          & $profdata merge -o "$pgo\merged.profdata" $pgo
+          if (-not (Test-Path "$pgo\merged.profdata")) { throw "no profile produced" }
+          (Get-Item "$pgo\merged.profdata").Length
+          cargo clean
+
+      - name: Build MSVC, with and without the profile
+        run: |
+          $pgo = "$env:RUNNER_TEMP\pgo"
+          # Static CRT in both, so the only difference is the profile
+          $env:RUSTFLAGS = "-C target-feature=+crt-static"
+          cargo build --release
+          if ($LASTEXITCODE -ne 0) { throw "msvc control build failed" }
+          Copy-Item ".\target\release\fop.exe" "fop-3-msvc-noprofile.exe"
+          cargo clean
+          $env:RUSTFLAGS = "-C target-feature=+crt-static -Cprofile-use=$pgo\merged.profdata"
+          cargo build --release
+          if ($LASTEXITCODE -ne 0) { throw "msvc pgo build failed" }
+          Copy-Item ".\target\release\fop.exe" "fop-4-msvc-pgo.exe"
+          $env:RUSTFLAGS = ""
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: mingw-binaries
+          path: .
+
+      - name: Do all four even run, and agree?
+        run: |
+          $bins = @("fop-1-mingw-noprofile.exe","fop-2-mingw-pgo.exe","fop-3-msvc-noprofile.exe","fop-4-msvc-pgo.exe")
+          foreach ($b in $bins) {
+            if (-not (Test-Path ".\$b")) { throw "missing $b" }
+            $v = & ".\$b" --version 2>&1 | Select-Object -First 1
+            if ($LASTEXITCODE -ne 0) { throw "$b failed to run ($LASTEXITCODE)" }
+            "{0,-28} {1}  ({2:N0} bytes)" -f $b, $v, (Get-Item ".\$b").Length
+          }
+          # Same input through each, then compare the outputs
+          foreach ($b in $bins) {
+            $d = "$env:RUNNER_TEMP\out-$b"
+            Copy-Item -Recurse test-lists $d
+            & ".\$b" --no-commit $d | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "$b sort failed" }
+          }
+          $ref = "$env:RUNNER_TEMP\out-fop-1-mingw-noprofile.exe"
+          foreach ($b in $bins[1..3]) {
+            $d = "$env:RUNNER_TEMP\out-$b"
+            $diff = Compare-Object (Get-ChildItem -Recurse -File $ref | Get-FileHash | Select-Object -Expand Hash | Sort-Object) `
+                                   (Get-ChildItem -Recurse -File $d   | Get-FileHash | Select-Object -Expand Hash | Sort-Object)
+            "{0,-28} files differing from the mingw baseline: {1}" -f $b, ($diff | Measure-Object).Count
+          }
+          Remove-Item -Recurse -Force "$env:RUNNER_TEMP\out-*"
+
+      - name: Measure, interleaved, on local paths
+        run: |
+          $bins = @("fop-1-mingw-noprofile.exe","fop-2-mingw-pgo.exe","fop-3-msvc-noprofile.exe","fop-4-msvc-pgo.exe")
+          $times = @{}
+          foreach ($b in $bins) { $times[$b] = @() }
+          $work = "$env:RUNNER_TEMP\bench"
+          for ($round = 1; $round -le 7; $round++) {
+            foreach ($b in $bins) {
+              if (Test-Path $work) { Remove-Item -Recurse -Force $work }
+              Copy-Item -Recurse test-lists $work          # outside the timing
+              $sw = [System.Diagnostics.Stopwatch]::StartNew()
+              & ".\$b" --no-commit $work | Out-Null
+              $sw.Stop()
+              if ($LASTEXITCODE -ne 0) { throw "$b failed in round $round" }
+              $times[$b] += $sw.ElapsedMilliseconds
+            }
+          }
+          ""
+          "=== 7 interleaved rounds on test-lists (370k lines), milliseconds"
+          $baseline = $null
+          foreach ($b in $bins) {
+            $s = $times[$b] | Sort-Object
+            $median = $s[[int](($s.Count - 1) / 2)]
+            if ($null -eq $baseline) { $baseline = $median }
+            $delta = [math]::Round((($median - $baseline) * 100.0 / $baseline), 1)
+            "{0,-28} best {1,5}  median {2,5}  worst {3,5}   vs mingw baseline: {4,6}%" -f `
+              $b, $s[0], $median, $s[-1], $delta
+          }
