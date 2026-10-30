@@ -1083,6 +1083,85 @@ fn test_a_network_domain_list_drops_covered_entries() {
 }
 
 #[test]
+fn test_a_capture_that_is_not_a_domain_list_is_not_merged() {
+    use crate::fop_sort::combine_filters;
+    // The backstop behind the `[$...]` guard, and the one that does not have
+    // to be taught a syntax first: `FILTER_DOMAIN_PATTERN` captures `[^,]+`,
+    // so wherever a `$domain=` turns up with a rule rather than a domain list
+    // after it, the capture runs to the end of the line. A list of domains
+    // never holds a cosmetic separator, so a capture that does is the pattern
+    // having taken hold of the wrong thing, whatever put it there.
+    //
+    // Nothing starts with `[$` here, so only the backstop can refuse these.
+    assert_eq!(
+        combine_filters(
+            vec![
+                "x$domain=a.com##.ad".to_string(),
+                "x$domain=b.com##.ad".to_string(),
+            ],
+            &crate::FILTER_DOMAIN_PATTERN,
+            "|",
+            true,
+        ),
+        vec!["x$domain=a.com##.ad", "x$domain=b.com##.ad"]
+    );
+    // Each of the separators, since the test walks `#[@$%?]*#` rather than
+    // matching a fixed list
+    for rule in [
+        "x$domain=a.com#@#.ad",
+        "x$domain=a.com#?#.ad",
+        "x$domain=a.com#$#.ad",
+        "x$domain=a.com#%#//scriptlet('abort-on-property-read', 'x')",
+        "x$domain=a.com#$?#.ad",
+        "x$domain=a.com#@$?#.ad",
+    ] {
+        let second = rule.replace("a.com", "b.com");
+        assert_eq!(
+            combine_filters(
+                vec![rule.to_string(), second.clone()],
+                &crate::FILTER_DOMAIN_PATTERN,
+                "|",
+                true,
+            ),
+            vec![rule.to_string(), second],
+            "merged a capture holding a separator: {rule}"
+        );
+    }
+    // A lone `#` ahead of the separator, so the scan has to carry on past it
+    // rather than giving up on the first `#` it meets. No comma, because the
+    // capture is `[^,]+` and would otherwise stop before the separator and
+    // leave the two lines differing outside it -- which combine_pair refuses
+    // for its own reasons, and would pass this whatever the backstop did.
+    assert_eq!(
+        combine_filters(
+            vec![
+                "x$domain=a.com#p##.ad".to_string(),
+                "x$domain=b.com#p##.ad".to_string(),
+            ],
+            &crate::FILTER_DOMAIN_PATTERN,
+            "|",
+            true,
+        ),
+        vec!["x$domain=a.com#p##.ad", "x$domain=b.com#p##.ad"]
+    );
+    // A lone `#` is not a separator, and the two merge paths agree on such a
+    // line today, so the backstop must leave it where it is: the agreement
+    // fuzz carries `a.com#,x,~b.com##.ad` and caught a wider test than this.
+    assert_eq!(
+        combine_filters(
+            vec![
+                "a.com#,x##.ad".to_string(),
+                "b.com##.ad".to_string(),
+            ],
+            &crate::ELEMENT_DOMAIN_PATTERN,
+            ",",
+            true,
+        ),
+        vec!["a.com#,b.com,x##.ad"]
+    );
+}
+
+#[test]
 fn test_an_adguard_modifier_prefix_is_never_merged_or_pruned() {
     use crate::fop_sort::combine_filters;
     // AdGuard puts a rule's modifiers in front of it, and that `$` is not a

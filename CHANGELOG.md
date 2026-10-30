@@ -4,6 +4,37 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Refuse a merge whose domain list is not a domain list. The guard above
+  teaches the merge about AdGuard's `[$...]` prefix; this one needs to know no
+  syntax at all. `FILTER_DOMAIN_PATTERN` captures `[^,]+` after `domain=`, so
+  wherever a `$domain=` turns up with a rule after it rather than a list of
+  domains the capture runs to the end of the line -- and a list of domains
+  never holds a cosmetic separator, so a capture that holds one is the pattern
+  having taken hold of the wrong thing, whatever put it there.
+
+  It catches the `[$...]` corruption on its own: with the prefix guard removed
+  entirely, all 776 of AdGuard's prefixed rules still survive. Which is the
+  point of having it -- the prefix guard fixes the syntax that is known to bite
+  today, and this stops the next one silently doing the same.
+
+  It also shows the exposure was wider than the damage. Across AdGuard's
+  filters 465 captures hold a separator where only 101 lines were actually
+  lost, because corruption needed an adjacent rule to merge with; the other
+  364 were one neighbour away from it. Of the 7,407 ordinary `domain=` lines
+  in uAssets, easylist and listefr, not one capture holds a separator, so the
+  refusal cannot block a real merge in any of them -- and their output is
+  byte-identical either way.
+
+  A cosmetic separator rather than a bare `#`, which the agreement fuzz showed
+  to be too wide: its corpus carries `a.com#,x,~b.com##.ad`, a malformed
+  domain list with a lone `#` that both merge paths should go on treating
+  alike, and a bare-`#` test broke their agreement. Five mutants, all caught,
+  and the one that needed a second attempt was the scan's own advance past a
+  lone `#` -- the first case written for it put a comma in the capture, which
+  `[^,]+` stops at, so the lines differed outside the capture and combine_pair
+  refused them for its own reasons. It would have passed whatever the backstop
+  did.
+
 - Stop the merge destroying AdGuard rules that carry a modifier prefix.
   AdGuard writes a rule's modifiers in front of it, as
   `[$domain=/mirror\d+\.com$/]example.com##.ad`, and that `$` is not a network

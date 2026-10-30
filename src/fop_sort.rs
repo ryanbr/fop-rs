@@ -701,7 +701,43 @@ fn rule_domains<'a>(line: &'a str, domain_pattern: &Regex) -> Option<regex::Capt
     if line.starts_with("[$") {
         return None;
     }
-    domain_pattern.captures(line)
+    let caps = domain_pattern.captures(line)?;
+    // And a backstop that needs to know no syntax at all: a domain list
+    // cannot hold a cosmetic separator, so a capture that does is the pattern
+    // having taken hold of something else -- a whole rule, here, but the next
+    // syntax to put a `$domain=` somewhere unexpected would land the same
+    // way, and this catches it without waiting to be taught about it.
+    //
+    // A separator rather than a bare `#`, which the agreement fuzz showed to
+    // be too wide: its corpus holds `a.com#,x,~b.com##.ad`, a malformed
+    // domain list with a lone `#` that the two merge paths should go on
+    // treating alike. Measured over AdGuard's filters, uAssets, easylist and
+    // listefr the two tests are equally precise -- 465 captures hold a
+    // separator, every one of them a `[$...]` rule, and of the 7,407
+    // ordinary `domain=` lines in the other three lists, none does.
+    if caps.get(1).is_some_and(|m| holds_cosmetic_separator(m.as_str())) {
+        return None;
+    }
+    Some(caps)
+}
+
+/// Whether a would-be domain list holds `##`, `#@#`, `#$#`, `#%#`, `#?#` or
+/// any of their longer forms, which a list of domains never does.
+fn holds_cosmetic_separator(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut from = 0;
+    while let Some(offset) = bytes[from..].iter().position(|&b| b == b'#') {
+        let hash = from + offset;
+        let mut next = hash + 1;
+        while next < bytes.len() && matches!(bytes[next], b'@' | b'$' | b'%' | b'?') {
+            next += 1;
+        }
+        if bytes.get(next) == Some(&b'#') {
+            return true;
+        }
+        from = hash + 1;
+    }
+    false
 }
 
 fn prune_line(line: String, domain_pattern: &Regex, separator: &str) -> String {
