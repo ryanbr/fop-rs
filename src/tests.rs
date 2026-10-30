@@ -4463,6 +4463,17 @@ fn test_pull_and_push_rebases_onto_a_clean_change() {
     assert_eq!(remote.git(&["log", "--format=%s", "main"]).lines().collect::<Vec<_>>(), ["mine", "elsewhere", "init"]);
 }
 
+// Unix only, for how it watches rather than what it watches for: the git it
+// hands the program is a `#!/bin/sh` wrapper made executable with `chmod`,
+// and Windows honours neither a shebang nor the mode bit, so `pull_and_push`
+// cannot run it and comes back having pushed nothing. The shape being watched
+// for is the same on every platform; it is the wrapper that is not. Watching
+// it on Windows would want a `.cmd` of its own, which is its own piece of
+// work.
+//
+// This failed the first Windows run the suite ever had -- 214 of 215 passed
+// and this was the one -- because nothing had run it off a Unix box before.
+#[cfg(unix)]
 #[test]
 fn test_the_sync_before_a_push_does_not_go_through_git_pull() {
     // `git pull --rebase` fetches, writes FETCH_HEAD, then reads it back to

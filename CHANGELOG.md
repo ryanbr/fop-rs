@@ -4,6 +4,28 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Run the test suite in CI on Linux, Windows and macOS, and gate the one test
+  that cannot pass on Windows. Nothing had run the suite in CI at all: the
+  three build jobs compiled the binaries and trained PGO by sorting
+  `test-lists`, so a release could ship a failing test and anything
+  platform-specific was exercised on Linux alone. `cargo test --release` now
+  runs as the fourth step of each build job, before the version is bumped, so
+  a failure costs no version number.
+
+  The first Windows run it ever had came back 214 of 215 passing, and the one
+  failure was the test's own doing rather than FOP's:
+  `test_the_sync_before_a_push_does_not_go_through_git_pull` hands the program
+  a `#!/bin/sh` wrapper made executable with `chmod`, and Windows honours
+  neither a shebang nor the mode bit, so `pull_and_push` cannot run it and
+  comes back having pushed nothing. It is now `#[cfg(unix)]`, like the three
+  tests that already were. The shape it watches for is the same on every
+  platform; a Windows version of it would want a `.cmd` wrapper of its own.
+
+  Which is the point of running them: a test that has never run off one
+  machine is not a test that passes, and this one had been accumulating that
+  way since it was written. macOS is now the first machine other than this one
+  to run the suite at all, and it passes there.
+
 - Refuse a merge whose domain list is not a domain list. The guard above
   teaches the merge about AdGuard's `[$...]` prefix; this one needs to know no
   syntax at all. `FILTER_DOMAIN_PATTERN` captures `[^,]+` after `domain=`, so
