@@ -124,8 +124,14 @@ jobs:
           $bins = @("fop-1-mingw-noprofile.exe","fop-2-mingw-pgo.exe","fop-3-msvc-noprofile.exe","fop-4-msvc-pgo.exe")
           foreach ($b in $bins) {
             if (-not (Test-Path ".\$b")) { throw "missing $b" }
-            $v = & ".\$b" --version 2>&1 | Select-Object -First 1
-            if ($LASTEXITCODE -ne 0) { throw "$b failed to run ($LASTEXITCODE)" }
+            # Collect the whole output before taking a line from it:
+            # `| Select-Object -First 1` stops the pipeline as soon as it has
+            # one object, and a stopped pipeline leaves $LASTEXITCODE unset,
+            # so the check below threw with an empty exit code on a binary
+            # that had in fact run perfectly well.
+            $out = @(& ".\$b" --version 2>&1)
+            if ($LASTEXITCODE -ne 0) { throw "$b failed to run ($LASTEXITCODE): $out" }
+            $v = $out[0]
             "{0,-28} {1}  ({2:N0} bytes)" -f $b, $v, (Get-Item ".\$b").Length
           }
           # Same input through each, then compare the outputs
