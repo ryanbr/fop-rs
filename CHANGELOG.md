@@ -4,6 +4,61 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Stop folding `##^...:has-text()` HTML filters together. Reported by
+  @EasyListHebrew, who moved a list onto FOP and found a webmail had stopped
+  working.
+
+  uBO cancels a filter with an exception only when the selector matches text
+  for text. Its HTML filtering engine stores an exception as `-${compiled}`
+  and asks `all.has(`-${selector}`)`, a set lookup on the compiled selector,
+  so folding three hiding rules into one regex left no rule carrying what the
+  exceptions named:
+
+  ```text
+  mail.walla.co.il#@#^script:has-text((window)}catch)
+  mail.walla.co.il#@#^script:has-text(responseText)
+  sheee.co.il,walla.co.il##^script:has-text((window)}catch)
+  sheee.co.il,walla.co.il##^script:has-text(200===)
+  sheee.co.il,walla.co.il##^script:has-text(responseText)
+    -> sheee.co.il,walla.co.il##^script:has-text(/\(window\)\}catch|200===|responseText/)
+  ```
+
+  Both exceptions stopped cancelling anything, the merged rule stayed active
+  on the mail subdomain, and scripts holding `responseText` were stripped out
+  of a working webmail. The escaping was right; the identity was not.
+
+  The intent cannot be expressed in merged form at all, which is what settles
+  it: an exception written to match the merged selector would except every
+  pattern inside it, including the `200===` that list deliberately keeps
+  blocking on that subdomain. No rewrite on the list's side recovers it.
+
+  `##^` filters the response stream, so a rule that quietly stops being
+  excepted removes a script from the page rather than leaving an ad visible --
+  the reason to hold these back rather than try to be clever. It needs no view
+  of the exceptions, so it holds however the list is laid out, including when
+  the exception lives in a file of its own as uBO's `unbreak.txt` does.
+
+  Every `^` selector, not just `^script`. Counting what carries
+  `:has-text()` across uAssets, AdGuard's filters, EasyList and liste_fr:
+  326 `^script`, 32 `^script[data-cfasync]`, 4 `^style`, 2
+  `^template:content(script)`, and a dozen `^html > ... > script` chains
+  built from `:not()`, `:has()` and `:upward()`. Matching on `^script` would
+  have left `^style:has-text()`, which strips a stylesheet, and those chains.
+  `:has-text()` is the only foldable pseudo that appears on a `^` rule at
+  all -- no `:abp-contains`, no `:min-text-length`.
+
+  Ordinary DOM rules still fold: `example.com##h1:has-text(adblock)` and
+  `…(supporter)` still become `…:has-text(/adblock|supporter/)`. The cost
+  falls on uAssets alone, which has 340 `^` rules ending in a foldable
+  pseudo; AdGuard's filters have none, using `$$` for HTML filtering rather
+  than `##^`, and EasyList has none either.
+
+  FOP's own comment had reasoned halfway to this and stopped: it already
+  declined to fold exception rules, on the grounds that doing so would leave
+  the rules they cancel un-excepted, but then recorded that "a hiding rule
+  stands alone, so nothing has to match its text". A hiding rule does not
+  stand alone. Exceptions name it.
+
 - `npm install` now fetches the MSVC+PGO build on Windows x86_64 instead of
   the mingw one. It is 10% faster and 295KB smaller, and the two produce
   identical output.

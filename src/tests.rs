@@ -1681,6 +1681,48 @@ fn test_adguard_exception_separators() {
 // =============================================================================
 
 #[test]
+fn test_html_filters_are_never_folded_together() {
+    // `##^...` filters the response stream, and uBO cancels one with an
+    // exception only when the selector matches text for text: its engine
+    // stores the exception as `-${compiled}` and asks
+    // `all.has(`-${selector}`)`. Folding the hiding rules leaves no rule
+    // carrying what the exception names, so the exception stops cancelling
+    // anything and the merged rule strips the script anyway.
+    //
+    // Reported by @EasyListHebrew. Three rules on walla.co.il merged, the two
+    // exceptions for the mail subdomain stopped applying, and the webmail
+    // broke. The intent cannot be written in merged form either: an exception
+    // matching the merged selector would except every pattern in it,
+    // including the one that list keeps blocking on that subdomain.
+    let input = vec![
+        r"sheee.co.il,walla.co.il##^script:has-text((window)}catch)".to_string(),
+        r"sheee.co.il,walla.co.il##^script:has-text(200===)".to_string(),
+        r"sheee.co.il,walla.co.il##^script:has-text(responseText)".to_string(),
+    ];
+    let result = crate::fop_sort::combine_has_text_rules(input.clone());
+    assert_eq!(result, input, "an HTML filter was folded");
+
+    // Held back whether or not this run can see an exception, because the
+    // exception may be in another file, another list, or a user's own
+    // filters, none of which are in view here.
+    let lone = vec![
+        "example.com##^script:has-text(alpha)".to_string(),
+        "example.com##^script:has-text(beta)".to_string(),
+    ];
+    assert_eq!(crate::fop_sort::combine_has_text_rules(lone.clone()), lone);
+
+    // A selector that only starts with `^` after the separator is the test;
+    // an ordinary DOM rule still folds, which is the rest of the feature.
+    let dom = vec![
+        "example.com##h1:has-text(adblock)".to_string(),
+        "example.com##h1:has-text(supporter)".to_string(),
+    ];
+    let folded = crate::fop_sort::combine_has_text_rules(dom);
+    assert_eq!(folded.len(), 1, "a DOM rule should still fold: {folded:?}");
+    assert!(folded[0].contains(":has-text(/adblock|supporter/)"), "{folded:?}");
+}
+
+#[test]
 fn test_has_text_merge_two_plain() {
     let input = vec![
         "example.com##.ad:has-text(Buy now)".to_string(),

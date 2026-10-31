@@ -1858,7 +1858,16 @@ pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
             continue;
         };
 
-        if let Some((base, pseudo, arg)) = parse_has_text_selector(selector) {
+        // Never an HTML filter. `##^...` filters the response stream, so a
+        // rule that stops being excepted strips a script from the page rather
+        // than leaving an ad visible -- which is what breaking the walla.co.il
+        // rules did. Holding these back needs no view of the exceptions at
+        // all, so unlike the check below it does not care which file they live
+        // in, and it is the class the merge was reported against.
+        let html_filter = selector.starts_with('^');
+        if let Some((base, pseudo, arg)) =
+            (!html_filter).then(|| parse_has_text_selector(selector)).flatten()
+        {
             let key = (domains.to_string(), separator.to_string(), base, pseudo);
             let entry = groups.entry(key).or_insert_with(|| (idx, Vec::new()));
             entry.1.push(arg);
