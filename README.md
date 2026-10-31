@@ -373,9 +373,9 @@ If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the pl
 | Intel | `macos-x86_64` | Baseline | All Intel Macs |
 | Apple Silicon | `macos-arm64` | Apple M1 | M1, M2, M3, M4, M5 Macs |
 | **Windows** | | | |
-| x86_64 | `windows-x86_64.exe` | Baseline | All 64-bit Windows |
+| x86_64 | `windows-x86_64-msvc.exe` | MSVC + PGO | All 64-bit Windows. What `npm install` fetches |
+| x86_64 | `windows-x86_64.exe` | Baseline | All 64-bit Windows. mingw, no PGO |
 | x86_64 | `windows-x86_64-v3.exe` | AVX2 | Intel Haswell+ / AMD Excavator+ (~2015+) |
-| x86_64 | `windows-x86_64-msvc.exe` | MSVC + PGO | All 64-bit Windows. A trial build, see below |
 | x86 | `windows-x86_32.exe` | Baseline | 32-bit Windows |
 | ARM64 | `windows-arm64-v2.exe` | Cortex-A78 | Surface Pro X, Snapdragon laptops |
 
@@ -392,21 +392,27 @@ If `commit-mask` is unset, or every URL was github/gitlab (a no-op mask), the pl
   own lists.
 
 **Windows x86_64:**
-- Use the baseline. `-v3` adds AVX2 targeting, for the same negligible gain
+- Use `-msvc`, which is what `npm install` fetches. MSVC rather than mingw,
+  with PGO, and a static CRT so it needs no `VCRUNTIME140.dll`.
+- It is 10% faster than the mingw baseline and 295KB smaller, measured on a
+  Windows runner over seven interleaved rounds of sorting `test-lists/`:
+  median 1911ms against 2123ms, best 1762ms against 1986ms, and the output of
+  the two is identical file for file. Roughly half of that is the toolchain
+  and half the profile -- MSVC without a profile lands at 2006ms.
+- The mingw `windows-x86_64.exe` and `-v3` builds are still published, and
+  still work; they simply carry no PGO. rustup ships no profiler runtime for
+  `x86_64-pc-windows-gnu`, so that target cannot be instrumented at all,
+  which is why only the MSVC build can have a profile. Feeding it a profile
+  collected on another host does work -- `-Cprofile-use` needs no runtime --
+  but measured out at 1.5%, inside the noise, so it is not done.
+- `-v3` adds AVX2 targeting to the mingw build, for the same negligible gain
   as on Linux.
-- Neither carries PGO, and not for want of trying: rustup ships no profiler
-  runtime for `x86_64-pc-windows-gnu`, the mingw target these are built with,
-  so it cannot be instrumented at all. Only `x86_64-pc-windows-msvc` can.
-- `-msvc` is that build: MSVC rather than mingw, with PGO, and a static CRT so
-  it still needs no `VCRUNTIME140.dll`. It is published for comparison while
-  the two are measured against each other; `npm install` continues to fetch
-  the mingw build. Try it if you want the speedup on Windows today.
 
 **Linux ARM64 (Raspberry Pi / Orange Pi):**
 - Use `linux-arm64` for Pi 3, Pi 4, Orange Pi 3/4, or if unsure
 - Use `linux-arm64-n1` for Pi 5, Orange Pi 5, AWS Graviton2+ (~10-20% faster)
 
-**npm install** downloads baseline binaries for maximum compatibility. Optimized versions are available from [GitHub Releases](https://github.com/ryanbr/fop-rs/releases).
+**npm install** downloads binaries that run on any CPU of their architecture -- baseline everywhere, except Windows x86_64 where it takes the MSVC+PGO build, which is equally portable and measurably faster. Optimized versions are available from [GitHub Releases](https://github.com/ryanbr/fop-rs/releases).
 
 ### Build Details
 

@@ -18,7 +18,11 @@ const PLATFORMS = {
   'linux-x64': `-linux-x86_64`,
   'linux-arm64': `-linux-arm64`,  // Baseline for max compatibility
   'linux-riscv64': `-linux-riscv64`,
-  'win32-x64': `-windows-x86_64.exe`,
+  // MSVC+PGO: 10% faster and 295KB smaller than the mingw build this
+  // used to fetch, measured on a Windows runner over 7 interleaved
+  // rounds, with byte-identical output. Static CRT, so it still needs no
+  // VCRUNTIME140.dll and runs on all 64-bit Windows.
+  'win32-x64': `-windows-x86_64-msvc.exe`,
   'win32-ia32': `-windows-x86_32.exe`,
   'win32-arm64': `-windows-arm64-v2.exe`,
 };

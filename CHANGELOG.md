@@ -4,6 +4,39 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- `npm install` now fetches the MSVC+PGO build on Windows x86_64 instead of
+  the mingw one. It is 10% faster and 295KB smaller, and the two produce
+  identical output.
+
+  Measured on a Windows runner rather than argued from inspection, which is
+  what the MSVC binary was shipped alongside the mingw one to allow. Seven
+  interleaved rounds, each sorting `test-lists/` (370k lines), milliseconds:
+
+  ```text
+  mingw, no profile (what this used to fetch)   best 1986   median 2123
+  mingw + a profile collected on Linux          best 2044   median 2091
+  MSVC, no profile                              best 1899   median 2006
+  MSVC + PGO (what it fetches now)              best 1762   median 1911
+  ```
+
+  All four ran, and all three alternatives matched the mingw baseline file
+  hash for file hash over the same input. Roughly half the gain is the
+  toolchain and half the profile. The binary is also the smallest of the four
+  at 2,561,024 bytes against 2,855,936, so the download shrinks too, and
+  `+crt-static` means it still needs no `VCRUNTIME140.dll`.
+
+  The third row is a route that had not been tried before and turns out not
+  to be worth taking. rustup ships no profiler runtime for
+  `x86_64-pc-windows-gnu`, which is why two attempts in September failed with
+  E0463 and why the mingw build carries no PGO -- but that is
+  `-Cprofile-generate`. `-Cprofile-use` needs no runtime, so mingw can consume
+  a profile collected on another host, and it builds clean and runs correctly.
+  It just measures out at 1.5%, with a worse best case, so the published mingw
+  builds stay as they are.
+
+  The mingw `windows-x86_64.exe` and `-v3` binaries are still published and
+  still work, for anyone who wants them or hits trouble with the MSVC one.
+
 - Run the test suite in CI on Linux, Windows and macOS, and gate the one test
   that cannot pass on Windows. Nothing had run the suite in CI at all: the
   three build jobs compiled the binaries and trained PGO by sorting

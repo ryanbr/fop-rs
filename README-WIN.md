@@ -14,8 +14,10 @@ Download from [https://git-scm.com/download/win](https://git-scm.com/download/wi
 
 1. Go to [https://github.com/ryanbr/fop-rs/releases](https://github.com/ryanbr/fop-rs/releases)
 2. Download the appropriate binary:
+   - `fop-X.X.X-windows-x86_64-msvc.exe` - Recommended. Works on all
+     64-bit Windows, and is the fastest of the three
    - `fop-X.X.X-windows-x86_64.exe` - Works on all 64-bit Windows
-   - `fop-X.X.X-windows-x86_64-v3.exe` - Faster, requires AVX2 (~2015+ CPUs)
+   - `fop-X.X.X-windows-x86_64-v3.exe` - Requires AVX2 (~2015+ CPUs)
 3. Rename to `fop.exe` and place in a folder (e.g., `C:\Tools`)
 
 ### Option 2: Build from Source
@@ -208,8 +210,9 @@ Windows Terminal and newer PowerShell versions support colors by default. If col
 
 | Binary | Compatibility | Performance |
 |--------|---------------|-------------|
+| `fop-X.X.X-windows-x86_64-msvc.exe` | All 64-bit Windows | Fastest: 10% over standard, and what `npm install` takes |
 | `fop-X.X.X-windows-x86_64.exe` | All 64-bit Windows | Standard |
-| `fop-X.X.X-windows-x86_64-v3.exe` | Windows with AVX2 (~2015+ CPUs) | ~10-20% faster |
+| `fop-X.X.X-windows-x86_64-v3.exe` | Windows with AVX2 (~2015+ CPUs) | Standard, plus AVX2 targeting |
 
 **How to check if your CPU supports AVX2:**
 
