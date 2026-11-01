@@ -4,6 +4,44 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Say so when a sort leaves a checksum behind. A list is rewritten around its
+  own `! Checksum:` line, which then describes contents that no longer exist;
+  ABP and uBO check it on download, so the list can be turned away by the
+  clients it is for. Nothing said so before -- the sort reported `Sorted:` and
+  exited 0:
+
+  ```text
+  Checksum not updated: EasyListHebrew.txt was rewritten and its `! Checksum:`
+  line left as written, so the checksum no longer matches. Add
+  `add-checksum = true` under `[EasyListHebrew.txt]` in .fopconfig, or pass
+  `--add-checksum=EasyListHebrew.txt`.
+  ```
+
+  Advisory, like the note about a network rule with no dot in its domain.
+  Nothing fails, no exit code changes, and `--quiet` and `--limited-quiet`
+  silence it.
+
+  Raised where the file is written, which is the only place that knows both
+  halves: that the file really did change, and that no checksum is coming for
+  it. A first attempt put it under the title header instead, and that version
+  warned every run about lists already in FOP's order, since before any file
+  is read it can only ask whether a checksum will be updated, not whether one
+  was invalidated. It also had to walk the tree and read every file's header
+  to ask. Written where the rename happens, both contents are already in hand
+  and the change has already been tested, so it costs no read at all.
+
+  Found while checking FOP against EasyList Hebrew, whose published list
+  validates clean and fails validation after a plain sort. Their own workflow
+  validates and then re-adds, so they were never exposed; a maintainer sorting
+  by hand before committing is.
+
+  `SortConfig` gained `add_checksum`, resolved per file where the other
+  per-file options are, since `add-checksum` is a list of names on the command
+  line and a boolean under a `[filename]` section. Five mutants, four caught;
+  the fifth is the per-file override reaching the sort through
+  `process_location`, which no unit test enters -- removing it makes a
+  `[list.txt] add-checksum = true` list warn, which a live run catches.
+
 - Docs for the two `:has-text()` changes, and two lines that had become
   wrong. `parsing.md` told the reader that `##^script:has-text(...)` is an
   "HTML filter; `:has-text()` merging applies" and that merging "also covers

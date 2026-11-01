@@ -523,10 +523,14 @@ fn sort_config_from(args: &Args) -> SortConfig<'_> {
         fix_typos: args.fix_typos,
         ignore_line_minimum: args.ignore_line_minimum,
         quiet: args.quiet,
+        limited_quiet: args.limited_quiet,
         no_color: args.no_color,
         dry_run: args.output_diff.is_some() || args.output_diff_individual || args.output_changed || args.benchmark,
         output_changed: args.output_changed,
         add_timestamp: !args.add_timestamp.is_empty(),
+        // Per file, so this is only the default; `file_config` resolves the
+        // named lists and any `[filename]` section against the actual path.
+        add_checksum: false,
         benchmark: args.benchmark,
     }
 }
@@ -2462,16 +2466,24 @@ fn process_location(
             adguard_convert: sort_config.adguard_convert,
             convert_trusted: sort_config.convert_trusted,
             quiet,
+            limited_quiet,
             no_color,
             dry_run: sort_config.dry_run,
             output_changed: sort_config.output_changed,
             add_timestamp: sort_config.add_timestamp,
+            add_checksum: add_checksum.iter().any(|f| {
+                path.file_name().and_then(|n| n.to_str()) == Some(f.as_str())
+                    || path.ends_with(f.as_str())
+            }),
             benchmark: sort_config.benchmark,
         };
         // Apply per-file overrides from [filename] sections in .fopconfig
         if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
             if let Some(overrides) = file_overrides.get(fname) {
                 overrides.apply_to(&mut config);
+                if overrides.add_checksum == Some(true) {
+                    config.add_checksum = true;
+                }
             }
         }
         config

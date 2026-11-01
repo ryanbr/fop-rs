@@ -374,12 +374,25 @@ pub struct SortConfig<'a> {
     /// them as malformed
     pub ignore_line_minimum: bool,
     pub quiet: bool,
+    /// `--limited-quiet`, which keeps the run's own reporting but silences
+    /// the advisory notices. Held here so the sort can respect it, as the
+    /// checksum notice must.
+    pub limited_quiet: bool,
     pub no_color: bool,
     pub dry_run: bool,
     /// Output changed files with --changed suffix
     pub output_changed: bool,
     /// Update timestamp in file header
     pub add_timestamp: bool,
+    /// Whether a checksum will be written for this file once the sort is
+    /// done. Resolved per file, because `add-checksum` is a list of names on
+    /// the command line and a boolean under a `[filename]` section.
+    ///
+    /// The sort does not add the checksum -- that is a pass of its own, after
+    /// every file is written -- but it has to know, or it cannot tell a list
+    /// whose checksum is about to be brought up to date from one whose
+    /// checksum it is about to leave wrong.
+    pub add_checksum: bool,
     /// Timing the sort (`--benchmark`): nothing reads the result
     pub benchmark: bool,
 }
@@ -3165,6 +3178,38 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 write_file_no_follow(&backup_file, &original_content)?;
             }
             fs::rename(&temp_file, filename)?;
+            // The file has just been rewritten around its own checksum line,
+            // which now describes contents that no longer exist. ABP and uBO
+            // check it on download, so a list can be turned away by the very
+            // clients it is for -- and nothing else in the run says so, since
+            // the sort reports `Sorted:` and exits 0.
+            //
+            // Here rather than before the work starts: this is the one place
+            // that knows the file really did change, so a list already in
+            // FOP's order is not warned about year after year. `original`
+            // is in hand already, so finding the line costs no read.
+            if !config.quiet
+                && !config.limited_quiet
+                && !config.add_checksum
+                && original_content
+                    .split(|b| *b == b'\n')
+                    .take(CHECK_LINES)
+                    .filter_map(|l| std::str::from_utf8(l).ok())
+                    .any(crate::fop_checksum::is_checksum_line)
+            {
+                let name = filename
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("that file");
+                crate::write_warning(&format!(
+                    "Checksum not updated: {} was rewritten and its `! Checksum:` line left as \
+                     written, so the checksum no longer matches. Add `add-checksum = true` under \
+                     `[{}]` in .fopconfig, or pass `--add-checksum={}`.",
+                    filename.display(),
+                    name,
+                    name,
+                ));
+            }
             if !config.quiet {
                 if config.no_color {
                     let _ = writeln!(std::io::stdout().lock(), "Sorted: {}", filename.display());

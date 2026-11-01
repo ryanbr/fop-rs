@@ -83,6 +83,8 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--no-ubo-convert` | Skip uBO to ABP option conversion (keep `xhr`, `3p`, `1p`, etc.) |
 | `--no-drop-covered-domains` | Keep a domain another entry in the same list already covers, instead of dropping it |
 | `--no-combine-has-text` | Keep sibling `:has-text()` rules as separate rules, instead of combining them into one regex |
+
+FOP warns `Checksum not updated` when it rewrites a list that carries a `! Checksum:` line it is not updating, since sorting leaves such a checksum wrong. Set `add-checksum = true` for the file, or pass `--add-checksum=FILE`; `--quiet` and `--limited-quiet` silence the notice.
 | `--no-msg-check` | Skip commit message format validation (M:/A:/P:) |
 | `--disable-ignored` | Disable hardcoded ignored files and folders for testing |
 | `--no-sort` | Don't sort rules, just combine |

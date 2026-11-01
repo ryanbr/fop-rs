@@ -13,7 +13,7 @@ use md5::Context;
 
 /// Check if line is a checksum line (case-insensitive)
 #[inline]
-fn is_checksum_line(line: &str) -> bool {
+pub(crate) fn is_checksum_line(line: &str) -> bool {
     let trimmed = line.trim();
     if let Some(rest) = trimmed.strip_prefix('!').or_else(|| trimmed.strip_prefix('#')) {
         let rest = rest.trim_start();

@@ -1478,6 +1478,77 @@ fn test_a_file_section_can_keep_has_text_rules_apart() {
 }
 
 #[test]
+fn test_a_rewritten_list_says_its_checksum_was_not_updated() {
+    // Sorting a list rewrites it around its own `! Checksum:` line, which
+    // then describes contents that no longer exist. ABP and uBO check it on
+    // download, so the list can be turned away by the clients it is for --
+    // and nothing else in the run says so, since the sort reports `Sorted:`
+    // and exits 0.
+    use crate::{WARNING_BUFFER, WARNING_TO_FILE};
+    use std::sync::atomic::Ordering::Relaxed;
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let said = |fragment: &str| {
+        WARNING_BUFFER.lock().unwrap().iter().any(|w| w.contains(fragment))
+    };
+
+    let chars = vec!["!".to_string()];
+    let dir = std::env::temp_dir().join(format!("fop-test-cksum-warn-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // Out of order, so the sort has something to do, and carrying a checksum
+    // line whose value does not matter here -- only that it is there.
+    let write = |name: &str| {
+        let file = dir.join(name);
+        std::fs::write(
+            &file,
+            "[Adblock Plus 2.0]\n! Checksum: AAAAAAAAAAAAAAAAAAAAAA\n! Title: t\n\
+             ||zebra.com^\n||apple.com^\n",
+        )
+        .unwrap();
+        file
+    };
+
+    let run = |file: &std::path::Path, add_checksum: bool, limited_quiet: bool| -> bool {
+        WARNING_TO_FILE.store(true, Relaxed);
+        WARNING_BUFFER.lock().unwrap().clear();
+        let mut config = test_sort_config(&chars);
+        config.quiet = false;
+        config.limited_quiet = limited_quiet;
+        config.add_checksum = add_checksum;
+        crate::fop_sort::fop_sort(file, &config).unwrap();
+        said("Checksum not updated")
+    };
+
+    let file = write("a.txt");
+    assert!(run(&file, false, false), "a rewritten list said nothing about its checksum");
+
+    // Nothing to do the second time: the file is already in FOP's order, so
+    // no checksum was invalidated and there is nothing to say. This is why
+    // the notice sits where the file is written rather than before the run.
+    assert!(
+        !run(&file, false, false),
+        "warned about a file it did not rewrite"
+    );
+
+    // A checksum that will be brought up to date afterwards is not a problem
+    let fresh = write("b.txt");
+    assert!(!run(&fresh, true, false), "warned although add-checksum is set");
+
+    // `--limited-quiet` silences the advisory notices
+    let third = write("c.txt");
+    assert!(!run(&third, false, true), "spoke up under --limited-quiet");
+
+    // A list with no checksum line has nothing to invalidate
+    let plain = dir.join("d.txt");
+    std::fs::write(&plain, "[Adblock Plus 2.0]\n! Title: t\n||zebra.com^\n||apple.com^\n").unwrap();
+    assert!(!run(&plain, false, false), "warned about a list with no checksum");
+
+    WARNING_TO_FILE.store(false, Relaxed);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_sort_folds_has_text_unless_the_config_says_not_to() {
     // End to end, so what the option is wired to is the sort and not just the
     // helper: the same file written both ways.
@@ -3358,10 +3429,12 @@ fn test_sort_config(comment_chars: &[String]) -> crate::fop_sort::SortConfig<'_>
         fix_typos: false,
         ignore_line_minimum: false,
         quiet: true,
+        limited_quiet: false,
         no_color: true,
         dry_run: false,
         output_changed: false,
         add_timestamp: false,
+        add_checksum: false,
         benchmark: false,
     }
 }
