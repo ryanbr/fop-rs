@@ -734,9 +734,21 @@ fn rule_domains<'a>(line: &'a str, domain_pattern: &Regex) -> Option<regex::Capt
 /// Whether a would-be domain list holds `##`, `#@#`, `#$#`, `#%#`, `#?#` or
 /// any of their longer forms, which a list of domains never does.
 fn holds_cosmetic_separator(value: &str) -> bool {
+    // `str::find` for a single ASCII char goes through core's memchr; an
+    // `iter().position()` byte loop does not, and the common case here is
+    // reading a whole domain list to prove a `#` absent.
+    //
+    // Measured rather than assumed, because the assumption was wrong by 7x:
+    // the byte loop LLVM produces manages 5.2GB/s, not the 0.7 a scalar loop
+    // would, and `find` manages 23. AdGuard's filters hand this 16,130 lists
+    // a sort, 679KB of them with one running to 23KB, called two or three
+    // times a line -- 1.7MB of scanning, so 0.33ms the slow way and 0.07 the
+    // fast way, on a sort that takes about 90ms. Worth taking as a free 4.5x
+    // on the function, not worth claiming as a speedup: no end-to-end
+    // benchmark can see 0.3%, and three of them tried.
     let bytes = value.as_bytes();
     let mut from = 0;
-    while let Some(offset) = bytes[from..].iter().position(|&b| b == b'#') {
+    while let Some(offset) = value[from..].find('#') {
         let hash = from + offset;
         let mut next = hash + 1;
         while next < bytes.len() && matches!(bytes[next], b'@' | b'$' | b'%' | b'?') {
