@@ -2,7 +2,7 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
-## [Unreleased]
+## [6.2.1] - 2026-11-01
 
 - Say so when a sort leaves a checksum behind. A list is rewritten around its
   own `! Checksum:` line, which then describes contents that no longer exist;
