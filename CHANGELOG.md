@@ -2,6 +2,96 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [Unreleased]
+
+- `--sort-by-domain`, which orders cosmetic rules by domain and then by
+  selector within a domain, instead of by selector alone. Also
+  `sort-by-domain` in `.fopconfig`, for a run or under a `[filename]`
+  section. Off by default, so no existing output moves.
+
+  Asked for by @EasyListHebrew, whose list is maintained a site at a time:
+  ordering by selector scatters one site's rules down a section, and what
+  they want is to read them together.
+
+  ```text
+  default            apple.co.il###banner
+                     apple.co.il,mango.co.il,zebra.co.il##.ad
+                     apple.co.il##.other
+                     mango.co.il##.promo
+
+  --sort-by-domain   apple.co.il###banner
+                     apple.co.il##.other
+                     apple.co.il,mango.co.il,zebra.co.il##.ad
+                     mango.co.il##.promo
+  ```
+
+  Ordered last, over the finished lines, which is what makes it free of
+  consequence: the sort still orders by selector first, because that is what
+  puts identical selectors next to each other for the merge, and this
+  reorders afterwards. So every merge survives -- 55,924 cosmetic lines in
+  uAssets and 115,037 in AdGuard's filters, the same counts either way.
+  Ordering by domain *before* the merge would have cost them, which is what
+  the mutant that moves it earlier is there to catch.
+
+  Two limitations to state plainly. A merged rule can only sit in one place,
+  so `a.com,b.com,c.com##.ad` files under `a.com` and is not next to b.com's
+  or c.com's own rules; single-domain rules, which are most of them, group as
+  expected. And it orders the whole section, not only its cosmetic rules: a
+  mostly-cosmetic section still holds network rules, and those move too --
+  from case-sensitive to case-insensitive order, `||apple.com^` ahead of
+  `||Mango.com^`, which is how a mostly-network section is already ordered.
+  920 such lines in uAssets and 1,520 in AdGuard's filters. A list's order
+  does not affect what it blocks, so this is presentation, but it is more
+  than the flag's name suggests.
+
+  Where the odd ones land, since both fall out of the bytes rather than being
+  chosen: a rule with no domain sorts first (`#` is 0x23) and one with only
+  `~` exclusions sorts last (`~` is 0x7e), with the letters in between, so
+  the two kinds of "everywhere except" rule end up at opposite ends. 400 of
+  the latter in AdGuard's filters, none in easylist.
+
+  It also settles an inconsistency worth knowing about. FOP chooses the order
+  per section from whether cosmetic rules outnumber network ones, and the two
+  branches order differently -- so a list already gets selector order in its
+  cosmetic sections and domain order in its network-heavy ones, with the
+  boundary at parity:
+
+  ```text
+  4 cosmetic + 3 network   merged, ordered by selector
+  4 cosmetic + 4 network   not merged, ordered by domain
+  ```
+
+  With the flag set, one list reads the same throughout.
+
+  On EasyList Hebrew's own list it moves 1,346 lines.
+
+  The sort itself is a cached key, stable, and both halves of that were got
+  wrong first time and fixed by measuring. The reasoning had been that a key
+  costs a lowercased copy of every line where a comparator costs nothing, so
+  `sort_unstable_by` with `cmp_ascii_case_insensitive` must be cheapest. It
+  is the slowest of the four:
+
+  ```text
+  sort_unstable_by + comparator    1.03 ms
+  sort_by + comparator             0.83 ms
+  sort_by_cached_key(domain)       0.26 ms
+  sort_by_cached_key(whole line)   0.25 ms
+  ```
+
+  The comparator folds case on every byte of every comparison, and two merged
+  lines share thousands of bytes of domain list before they differ; a key
+  folds once a line and then compares with memcmp. 4.2x, for one word.
+
+  Stability was the worse mistake. Comparing without regard to case makes
+  lines equal that are not identical -- a deduplicated section still holds
+  `###ad-top` beside `###Ad-Top`, because a CSS id is case-sensitive in HTML
+  and both rules are wanted, and easylist's general hide list has 440 such
+  keys across 973 lines. An unstable sort leaves those in whatever order
+  falls out, discarding the selector order they arrived in. So the first
+  version silently scrambled 973 lines' ordering while being four times
+  slower, and the comment explaining why equal keys "cannot arise" was the
+  part that was wrong. Five mutants, all caught.
+
 ## [6.2.1] - 2026-11-01
 
 - Say so when a sort leaves a checksum behind. A list is rewritten around its

@@ -342,6 +342,27 @@ pub struct SortConfig<'a> {
     /// `--no-drop-covered-domains` turns it off and leaves every entry as
     /// written.
     pub drop_covered_domains: bool,
+    /// Order a section of mostly cosmetic rules by domain, then by
+    /// selector, rather than by selector alone. `--sort-by-domain` turns it
+    /// on.
+    ///
+    /// The whole section, not only its cosmetic rules: a section that is
+    /// mostly cosmetic still holds network rules, and those are ordered with
+    /// everything else. For them it means case-insensitively rather than
+    /// case-sensitively -- `||apple.com^` before `||Mango.com^` -- which is
+    /// how a section of mostly network rules is already ordered, so a list
+    /// reads the same either side of that boundary. A list's order does not
+    /// affect what it blocks.
+    ///
+    /// A presentation step: the sort still orders by selector first, because
+    /// that is what puts identical selectors next to each other for the
+    /// merge, and this reorders the finished lines afterwards. So every merge
+    /// survives it -- a list keeps `a.com,b.com,c.com##.ad` as one line and
+    /// files it under `a.com`.
+    ///
+    /// Asked for by EasyList Hebrew, whose list is maintained a site at a
+    /// time: ordering by selector scatters one site's rules down the section.
+    pub sort_by_domain: bool,
     /// Fold sibling `:has-text()` rules into one regex alternation.
     /// `--no-combine-has-text` turns it off.
     ///
@@ -2721,7 +2742,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                          localhost: bool,
                          parse_adguard: bool,
                          drop_covered: bool,
-                         combine_has_text: bool|
+                         combine_has_text: bool,
+                         sort_by_domain: bool|
      -> io::Result<()> {
         if section.is_empty() {
             return Ok(());
@@ -2785,7 +2807,43 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             } else {
                 &*ELEMENT_DOMAIN_PATTERN
             };
-            let combined = combine_filters(merged, combine_pattern, ",", drop_covered);
+            let mut combined = combine_filters(merged, combine_pattern, ",", drop_covered);
+            // Domain order last, over lines that are already merged, so the
+            // merge is untouched by it. Comparing whole lines gives domain
+            // first and selector within a domain, which is what was asked
+            // for, and matches how a section of network rules is already
+            // ordered -- so a list reads the same either side of the branch.
+            //
+            // A cached key, not a comparator, and measured rather than
+            // reasoned about -- the reasoning was backwards. A key costs a
+            // lowercased copy of each line, which looked like the expensive
+            // option; but `cmp_ascii_case_insensitive` folds case on every
+            // byte of every comparison, and a merged line's domain list runs
+            // to thousands of bytes that two such lines share before they
+            // differ. Folding once a line and then comparing with memcmp is
+            // 4.2x faster on a realistic section:
+            //
+            //   sort_unstable_by + the comparator   1.03 ms
+            //   sort_by + the comparator            0.83 ms
+            //   sort_by_cached_key(whole line)      0.25 ms
+            //
+            // The whole line, not just the domain part, so the order is
+            // domain first and then selector within a domain.
+            // `to_ascii_lowercase` leaves non-ASCII bytes alone, so a Hebrew
+            // or Cyrillic selector sorts by the same bytes either way.
+            //
+            // Stable, and that part is not a free choice. Comparing without
+            // regard to case makes lines equal that are not identical: a
+            // deduplicated section still holds `###ad-top` beside
+            // `###Ad-Top`, since a CSS id is case-sensitive in HTML and both
+            // rules are needed. easylist's general hide list has 440 such
+            // keys across 973 lines. An unstable sort puts those in whatever
+            // order falls out, throwing away the selector ordering they
+            // arrived in; a stable one keeps it, which is what makes the
+            // second half of "domain, then selector" true at all.
+            if sort_by_domain {
+                combined.sort_by_cached_key(|line| line.to_ascii_lowercase());
+            }
             for filter in combined {
                 write!(output, "{}\n", filter)?;
             }
@@ -2825,6 +2883,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 config.parse_adguard,
                 config.drop_covered_domains,
             config.combine_has_text,
+            config.sort_by_domain,
             )?;
             lines_checked = 1;
             filter_lines = 0;
@@ -2862,6 +2921,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                         config.parse_adguard,
                         config.drop_covered_domains,
                     config.combine_has_text,
+                    config.sort_by_domain,
                     )?;
                     lines_checked = 1;
                     filter_lines = 0;
@@ -2894,6 +2954,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     config.parse_adguard,
                     config.drop_covered_domains,
                 config.combine_has_text,
+                config.sort_by_domain,
                 )?;
                 lines_checked = 1;
                 filter_lines = 0;
@@ -3124,6 +3185,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             config.parse_adguard,
             config.drop_covered_domains,
         config.combine_has_text,
+        config.sort_by_domain,
         )?;
     }
 

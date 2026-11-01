@@ -83,6 +83,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--no-ubo-convert` | Skip uBO to ABP option conversion (keep `xhr`, `3p`, `1p`, etc.) |
 | `--no-drop-covered-domains` | Keep a domain another entry in the same list already covers, instead of dropping it |
 | `--no-combine-has-text` | Keep sibling `:has-text()` rules as separate rules, instead of combining them into one regex |
+| `--sort-by-domain` | Order a mostly-cosmetic section by domain, then by selector within a domain, instead of by selector alone. Network rules in such a section are ordered with it, case-insensitively, as a mostly-network section already is |
 | `--no-msg-check` | Skip commit message format validation (M:/A:/P:) |
 | `--disable-ignored` | Disable hardcoded ignored files and folders for testing |
 | `--no-sort` | Don't sort rules, just combine |
@@ -165,6 +166,7 @@ no-ubo-convert = false
 # Keep a domain another entry in the same list already covers
 no-drop-covered-domains = false
 no-combine-has-text = false
+sort-by-domain = false
 
 # Skip commit message format validation
 no-msg-check = false
@@ -304,7 +306,7 @@ add-checksum = true
 add-timestamp = true
 ```
 
-Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`, `ignore-line-minimum`, `no-drop-covered-domains`, `no-combine-has-text`.
+Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`, `ignore-line-minimum`, `no-drop-covered-domains`, `no-combine-has-text`, `sort-by-domain`.
 
 ### Commit Message URL Masking
 

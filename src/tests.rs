@@ -1446,6 +1446,82 @@ fn test_a_file_section_can_keep_covered_domains() {
 }
 
 #[test]
+fn test_the_sort_by_domain_flag_reaches_the_sort_config() {
+    // Off by default; `--sort-by-domain` is what turns it on.
+    let default = crate::Args::default();
+    assert!(
+        !crate::sort_config_from(&default).sort_by_domain,
+        "the default orders cosmetic rules by selector"
+    );
+    let asked = crate::Args { sort_by_domain: true, ..Default::default() };
+    assert!(crate::sort_config_from(&asked).sort_by_domain);
+}
+
+#[test]
+fn test_a_file_section_can_ask_for_domain_order() {
+    // `sort-by-domain` per file, so a repository shipping more than one list
+    // can order one of them a site at a time and leave the others alone.
+    let chars = vec!["!".to_string()];
+    let mut config = test_sort_config(&chars);
+    assert!(!config.sort_by_domain);
+    let mut overrides = crate::FileOverrides::default();
+    crate::apply_file_override(&mut overrides, "sort-by-domain", "true");
+    overrides.apply_to(&mut config);
+    assert!(config.sort_by_domain);
+    let mut back = crate::FileOverrides::default();
+    crate::apply_file_override(&mut back, "sort-by-domain", "false");
+    back.apply_to(&mut config);
+    assert!(!config.sort_by_domain);
+}
+
+#[test]
+fn test_domain_order_keeps_every_merge() {
+    // The point of ordering last: the lines are already merged, so reordering
+    // them cannot unmerge anything. A list gets one site's rules together
+    // *and* keeps `a,b,c##.ad` as a single rule, where sorting by domain
+    // before the merge would have left three.
+    let chars = vec!["!".to_string()];
+    let dir = std::env::temp_dir().join(format!("fop-test-domorder-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let written = |by_domain: bool| -> Vec<String> {
+        let mut config = test_sort_config(&chars);
+        config.sort_by_domain = by_domain;
+        let file = dir.join("list.txt");
+        std::fs::write(
+            &file,
+            "[Adblock Plus 2.0]\n! Title: t\nzebra.co.il##.ad\napple.co.il##.ad\n\
+             mango.co.il##.ad\napple.co.il##.other\nmango.co.il##.promo\n",
+        )
+        .unwrap();
+        crate::fop_sort::fop_sort(&file, &config).unwrap();
+        std::fs::read_to_string(&file).unwrap().lines().skip(2).map(str::to_string).collect()
+    };
+    let by_selector = written(false);
+    let by_domain = written(true);
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // The merge happens either way, and it is the same merge
+    let merged = "apple.co.il,mango.co.il,zebra.co.il##.ad";
+    assert!(by_selector.iter().any(|l| l == merged), "{by_selector:?}");
+    assert!(by_domain.iter().any(|l| l == merged), "{by_domain:?}");
+    assert_eq!(by_selector.len(), by_domain.len(), "a line appeared or vanished");
+
+    // What changes is the order: by domain, apple's own rules come first and
+    // the merged rule files under apple, which is its first domain.
+    assert_eq!(
+        by_domain,
+        vec![
+            "apple.co.il##.other",
+            "apple.co.il,mango.co.il,zebra.co.il##.ad",
+            "mango.co.il##.promo",
+        ],
+        "{by_domain:?}"
+    );
+    assert_ne!(by_selector, by_domain, "the flag changed nothing");
+}
+
+#[test]
 fn test_the_no_combine_has_text_flag_reaches_the_sort_config() {
     // The command line's side: folding is on by default, and
     // `--no-combine-has-text` is what turns it off.
@@ -3415,6 +3491,7 @@ fn test_sort_config(comment_chars: &[String]) -> crate::fop_sort::SortConfig<'_>
         convert_ubo: true,
         drop_covered_domains: true,
         combine_has_text: true,
+        sort_by_domain: false,
         no_sort: false,
         alt_sort: false,
         abp_convert: false,
@@ -3462,6 +3539,7 @@ fn test_tidy_rule_matches_the_sorter() {
         ("no_ubo_convert", crate::fop_sort::SortConfig { convert_ubo: false, ..test_sort_config(&chars) }),
         ("no_drop_covered_domains", crate::fop_sort::SortConfig { drop_covered_domains: false, ..test_sort_config(&chars) }),
         ("no_combine_has_text", crate::fop_sort::SortConfig { combine_has_text: false, ..test_sort_config(&chars) }),
+        ("sort_by_domain", crate::fop_sort::SortConfig { sort_by_domain: true, ..test_sort_config(&chars) }),
     ];
     let _ = &base;
     for (name, config) in &configs {
