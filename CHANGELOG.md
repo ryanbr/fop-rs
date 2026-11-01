@@ -2,7 +2,17 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
-## [Unreleased]
+## [6.2.2] - 2026-11-02
+
+- Fixed the options table in the README, which had been broken since the
+  checksum notice went in. The note was written directly beneath the
+  `--no-combine-has-text` row with a blank line before it, and a markdown
+  table ends at the first blank line -- so the table stopped eight rows in
+  and the remaining 65, everything from `--no-msg-check` to `--version`,
+  rendered as plain text with literal pipes on the repository page. The note
+  now sits below the last row. The other eight markdown files were checked
+  for the same mistake and are intact.
+
 
 - `--sort-by-domain`, which orders cosmetic rules by domain and then by
   selector within a domain, instead of by selector alone. Also
