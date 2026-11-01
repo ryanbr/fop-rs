@@ -83,7 +83,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--no-ubo-convert` | Skip uBO to ABP option conversion (keep `xhr`, `3p`, `1p`, etc.) |
 | `--no-drop-covered-domains` | Keep a domain another entry in the same list already covers, instead of dropping it |
 | `--no-combine-has-text` | Keep sibling `:has-text()` rules as separate rules, instead of combining them into one regex |
-| `--sort-by-domain` | Order a mostly-cosmetic section by domain, then by selector within a domain, instead of by selector alone. Network rules in such a section are ordered with it, case-insensitively, as a mostly-network section already is |
+| `--sort-by-domain` | Incompatible with `--no-sort`, which wins. Order a mostly-cosmetic section by domain, then by selector within a domain, instead of by selector alone. Network rules in such a section are ordered with it, case-insensitively, as a mostly-network section already is |
 | `--no-msg-check` | Skip commit message format validation (M:/A:/P:) |
 | `--disable-ignored` | Disable hardcoded ignored files and folders for testing |
 | `--no-sort` | Don't sort rules, just combine |

@@ -50,6 +50,14 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
   the two kinds of "everywhere except" rule end up at opposite ends. 400 of
   the latter in AdGuard's filters, none in easylist.
 
+  Incompatible with `--no-sort`, which wins: that flag already suppresses
+  every other reordering, and a run told not to sort should not come back
+  sorted. Reported the way FOP reports its other clashes, a warning naming
+  which one is in use, and resolved on the arguments rather than at the
+  command line so that a `.fopconfig` setting both is caught by the same
+  rule. Six other pairs compose correctly, including with
+  `--no-combine-has-text`, `--no-drop-covered-domains` and `--alt-sort`.
+
   It also settles an inconsistency worth knowing about. FOP chooses the order
   per section from whether cosmetic rules outnumber network ones, and the two
   branches order differently -- so a list already gets selector order in its

@@ -1446,6 +1446,31 @@ fn test_a_file_section_can_keep_covered_domains() {
 }
 
 #[test]
+fn test_no_sort_and_sort_by_domain_cannot_both_hold() {
+    // A contradiction, and `--no-sort` is the half that wins: it already
+    // suppresses every other reordering, and a run told not to sort should
+    // not come back sorted. Resolved on the Args rather than at the command
+    // line, so `.fopconfig` is covered by the same rule.
+    let mut both = crate::Args { no_sort: true, sort_by_domain: true, ..Default::default() };
+    assert!(both.sort_flags_cannot_disagree(), "the clash went unreported");
+    assert!(both.no_sort, "--no-sort should have won");
+    assert!(!both.sort_by_domain);
+    assert!(!crate::sort_config_from(&both).sort_by_domain);
+
+    // Neither flag is disturbed on its own
+    let mut only_order = crate::Args { sort_by_domain: true, ..Default::default() };
+    assert!(!only_order.sort_flags_cannot_disagree());
+    assert!(only_order.sort_by_domain);
+
+    let mut only_no_sort = crate::Args { no_sort: true, ..Default::default() };
+    assert!(!only_no_sort.sort_flags_cannot_disagree());
+    assert!(only_no_sort.no_sort);
+
+    let mut neither = crate::Args::default();
+    assert!(!neither.sort_flags_cannot_disagree());
+}
+
+#[test]
 fn test_the_sort_by_domain_flag_reaches_the_sort_config() {
     // Off by default; `--sort-by-domain` is what turns it on.
     let default = crate::Args::default();

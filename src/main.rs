@@ -732,6 +732,23 @@ impl Args {
         }
     }
 
+    /// `--no-sort` and `--sort-by-domain` cannot both hold.
+    ///
+    /// `--no-sort` already suppresses every other reordering, so asking for
+    /// an order as well is a contradiction, and it is the one that says leave
+    /// the file alone -- the alternative is a run told not to sort coming
+    /// back sorted. Resolved here rather than at the command line so it
+    /// covers `.fopconfig` too, as `removal_implies_checking` does.
+    ///
+    /// Returns whether it had to intervene, so the caller can say so.
+    fn sort_flags_cannot_disagree(&mut self) -> bool {
+        if self.no_sort && self.sort_by_domain {
+            self.sort_by_domain = false;
+            return true;
+        }
+        false
+    }
+
     fn parse() -> (Self, Option<String>) {
         // Collect args once so we don't re-iterate env::args() multiple times.
         let argv: Vec<String> = env::args().skip(1).collect();
@@ -1123,6 +1140,10 @@ impl Args {
         if args.no_commit && args.create_pr.is_some() {
             eprintln!("Warning: --no-commit and --create-pr are incompatible");
             args.create_pr = None;
+        }
+        if args.sort_flags_cannot_disagree() {
+            eprintln!("Warning: --no-sort and --sort-by-domain are incompatible");
+            eprintln!("Using --no-sort: the order is left as written");
         }
         if args.output_changed && (args.output_diff.is_some() || args.output_diff_individual) {
             eprintln!("Warning: --output and --output-diff are mutually exclusive");
