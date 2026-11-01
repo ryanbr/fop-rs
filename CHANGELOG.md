@@ -4,6 +4,37 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- `--no-combine-has-text`, which keeps sibling `:has-text()` rules as separate
+  rules. Also `no-combine-has-text` in `.fopconfig`, for a run or under a
+  `[filename]` section.
+
+  Folding rewrites a selector, and an exception cancels a rule only by
+  matching its selector text, so an exception FOP cannot see stops applying:
+  one in another subscription, or in a user's own filters, or simply in
+  another file, since the sort runs a file at a time. The commit before this
+  one stops HTML filters folding outright, because there a rule that quietly
+  stops being excepted strips a script from a working page. This covers the
+  rest, where the consequence is a visible ad rather than a broken site, and
+  leaves the judgement with whoever knows what excepts their rules.
+
+  Per file is the shape it is wanted in. A repository that ships an ABP list
+  and a uBO list can keep folding on the first and turn it off on the second,
+  where `:has-text()` actually lives:
+
+  ```ini
+  [EasyListHebrew-uBO.txt]
+  no-ubo-convert = true
+  no-combine-has-text = true
+  ```
+
+  Default unchanged: folding stays on, so no existing output moves.
+
+  Five mutants, four caught. The survivor is `file_config`'s copy-through
+  inside `process_location`, which no unit test reaches -- the same gap
+  `--no-drop-covered-domains` hit. Forcing it on makes a global `.fopconfig`
+  key be ignored when sorting a directory, which a live run catches and the
+  suite does not; `process_location` wanting test coverage is its own job.
+
 - Stop folding `##^...:has-text()` HTML filters together. Reported by
   @EasyListHebrew, who moved a list onto FOP and found a webmail had stopped
   working.

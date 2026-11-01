@@ -342,6 +342,16 @@ pub struct SortConfig<'a> {
     /// `--no-drop-covered-domains` turns it off and leaves every entry as
     /// written.
     pub drop_covered_domains: bool,
+    /// Fold sibling `:has-text()` rules into one regex alternation.
+    /// `--no-combine-has-text` turns it off.
+    ///
+    /// Worth turning off for a list whose rules other lists except: folding
+    /// rewrites a selector, and an exception cancels a rule only by matching
+    /// its selector text, so an exception FOP cannot see -- in another
+    /// subscription, or a user's own filters -- stops applying. HTML filters
+    /// (`##^...`) are never folded whatever this says, because there the
+    /// consequence is a script stripped from a working page.
+    pub combine_has_text: bool,
     pub no_sort: bool,
     pub alt_sort: bool,
     /// Convert ABP extended selectors to uBO format
@@ -1824,7 +1834,12 @@ pub(crate) fn cosmetic_separator(rest: &str) -> Option<(&'static str, bool)> {
 }
 
 /// Combine element rules with same domain and base selector but different :has-text() args
-pub fn combine_has_text_rules(lines: Vec<String>) -> Vec<String> {
+pub fn combine_has_text_rules(lines: Vec<String>, combine: bool) -> Vec<String> {
+    // `--no-combine-has-text`, or `no-combine-has-text` in `.fopconfig`,
+    // either for the run or under a `[filename]` section.
+    if !combine {
+        return lines;
+    }
     let capacity = lines.len();
     // (domains, separator, base selector, pseudo-class) -> (position, args)
     type HasTextKey = (String, String, String, String);
@@ -2680,7 +2695,8 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                          alt_sort: bool,
                          localhost: bool,
                          parse_adguard: bool,
-                         drop_covered: bool|
+                         drop_covered: bool,
+                         combine_has_text: bool|
      -> io::Result<()> {
         if section.is_empty() {
             return Ok(());
@@ -2738,7 +2754,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 unique.sort_by_cached_key(|s| pattern.replace(s, "").into_owned());
             }
             // Merge :has-text() rules first, then combine domains
-            let merged = combine_has_text_rules(unique);
+            let merged = combine_has_text_rules(unique, combine_has_text);
             let combine_pattern = if parse_adguard {
                 &*ADGUARD_ELEMENT_DOMAIN_PATTERN
             } else {
@@ -2783,6 +2799,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                 localhost,
                 config.parse_adguard,
                 config.drop_covered_domains,
+            config.combine_has_text,
             )?;
             lines_checked = 1;
             filter_lines = 0;
@@ -2819,6 +2836,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                         localhost,
                         config.parse_adguard,
                         config.drop_covered_domains,
+                    config.combine_has_text,
                     )?;
                     lines_checked = 1;
                     filter_lines = 0;
@@ -2850,6 +2868,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
                     localhost,
                     config.parse_adguard,
                     config.drop_covered_domains,
+                config.combine_has_text,
                 )?;
                 lines_checked = 1;
                 filter_lines = 0;
@@ -3079,6 +3098,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             localhost,
             config.parse_adguard,
             config.drop_covered_domains,
+        config.combine_has_text,
         )?;
     }
 

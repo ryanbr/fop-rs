@@ -313,6 +313,7 @@ struct Args {
     no_ubo_convert: bool,
     /// Keep a domain another entry in the same list already covers
     no_drop_covered_domains: bool,
+    no_combine_has_text: bool,
     /// Skip commit message format validation
     no_msg_check: bool,
     /// Disable IGNORE_FILES and IGNORE_DIRS checks
@@ -507,6 +508,7 @@ fn sort_config_from(args: &Args) -> SortConfig<'_> {
     SortConfig {
         convert_ubo: !args.no_ubo_convert,
         drop_covered_domains: !args.no_drop_covered_domains,
+        combine_has_text: !args.no_combine_has_text,
         no_sort: args.no_sort,
         alt_sort: args.alt_sort,
         parse_adguard: args.parse_adguard,
@@ -540,6 +542,7 @@ struct FileOverrides {
     add_timestamp: Option<bool>,
     no_ubo_convert: Option<bool>,
     no_drop_covered_domains: Option<bool>,
+    no_combine_has_text: Option<bool>,
     abp_convert: Option<bool>,
     adguard_convert: Option<bool>,
     convert_trusted: Option<bool>,
@@ -565,6 +568,7 @@ impl FileOverrides {
         if let Some(v) = self.convert_trusted { config.convert_trusted = v; }
         if let Some(v) = self.no_ubo_convert { config.convert_ubo = !v; }
         if let Some(v) = self.no_drop_covered_domains { config.drop_covered_domains = !v; }
+        if let Some(v) = self.no_combine_has_text { config.combine_has_text = !v; }
         if let Some(true) = self.add_timestamp { config.add_timestamp = true; }
     }
 }
@@ -581,6 +585,7 @@ fn apply_file_override(entry: &mut FileOverrides, key: &str, value: &str) {
         "add-timestamp" => entry.add_timestamp = Some(b),
         "no-ubo-convert" => entry.no_ubo_convert = Some(b),
         "no-drop-covered-domains" => entry.no_drop_covered_domains = Some(b),
+        "no-combine-has-text" => entry.no_combine_has_text = Some(b),
         "abp-convert" => entry.abp_convert = Some(b),
         "adguard-convert" => entry.adguard_convert = Some(b),
         "convert-trusted" => entry.convert_trusted = Some(b),
@@ -751,6 +756,7 @@ impl Args {
             no_commit: parse_bool(&config, "no-commit", false),
             no_ubo_convert: parse_bool(&config, "no-ubo-convert", false),
             no_drop_covered_domains: parse_bool(&config, "no-drop-covered-domains", false),
+            no_combine_has_text: parse_bool(&config, "no-combine-has-text", false),
             no_msg_check: parse_bool(&config, "no-msg-check", false),
             disable_ignored: parse_bool(&config, "disable-ignored", false),
             abp_convert: parse_bool(&config, "abp-convert", false),
@@ -867,6 +873,7 @@ impl Args {
                 "-n" | "--no-commit" | "--just-sort" | "--justsort" => args.no_commit = true,
                 "--no-ubo-convert" => args.no_ubo_convert = true,
                 "--no-drop-covered-domains" => args.no_drop_covered_domains = true,
+                "--no-combine-has-text" => args.no_combine_has_text = true,
                 "--no-msg-check" => args.no_msg_check = true,
                 "--disable-ignored" => args.disable_ignored = true,
                 "--no-sort" => args.no_sort = true,
@@ -1147,6 +1154,7 @@ impl Args {
         println!("        --just-sort     Alias for --no-commit");
         println!("        --no-ubo-convert  Skip uBO to ABP option conversion");
         println!("        --no-drop-covered-domains  Keep a domain another entry in the list already covers");
+        println!("        --no-combine-has-text      Keep sibling :has-text() rules as separate rules");
         println!("        --no-msg-check  Skip commit message format validation (M:/A:/P:)");
         println!("        --disable-ignored  Process all files (ignore IGNORE_FILES/IGNORE_DIRS)");
         println!("        --no-sort       Skip sorting (only tidy and combine rules)");
@@ -1266,6 +1274,7 @@ impl Args {
         println!("  check-banned-list = {:?}", self.check_banned_list);
         println!("  no-ubo-convert  = {}", self.no_ubo_convert);
         println!("  no-drop-covered-domains = {}", self.no_drop_covered_domains);
+        println!("  no-combine-has-text = {}", self.no_combine_has_text);
         println!("  no-msg-check    = {}", self.no_msg_check);
         println!("  disable-ignored = {}", self.disable_ignored);
         println!("  no-sort         = {}", self.no_sort);
@@ -1341,6 +1350,7 @@ impl Args {
                 if let Some(v) = overrides.add_timestamp { println!("    add-timestamp = {}", v); }
                 if let Some(v) = overrides.no_ubo_convert { println!("    no-ubo-convert = {}", v); }
                 if let Some(v) = overrides.no_drop_covered_domains { println!("    no-drop-covered-domains = {}", v); }
+                if let Some(v) = overrides.no_combine_has_text { println!("    no-combine-has-text = {}", v); }
                 if let Some(v) = overrides.abp_convert { println!("    abp-convert = {}", v); }
                 if let Some(v) = overrides.adguard_convert { println!("    adguard-convert = {}", v); }
                 if let Some(v) = overrides.convert_trusted { println!("    convert-trusted = {}", v); }
@@ -2436,6 +2446,7 @@ fn process_location(
         let mut config = SortConfig {
             convert_ubo: sort_config.convert_ubo,
             drop_covered_domains: sort_config.drop_covered_domains,
+            combine_has_text: sort_config.combine_has_text,
             no_sort: sort_config.no_sort,
             alt_sort: sort_config.alt_sort,
             parse_adguard: is_adguard_file(path, sort_config.parse_adguard, parse_adguard_files),

@@ -1446,6 +1446,78 @@ fn test_a_file_section_can_keep_covered_domains() {
 }
 
 #[test]
+fn test_the_no_combine_has_text_flag_reaches_the_sort_config() {
+    // The command line's side: folding is on by default, and
+    // `--no-combine-has-text` is what turns it off.
+    let default = crate::Args::default();
+    assert!(
+        crate::sort_config_from(&default).combine_has_text,
+        "the default is to fold"
+    );
+    let opted_out = crate::Args { no_combine_has_text: true, ..Default::default() };
+    assert!(!crate::sort_config_from(&opted_out).combine_has_text);
+}
+
+#[test]
+fn test_a_file_section_can_keep_has_text_rules_apart() {
+    // `no-combine-has-text` as a per-file option, which is the shape this is
+    // wanted in: a list whose rules other lists except can keep its own
+    // selectors while the rest of a tree goes on folding.
+    let chars = vec!["!".to_string()];
+    let mut config = test_sort_config(&chars);
+    assert!(config.combine_has_text, "the default is to fold");
+    let mut overrides = crate::FileOverrides::default();
+    crate::apply_file_override(&mut overrides, "no-combine-has-text", "true");
+    overrides.apply_to(&mut config);
+    assert!(!config.combine_has_text);
+    // ... and the option says what it says, rather than merely being present
+    let mut back = crate::FileOverrides::default();
+    crate::apply_file_override(&mut back, "no-combine-has-text", "false");
+    back.apply_to(&mut config);
+    assert!(config.combine_has_text);
+}
+
+#[test]
+fn test_sort_folds_has_text_unless_the_config_says_not_to() {
+    // End to end, so what the option is wired to is the sort and not just the
+    // helper: the same file written both ways.
+    let chars = vec!["!".to_string()];
+    let dir = std::env::temp_dir().join(format!("fop-test-hastext-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let written = |combine: bool| -> Vec<String> {
+        let mut config = test_sort_config(&chars);
+        config.combine_has_text = combine;
+        let file = dir.join("list.txt");
+        std::fs::write(
+            &file,
+            "[Adblock Plus 2.0]\n! Title: t\nexample.com##h1:has-text(adblock)\n\
+             example.com##h1:has-text(supporter)\n",
+        )
+        .unwrap();
+        crate::fop_sort::fop_sort(&file, &config).unwrap();
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .lines()
+            .skip(2)
+            .map(str::to_string)
+            .collect()
+    };
+    let folded = written(true);
+    let apart = written(false);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(folded, vec!["example.com##h1:has-text(/adblock|supporter/)"], "{folded:?}");
+    assert_eq!(
+        apart,
+        vec![
+            "example.com##h1:has-text(adblock)",
+            "example.com##h1:has-text(supporter)",
+        ],
+        "{apart:?}"
+    );
+}
+
+#[test]
 fn test_sort_drops_covered_domains_unless_the_config_says_not_to() {
     // The flag end to end: the same file sorted both ways, so what the
     // option is wired to is the sort itself and not just the helpers.
@@ -1680,6 +1752,13 @@ fn test_adguard_exception_separators() {
 // :has-text() Merging Tests
 // =============================================================================
 
+/// The merge with folding on, which is what every case below means; the
+/// `--no-combine-has-text` side is covered by its own test.
+fn fold_has_text(lines: Vec<String>) -> Vec<String> {
+    crate::fop_sort::combine_has_text_rules(lines, true)
+}
+
+
 #[test]
 fn test_html_filters_are_never_folded_together() {
     // `##^...` filters the response stream, and uBO cancels one with an
@@ -1699,7 +1778,7 @@ fn test_html_filters_are_never_folded_together() {
         r"sheee.co.il,walla.co.il##^script:has-text(200===)".to_string(),
         r"sheee.co.il,walla.co.il##^script:has-text(responseText)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input.clone());
+    let result = fold_has_text(input.clone());
     assert_eq!(result, input, "an HTML filter was folded");
 
     // Held back whether or not this run can see an exception, because the
@@ -1709,7 +1788,7 @@ fn test_html_filters_are_never_folded_together() {
         "example.com##^script:has-text(alpha)".to_string(),
         "example.com##^script:has-text(beta)".to_string(),
     ];
-    assert_eq!(crate::fop_sort::combine_has_text_rules(lone.clone()), lone);
+    assert_eq!(fold_has_text(lone.clone()), lone);
 
     // A selector that only starts with `^` after the separator is the test;
     // an ordinary DOM rule still folds, which is the rest of the feature.
@@ -1717,7 +1796,7 @@ fn test_html_filters_are_never_folded_together() {
         "example.com##h1:has-text(adblock)".to_string(),
         "example.com##h1:has-text(supporter)".to_string(),
     ];
-    let folded = crate::fop_sort::combine_has_text_rules(dom);
+    let folded = fold_has_text(dom);
     assert_eq!(folded.len(), 1, "a DOM rule should still fold: {folded:?}");
     assert!(folded[0].contains(":has-text(/adblock|supporter/)"), "{folded:?}");
 }
@@ -1728,7 +1807,7 @@ fn test_has_text_merge_two_plain() {
         "example.com##.ad:has-text(Buy now)".to_string(),
         "example.com##.ad:has-text(Subscribe)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input);
+    let result = fold_has_text(input);
     assert_eq!(result.len(), 1);
     assert!(result[0].contains(":has-text(/Buy now|Subscribe/)") 
          || result[0].contains(":has-text(/Subscribe|Buy now/)"));
@@ -1740,7 +1819,7 @@ fn test_has_text_merge_regex_and_plain() {
         "example.com##.ad:has-text(/regex pattern/)".to_string(),
         "example.com##.ad:has-text(plain text)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input);
+    let result = fold_has_text(input);
     assert_eq!(result.len(), 1);
     assert!(result[0].contains(":has-text(/"));
     assert!(result[0].contains("regex pattern"));
@@ -1753,7 +1832,7 @@ fn test_has_text_escape_special_chars() {
         "example.com##.price:has-text($9.99)".to_string(),
         "example.com##.price:has-text(50% off)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input);
+    let result = fold_has_text(input);
     assert_eq!(result.len(), 1);
     assert!(result[0].contains("\\$9\\.99"));
 }
@@ -1764,7 +1843,7 @@ fn test_has_text_different_base_selectors_not_merged() {
         "example.com##.ad:has-text(text1)".to_string(),
         "example.com##.banner:has-text(text2)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input);
+    let result = fold_has_text(input);
     assert_eq!(result.len(), 2);
 }
 
@@ -1774,7 +1853,7 @@ fn test_has_text_different_domains_not_merged() {
         "example.com##.ad:has-text(text1)".to_string(),
         "other.com##.ad:has-text(text2)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input);
+    let result = fold_has_text(input);
     assert_eq!(result.len(), 2);
 }
 
@@ -1783,7 +1862,7 @@ fn test_has_text_single_rule_unchanged() {
     let input = vec![
         "example.com##.ad:has-text(single)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input);
+    let result = fold_has_text(input);
     assert_eq!(result.len(), 1);
     assert_eq!(result[0], "example.com##.ad:has-text(single)");
 }
@@ -1794,7 +1873,7 @@ fn test_has_text_abp_contains_merged() {
         "example.com##.ad:-abp-contains(text1)".to_string(),
         "example.com##.ad:-abp-contains(text2)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input);
+    let result = fold_has_text(input);
     assert_eq!(result.len(), 1);
     assert!(result[0].contains(":-abp-contains(/text1|text2/)") 
          || result[0].contains(":-abp-contains(/text2|text1/)"));
@@ -1806,7 +1885,7 @@ fn test_has_text_google_promo_example() {
         "www.google.com##[aria-describedby=\"promo_desc_id\"]:has-text(/Time for a new laptop|Gemini/)".to_string(),
         "www.google.com##[aria-describedby=\"promo_desc_id\"]:has-text(Keep things dark)".to_string(),
     ];
-    let result = crate::fop_sort::combine_has_text_rules(input);
+    let result = fold_has_text(input);
     assert_eq!(result.len(), 1);
     assert!(result[0].contains("www.google.com##"));
     assert!(result[0].contains("Time for a new laptop|Gemini"));
@@ -2132,7 +2211,7 @@ fn test_suggest_option_is_deterministic() {
 
 #[test]
 fn test_has_text_merges_across_separators_and_dedups() {
-    use crate::fop_sort::combine_has_text_rules as c;
+    let c = fold_has_text;
     // The case this was written for: a part-merged group, where one rule is
     // already the regex and the others are the plain texts it covers.
     let base = r#"bol.com##[data-bltgi*="ProductList_"]"#;
@@ -2291,7 +2370,7 @@ fn test_missing_anchor_is_flagged() {
 
 #[test]
 fn test_has_text_merge_refuses_what_it_cannot_fold() {
-    use crate::fop_sort::combine_has_text_rules as c;
+    let c = fold_has_text;
     // A lone `/` is not a regex; treating it as one sliced [1..0] and aborted
     // the whole sort on any list containing a truncated rule.
     let slash = c(vec!["a.com##.x:has-text(/)".into(), "a.com##.x:has-text(B)".into()]);
@@ -3042,7 +3121,7 @@ fn test_escaped_comma_survives_sorting() {
 
 #[test]
 fn test_has_text_trailing_letters_are_not_regex_flags() {
-    use crate::fop_sort::combine_has_text_rules;
+    let combine_has_text_rules = fold_has_text;
     // `/path/to` is plain text: `to` is not a set of JavaScript regex flags.
     // Reading it as flags merged to `/path|Sponsored/to`, which uBO cannot
     // compile and so matches as literal text -- that is, nothing.
@@ -3264,6 +3343,7 @@ fn test_sort_config(comment_chars: &[String]) -> crate::fop_sort::SortConfig<'_>
     crate::fop_sort::SortConfig {
         convert_ubo: true,
         drop_covered_domains: true,
+        combine_has_text: true,
         no_sort: false,
         alt_sort: false,
         abp_convert: false,
@@ -3308,6 +3388,7 @@ fn test_tidy_rule_matches_the_sorter() {
         ("convert_trusted", crate::fop_sort::SortConfig { convert_trusted: true, ..test_sort_config(&chars) }),
         ("no_ubo_convert", crate::fop_sort::SortConfig { convert_ubo: false, ..test_sort_config(&chars) }),
         ("no_drop_covered_domains", crate::fop_sort::SortConfig { drop_covered_domains: false, ..test_sort_config(&chars) }),
+        ("no_combine_has_text", crate::fop_sort::SortConfig { combine_has_text: false, ..test_sort_config(&chars) }),
     ];
     let _ = &base;
     for (name, config) in &configs {
