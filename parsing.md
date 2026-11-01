@@ -37,7 +37,7 @@ Snapshot usage was surveyed in September 2026.
 | `domains##selector` and the other separators | Cosmetic rule | Domains lowercased and sorted, selector tidied, then merged. Which separators qualify depends on the mode; see [Cosmetic rule separators](#cosmetic-rule-separators). |
 | Cosmetic rule the mode does not cover | Left as written | Sorted in place like a network rule, but its text is untouched. The option tidying never touches a line containing a cosmetic separator. |
 | `/regex/##selector` (uBO regex domain) | Left as written | |
-| `[$path=...]domain##selector` | Left as written | AdGuard's cosmetic modifiers |
+| `[$path=...]domain##selector` | Left as written, and never merged | AdGuard's cosmetic modifiers |
 | `/regex/` or `/regex/$options` | Regex network rule | The pattern is left as written, spaces included |
 | `0.0.0.0 host`, `::1 host`, any IP then a host | Hosts entry | Always left exactly as written -- the space between address and host is the syntax, and tidying a rule would eat it. In a file recognised as a hosts file, also sorted by host. See [Hosts files](#hosts-files). |
 | Anything else | Network rule | Options sorted and normalised |
@@ -278,7 +278,7 @@ group (`(?:`) is never lowercased.
 | `:has()` | Yes | Yes | Yes | A E U | Argument kept |
 | `:not()` | CSS | CSS | CSS | A E U | Tidied (its argument is a selector) |
 | `:is()` | CSS | CSS | Yes | A E U | Tidied |
-| `:has-text()` | Yes | Yes | Yes | E U | Argument kept; [merged](#sorting-and-merging) |
+| `:has-text()` | Yes | Yes | Yes | E U | Argument kept; [merged](#sorting-and-merging) unless the rule is an HTML filter |
 | `:contains()` | - | - | Yes | A | Argument kept |
 | `:-abp-has()` | Yes | - | Yes | A E | Argument kept |
 | `:-abp-contains()` | Yes | - | Yes | E | Argument kept |
@@ -311,10 +311,10 @@ group (`(?:`) is never lowercased.
 | `#%#` raw JavaScript | AdGuard | A | Left as written |
 | `#$#snippet args; snippet args` | ABP | E | Left as written. Brackets inside a snippet's arguments are data, not selector syntax. |
 | `#$#selector { style }` | AdGuard | A | Selector sorted as a cosmetic rule |
-| `##^script:has-text(...)` | uBO | U | HTML filter; `:has-text()` merging applies |
+| `##^script:has-text(...)` | uBO | U | HTML filter; never `:has-text()`-merged |
 | `##^responseheader(name)` | uBO | U | Left as written |
 | `$$script[tag-content="..."]` | AdGuard | A | See [separators](#cosmetic-rule-separators) |
-| `[$path=/regex/]domain##selector` | AdGuard | | Left as written |
+| `[$path=/regex/]domain##selector` | AdGuard | | Left as written, and never merged |
 
 Arguments that match literal text keep quotes, braces and parentheses that do
 not balance. This applies to `+js()`, `:has-text()`, `:contains()`,
@@ -378,9 +378,9 @@ section's kind are merged.
 | Option sorting | Network options sorted alphabetically (ignoring `~`), `domain=` last; its entries sorted. `$1p,xhr,from=b.com` becomes `$~third-party,xmlhttprequest,domain=b.com`. |
 | Domain merging | Rules identical apart from their domains are merged: `a.com##.ad` + `b.com##.ad` becomes `a.com,b.com##.ad`. The same applies to network rules with `$domain=`. A list of exclusions only (`~a.com`) never merges with one that includes a domain, because that would change what it matches. |
 | Covered subdomains | A domain another entry in the same list already covers is dropped, since a rule's domain applies to every host under it: `a.com,s.a.com##.ad` becomes `a.com##.ad`, and so does `s.a.com##.ad` + `a.com##.ad` once merged. The nearest listed ancestor decides, as it does for the blocker resolving a host: an entry goes only when the closest entry above it carries the same `~`, so `a.com,~s.a.com` keeps both and `a.com,~s.a.com,deep.s.a.com` keeps all three. A domain listed both ways (`a.com` beside `~a.com`) leaves no ancestor polarity to read, so that list is left alone, and an entry whose hosts labels cannot settle -- `example.*`, a regex, or `example.com>>` -- neither covers another nor is covered. `--no-drop-covered-domains` (or `no-drop-covered-domains = true`) keeps every entry as written. |
-| `:has-text()` merging | `##` rules with the same domains and base selector are merged into one regex: `:has-text(a)` + `:has-text(b)` becomes `:has-text(/a\|b/)`. This also covers uBO HTML filters (`##^`). |
+| `:has-text()` merging | `##` rules with the same domains and base selector are merged into one regex: `:has-text(a)` + `:has-text(b)` becomes `:has-text(/a\|b/)`. Not HTML filters (`##^`), which are never merged, and `--no-combine-has-text` (or `no-combine-has-text` in `.fopconfig`, per run or per file) turns the rest off. |
 | `:has-text()` regex flags | One flag set is kept: `/a/i` + `/b/i` or plain `b` becomes `/a\|b/i`. Two different flag sets are not merged. Neither is an empty alternative (`/foo\|/`), which would match everything. |
-| Exceptions and other separators | `#@#`, `#@?#`, `#?#`, `#$#` and `#%#` rules are never `:has-text()`-merged. An exception cancels a rule by matching its exact text, so merging two would leave neither text to match. |
+| Exceptions and other separators | `#@#`, `#@?#`, `#?#`, `#$#` and `#%#` rules are never `:has-text()`-merged. An exception cancels a rule by matching its selector text exactly, so merging two exceptions would leave neither text to match -- and merging the *hiding* rules has the same effect from the other side, since an exception then names a selector no rule carries. That is why HTML filters are never merged and why the rest can be turned off: the exception may be in another file, another list, or a user's own filters, none of which the sort can see. |
 | `--pr-show-changes` | Lists the first 40 merges in the PR description and counts the rest |
 
 Files are sorted in parallel, and a large merge group, such as one of

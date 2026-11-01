@@ -4,6 +4,24 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- Docs for the two `:has-text()` changes, and two lines that had become
+  wrong. `parsing.md` told the reader that `##^script:has-text(...)` is an
+  "HTML filter; `:has-text()` merging applies" and that merging "also covers
+  uBO HTML filters (`##^`)" -- the opposite of what FOP now does. The
+  exceptions row explained why two exceptions are never merged and stopped
+  there; it now also says what merging the hiding rules does from the other
+  side, which is the failure that prompted the change.
+
+  `--no-combine-has-text` is in the options table, the `.fopconfig` sample and
+  the per-file list, and the `[$...]` rows now say such a rule is never
+  merged, which is true since the fix earlier in this release.
+
+  Also `--no-commit-mask-bare`, which turned out to exist in the argument
+  parser and nowhere else: not in the README, not in `parsing.md`, not in
+  `--help`. Found by diffing what the parser accepts against what the docs
+  list. That audit now comes out clean on per-file options -- 16 accepted, 16
+  documented, none fictional.
+
 - `--no-combine-has-text`, which keeps sibling `:has-text()` rules as separate
   rules. Also `no-combine-has-text` in `.fopconfig`, for a run or under a
   `[filename]` section.

@@ -1168,6 +1168,7 @@ impl Args {
         println!("        --no-commit-mask    Disable URL masking even if .fopconfig sets commit-mask");
         println!("        --commit-mask-users=u1,u2  Restrict --commit-mask to these git user.name values (lowercased)");
         println!("        --commit-mask-bare    Also mask bare hostnames (no http/https). Risks FP on filenames.");
+    println!("        --no-commit-mask-bare Disable bare-hostname masking even if .fopconfig sets it");
         println!("        --commit-mask-exempt-hosts=h1,h2  Additional apex hosts exempt from masking (e.g. self-hosted Gitea/Forgejo)");
         println!("        --commit-url-template=TMPL  Override 'Commit successful' URL template ({{base}}, {{sha}}); default {{base}}/commit/{{sha}}");
         println!("        --rebase-on-fail    Auto 'git pull --rebase --autostash' and retry a failed push (default: on)");

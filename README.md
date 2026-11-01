@@ -12,7 +12,7 @@ A Rust port of the EasyList FOP tool for sorting and cleaning ad-blocking filter
 - **Validation**: Removes invalid/overly-broad rules (TLD-only, too short, etc.)
 - **Git integration**: Commit changes directly to repositories (can be disabled)
 - **easylist_adservers.txt validation**: Ensures rules start with `|` or `/`
-- **:has-text() merging**: Combines rules with same base selector into single regex
+- **:has-text() merging**: Combines rules with the same domains and base selector into a single regex. HTML filters (`##^...`) are never combined, because an exception cancels a rule by matching its selector text and a combined rule carries none of the original texts. `--no-combine-has-text` turns the rest off
 - **Parallel processing**: Processes files in parallel via Rayon, using up to 8 worker threads. Past that, extra workers mostly buy memory rather than speed; set `--threads=N` (or `RAYON_NUM_THREADS`) to override
 
 ## Extended Syntax Support
@@ -82,6 +82,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--just-sort` | Alias for `--no-commit` |
 | `--no-ubo-convert` | Skip uBO to ABP option conversion (keep `xhr`, `3p`, `1p`, etc.) |
 | `--no-drop-covered-domains` | Keep a domain another entry in the same list already covers, instead of dropping it |
+| `--no-combine-has-text` | Keep sibling `:has-text()` rules as separate rules, instead of combining them into one regex |
 | `--no-msg-check` | Skip commit message format validation (M:/A:/P:) |
 | `--disable-ignored` | Disable hardcoded ignored files and folders for testing |
 | `--no-sort` | Don't sort rules, just combine |
@@ -124,6 +125,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--no-commit-mask` | Disable URL masking even when `.fopconfig` sets `commit-mask` (`--commit-mask=0` cannot: 0 falls through to level 1) |
 | `--commit-mask-users=u1,u2` | Restrict `--commit-mask` to these `git config user.name` values (lowercased) |
 | `--commit-mask-bare` | Also mask bare hostnames without `http(s)://`. Risks false positives on filenames |
+| `--no-commit-mask-bare` | Disable bare-hostname masking even when `.fopconfig` sets `commit-mask-bare` |
 | `--commit-mask-exempt-hosts=h1,h2` | Additional apex hosts exempt from masking (e.g. self-hosted Gitea/Forgejo/GitLab) |
 | `--commit-url-template=TMPL` | Override the `Commit successful:` URL template. Placeholders: `{base}`, `{sha}`. Auto-detects Bitbucket (`/commits/`); everything else defaults to `/commit/` |
 | `--ignore-config` | Ignore .fopconfig file, use only CLI args |
@@ -160,6 +162,7 @@ no-ubo-convert = false
 
 # Keep a domain another entry in the same list already covers
 no-drop-covered-domains = false
+no-combine-has-text = false
 
 # Skip commit message format validation
 no-msg-check = false
@@ -299,7 +302,7 @@ add-checksum = true
 add-timestamp = true
 ```
 
-Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`, `ignore-line-minimum`, `no-drop-covered-domains`.
+Supported per-file options: `no-sort`, `alt-sort`, `parse-adguard`, `localhost`, `add-checksum`, `add-timestamp`, `no-ubo-convert`, `abp-convert`, `adguard-convert`, `convert-trusted`, `keep-empty-lines`, `ignore-dot-domains`, `fix-typos`, `ignore-line-minimum`, `no-drop-covered-domains`, `no-combine-has-text`.
 
 ### Commit Message URL Masking
 
