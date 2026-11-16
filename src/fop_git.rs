@@ -1498,6 +1498,20 @@ fn fetch_and_rebase(
     })
 }
 
+/// Did a sync actually bring the branch up to date?
+///
+/// The distinction the pre-push skip rests on. `fetch_and_rebase` returns `Ok`
+/// whenever the commands *ran*, carrying their exit status inside -- so a fetch
+/// that failed, or a rebase that found no upstream, is still an `Ok`. Reading
+/// only that would mark the branch synced when nothing synced, and the push
+/// would then skip its own fetch as well, going out stale.
+///
+/// The callers discard this result otherwise, which is what makes the
+/// difference easy to get wrong and worth naming.
+pub(crate) fn sync_succeeded(result: &std::io::Result<std::process::Output>) -> bool {
+    result.as_ref().is_ok_and(|out| out.status.success())
+}
+
 /// Execute pull and push.
 #[inline]
 pub(crate) fn pull_and_push(
@@ -1508,6 +1522,9 @@ pub(crate) fn pull_and_push(
     // --limited-quiet only suppresses the directory listing, so it must not
     // swallow the actionable pull-failure advice.
     quiet: bool,
+    // The caller already fetched and rebased, successfully, with nothing since
+    // but its own commit. See the sync below for why that is worth knowing.
+    already_synced: bool,
 ) -> PushOutcome {
     let mut outcome = PushOutcome::Pushed;
     let echo = |out: &std::process::Output| {
@@ -1519,6 +1536,18 @@ pub(crate) fn pull_and_push(
         }
     };
 
+    // Sync before pushing -- unless the caller just did, successfully, and has
+    // done nothing since but commit.
+    //
+    // A fetch costs about 2.7s against the easylist remote, where a whole sort
+    // is 0.04s, and the lists publish around 270 times a day: repeating it here
+    // spends roughly 12 minutes a day inside the publish lock, which is time a
+    // concurrent run spends queued behind it. What it buys is avoiding a push
+    // rejected by something that landed in the window between the caller's
+    // rebase and this push -- rare, and already handled, since a rejected push
+    // goes to `rebase_and_retry_push`, which rebases and retries up to
+    // PUSH_RETRIES times.
+    if !already_synced {
     match fetch_and_rebase(base_cmd, repo, false) {
         Ok(out) if out.status.success() => echo(&out),
         Ok(out) => {
@@ -1543,6 +1572,7 @@ pub(crate) fn pull_and_push(
             diagnose_pull_failure(&stderr_text, quiet);
         }
         Err(e) => eprintln!("Git command failed: {}", e),
+    }
     }
 
     match git_command(base_cmd).args(repo.push).output() {
@@ -1592,6 +1622,76 @@ fn handle_push_failure(
     if !published {
         mark_unpublished();
     }
+}
+
+/// An interrupted rebase or `git am` left behind in the repository.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RebaseState {
+    /// `.git/rebase-merge` -- an interactive or merge-backend rebase.
+    Merge,
+    /// `.git/rebase-apply` -- `git rebase --apply`, or `git am`.
+    Apply,
+}
+
+impl RebaseState {
+    fn dir_name(&self) -> &'static str {
+        match self {
+            RebaseState::Merge => "rebase-merge",
+            RebaseState::Apply => "rebase-apply",
+        }
+    }
+}
+
+/// Is a rebase part-finished in this repository?
+///
+/// Read from the filesystem rather than from `git status`, because that is where
+/// git itself keeps the answer and because the interesting case is a *stale*
+/// directory, which `git status` reports inconsistently once no rebase is
+/// actually running.
+///
+/// The git directory is resolved through the same helper the repository lock
+/// uses, so a worktree is answered for itself: its rebase state lives in
+/// `.git/worktrees/<name>/`, and reading the main clone's would both miss its
+/// own interrupted rebase and refuse to run over somebody else's.
+pub fn rebase_in_progress(location: &Path) -> Option<RebaseState> {
+    let dir = crate::fop_lock::git_dir(location)?;
+    [RebaseState::Merge, RebaseState::Apply]
+        .into_iter()
+        .find(|state| dir.join(state.dir_name()).is_dir())
+}
+
+/// Refuse to run, naming the state and how to clear it.
+///
+/// Checked before anything is read or written, not after a push has already
+/// failed. Three of twelve concurrent pairs left a stale `rebase-merge` behind,
+/// and every later run in that clone then failed somewhere in the middle of its
+/// own git flow -- the pull reporting it, long after the lists had been
+/// rewritten. Worse, an interrupted rebase can leave conflict markers in the
+/// working tree, and sorting that tree writes them into the lists in sorted
+/// order whether or not a commit follows. Stopping first is the only point at
+/// which nothing has been touched.
+pub fn report_rebase_in_progress(state: &RebaseState, location: &Path) -> ! {
+    let dir = state.dir_name();
+    eprintln!(
+        "\nA rebase is unfinished in {}: .git/{} exists, so FOP has not sorted or committed anything.",
+        location.display(),
+        dir
+    );
+    eprintln!("  Finish or abandon it first:");
+    eprintln!("    git status                  # see whether a rebase is really in progress");
+    match state {
+        RebaseState::Merge => {
+            eprintln!("    git rebase --continue       # after resolving, or:");
+            eprintln!("    git rebase --abort          # to abandon it");
+        }
+        RebaseState::Apply => {
+            eprintln!("    git am --continue           # after resolving, or:");
+            eprintln!("    git am --abort              # or: git rebase --abort");
+        }
+    }
+    eprintln!("  If it says no rebase is in progress, the directory is stale:");
+    eprintln!("    rm -fr .git/{}", dir);
+    std::process::exit(1);
 }
 
 /// Print an actionable suggested fix for a failed `git pull`.
@@ -1881,8 +1981,10 @@ pub fn commit_changes(
             println!("Committing with message: {}", message);
         }
 
-        // Pull latest before committing to avoid orphaned commits from post-commit rebase
-        let _ = fetch_and_rebase(base_cmd, repo, true);
+        // Pull latest before committing to avoid orphaned commits from post-commit
+        // rebase. Whether it worked is carried to the push below, which repeats
+        // this fetch only when it did not.
+        let synced = sync_succeeded(&fetch_and_rebase(base_cmd, repo, true));
 
         // `commit -a` below stages everything in the tree. If the pull left a
         // conflict, that is the markers -- committed and then pushed, with
@@ -1902,7 +2004,7 @@ pub fn commit_changes(
             .arg(masked.as_ref())
             .status()?;
 
-        let outcome = pull_and_push(base_cmd, repo, git_quiet, quiet);
+        let outcome = pull_and_push(base_cmd, repo, git_quiet, quiet, synced);
         if let PushOutcome::Rejected(push_error) = &outcome {
             handle_push_failure(push_error, rebase_on_fail, base_cmd, repo, quiet, Some(masked.as_ref()), no_color, is_masked, commit_url_template);
         } else if matches!(outcome, PushOutcome::Stopped) {
@@ -1990,8 +2092,10 @@ pub fn commit_changes(
                 );
             }
 
-            // Pull latest before committing to avoid orphaned commits from post-commit rebase
-            let _ = fetch_and_rebase(base_cmd, repo, true);
+            // Pull latest before committing to avoid orphaned commits from
+            // post-commit rebase. Whether it worked is carried to the push
+            // below, which repeats this fetch only when it did not.
+            let synced = sync_succeeded(&fetch_and_rebase(base_cmd, repo, true));
 
             if has_unmerged_paths(base_cmd) {
                 report_unresolved_merge(base_cmd);
@@ -2029,7 +2133,7 @@ pub fn commit_changes(
                 io::stdout().flush().ok();
             }
 
-            let outcome = pull_and_push(base_cmd, repo, git_quiet, quiet);
+            let outcome = pull_and_push(base_cmd, repo, git_quiet, quiet, synced);
             if let PushOutcome::Rejected(push_error) = &outcome {
                 if !quiet {
                     println!(); // finish the "Connecting" line

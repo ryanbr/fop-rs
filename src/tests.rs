@@ -4741,7 +4741,7 @@ fn test_pull_and_push_stops_at_a_conflict() {
     push_from_elsewhere(&remote, "pp-conflict-other", "list.txt", "! Title: t\n||a.com^\n||b.com^\n||z.org^\n");
     let before = remote.git(&["rev-parse", "main"]);
 
-    assert!(matches!(pull_and_push(&clone.cmd(), &GIT, true, true), PushOutcome::Stopped));
+    assert!(matches!(pull_and_push(&clone.cmd(), &GIT, true, true, false), PushOutcome::Stopped));
     assert_eq!(remote.git(&["rev-parse", "main"]), before, "something was pushed");
     assert!(!clone.git(&["diff", "--name-only", "--diff-filter=U"]).is_empty(), "no conflict left to resolve");
     // The commit is intact, waiting on the rebase
@@ -4758,7 +4758,7 @@ fn test_pull_and_push_rebases_onto_a_clean_change() {
     clone.git(&["commit", "-qam", "mine"]);
     push_from_elsewhere(&remote, "pp-clean-other", "other.txt", "y\n");
 
-    assert!(matches!(pull_and_push(&clone.cmd(), &GIT, true, true), PushOutcome::Pushed));
+    assert!(matches!(pull_and_push(&clone.cmd(), &GIT, true, true, false), PushOutcome::Pushed));
     assert_eq!(remote.git(&["log", "--format=%s", "main"]).lines().collect::<Vec<_>>(), ["mine", "elsewhere", "init"]);
 }
 
@@ -4816,7 +4816,7 @@ fn test_the_sync_before_a_push_does_not_go_through_git_pull() {
         "-C".into(),
         clone.0.display().to_string(),
     ];
-    assert!(matches!(pull_and_push(&base, &crate::fop_git::GIT, true, true), PushOutcome::Pushed));
+    assert!(matches!(pull_and_push(&base, &crate::fop_git::GIT, true, true, false), PushOutcome::Pushed));
     assert_eq!(
         remote.git(&["log", "--format=%s", "main"]).lines().collect::<Vec<_>>(),
         ["mine", "elsewhere", "init"],
@@ -6022,4 +6022,344 @@ fn test_duplicate_lines_are_removed_and_recorded() {
     );
     drop(changes);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// =============================================================================
+// Repository lock
+// =============================================================================
+
+/// The lock has to land in the git directory of the tree it is given, and in a
+/// worktree that directory is named by the `.git` *file*, not by `.git` itself.
+/// Reading only the directory form would put every worktree of one clone on the
+/// main clone's lock and serialise trees that share nothing but an object store.
+#[test]
+fn test_the_repo_lock_resolves_a_worktrees_git_dir() {
+    use crate::fop_lock::git_dir;
+    let base = std::env::temp_dir().join(format!("fop-test-lockdir-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let plain = base.join("plain");
+    let real_git = base.join("clone").join(".git").join("worktrees").join("wt");
+    let wt = base.join("wt");
+    let relative = base.join("rel");
+    std::fs::create_dir_all(plain.join(".git")).unwrap();
+    std::fs::create_dir_all(&real_git).unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::create_dir_all(relative.join("elsewhere")).unwrap();
+
+    // An ordinary clone: `.git` is the directory, used as-is.
+    assert_eq!(git_dir(&plain), Some(plain.join(".git")));
+
+    // A worktree: `.git` is a file pointing at the real directory.
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", real_git.display())).unwrap();
+    assert_eq!(git_dir(&wt), Some(real_git.clone()));
+
+    // A relative pointer resolves against the working tree, not the cwd.
+    std::fs::write(relative.join(".git"), "gitdir: elsewhere\n").unwrap();
+    assert_eq!(git_dir(&relative), Some(relative.join("elsewhere")));
+
+    // Nothing to lock: no `.git` at all, a `.git` file naming a path that is
+    // not there, and an empty pointer. Each must decline rather than invent a
+    // path, since a lock file written into the working tree would show up as an
+    // untracked file in the very repository FOP is about to commit.
+    let none = base.join("none");
+    std::fs::create_dir_all(&none).unwrap();
+    assert_eq!(git_dir(&none), None);
+    std::fs::write(none.join(".git"), "gitdir: /nonexistent/fop/test\n").unwrap();
+    assert_eq!(git_dir(&none), None);
+    std::fs::write(none.join(".git"), "gitdir:\n").unwrap();
+    assert_eq!(git_dir(&none), None);
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// Two FOPs in one clone must not hold the lock at once, and a tree with no
+/// repository must not be blocked by it: a plain directory of lists is sorted
+/// with no lock to take, which is what the sort-only runs over a non-repo
+/// directory depend on.
+#[test]
+fn test_the_repo_lock_excludes_a_second_holder_but_not_a_non_repo() {
+    use crate::fop_lock::{acquire, LockOutcome};
+    use std::time::{Duration, Instant};
+    let base = std::env::temp_dir().join(format!("fop-test-lockex-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let repo = base.join("repo");
+    let plain = base.join("plain");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::create_dir_all(&plain).unwrap();
+
+    // No repository: nothing to lock, and that is not an error.
+    assert!(matches!(acquire(&plain, true), LockOutcome::NotNeeded));
+
+    let held = acquire(&repo, true);
+    assert!(matches!(held, LockOutcome::Held(_)), "the first FOP must get the lock");
+    assert!(repo.join(".git").join("fop.lock").is_file());
+
+    // A second holder has to block. `acquire` waits rather than failing, so the
+    // exclusion is checked through the same handle type a second process would
+    // use, from a thread that must still be waiting when the first lets go.
+    let probe = std::fs::File::open(repo.join(".git").join("fop.lock")).unwrap();
+    assert!(
+        matches!(probe.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
+        "a second holder must be excluded while the first holds the lock"
+    );
+
+    // Dropping the guard releases it, which is also what makes a crashed run
+    // leave no stale lock behind.
+    //
+    // Allowed a moment to settle rather than checked on the instant. `fork`
+    // copies the fd table, so a child that has forked but not yet reached
+    // `exec` shares the holder's open file description and keeps the lock alive
+    // with it; the fd is O_CLOEXEC, so `exec` drops it. Other tests in this
+    // binary shell out to git in parallel, which put that window under the drop
+    // here in 1.8% of measured iterations, every one of them clearing in under
+    // a millisecond. Waiting briefly keeps the assertion -- a lock that never
+    // releases still fails it -- without pinning it to a race.
+    drop(held);
+    let settle = Instant::now();
+    while probe.try_lock().is_err() && settle.elapsed() < Duration::from_secs(2) {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        probe.try_lock().is_ok(),
+        "the lock must release when the guard drops (waited {:?})",
+        settle.elapsed()
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// The wait has to end. git is configured here with `http.lowSpeedLimit` 0 and
+/// `http.lowSpeedTime` 999999, so a stalled push never aborts and can hold the
+/// lock for as long as the transfer hangs; waiting on that without limit turns
+/// one stuck run into every later run stuck behind it. Timing out must report
+/// `TimedOut` rather than `NotNeeded`, because the two mean opposite things to
+/// the caller: carry on unserialised, which is the race, or stop, which only
+/// defers the commit.
+#[test]
+fn test_the_repo_lock_wait_gives_up_rather_than_blocking_for_ever() {
+    use crate::fop_lock::{acquire, acquire_with_limit, LockOutcome};
+    use std::time::{Duration, Instant};
+    let base = std::env::temp_dir().join(format!("fop-test-lockwait-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let repo = base.join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+    let held = acquire(&repo, true);
+    assert!(matches!(held, LockOutcome::Held(_)));
+
+    // A wait that cannot succeed, against a limit short enough to test.
+    let limit = Duration::from_millis(300);
+    let started = Instant::now();
+    let second = acquire_with_limit(&repo, true, limit);
+    let waited = started.elapsed();
+    assert!(
+        matches!(second, LockOutcome::TimedOut),
+        "a wait that runs out must report TimedOut, not NotNeeded"
+    );
+    assert!(waited >= limit, "it must wait the whole limit, waited {:?}", waited);
+    assert!(
+        waited < limit * 20,
+        "it must give up near the limit rather than block, waited {:?}",
+        waited
+    );
+    drop(held);
+
+    // A release part-way through a wait has to be noticed. Taking a lock that
+    // was already free would not show that: the first poll succeeds and the
+    // waiting path never runs. So the lock is held, handed to a thread that
+    // drops it shortly after, and claimed by a caller that must therefore go
+    // round the loop at least once before succeeding.
+    let holder = acquire(&repo, true);
+    assert!(matches!(holder, LockOutcome::Held(_)));
+    let release_after = Duration::from_millis(150);
+    let waiter_limit = Duration::from_secs(5);
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(release_after);
+        drop(holder);
+    });
+    let started = Instant::now();
+    let claimed = acquire_with_limit(&repo, true, waiter_limit);
+    let waited = started.elapsed();
+    releaser.join().unwrap();
+    assert!(
+        matches!(claimed, LockOutcome::Held(_)),
+        "a lock released during the wait must be picked up, not waited out"
+    );
+    assert!(waited >= release_after, "it cannot have the lock before the holder let go");
+    assert!(
+        waited < waiter_limit,
+        "it must notice the release rather than run the limit out, waited {:?}",
+        waited
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// An interrupted rebase has to be seen before anything is read or written.
+/// Detection comes off the filesystem rather than `git status`, because the case
+/// that matters is a *stale* directory left by a run that died mid-rebase, and a
+/// worktree has to be answered for itself: its state lives under
+/// `.git/worktrees/<name>/`, so reading the main clone's would miss its own
+/// interrupted rebase and refuse over a rebase that is not its.
+#[test]
+fn test_an_unfinished_rebase_is_seen_before_any_sorting() {
+    use crate::fop_git::{rebase_in_progress, RebaseState};
+    let base = std::env::temp_dir().join(format!("fop-test-rebase-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let repo = base.join("repo");
+    let git = repo.join(".git");
+    std::fs::create_dir_all(&git).unwrap();
+
+    // A clean repository, and a directory that is no repository at all, both
+    // have to come back clear -- a sort-only run over a plain folder of lists
+    // must not be refused.
+    assert_eq!(rebase_in_progress(&repo), None);
+    let plain = base.join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    assert_eq!(rebase_in_progress(&plain), None);
+
+    // The name is looked for in the git directory, not in the working tree. A
+    // folder of lists that happens to hold a `rebase-merge` directory is not a
+    // repository mid-rebase, and refusing to sort it would be a refusal with no
+    // way for the user to clear it.
+    std::fs::create_dir_all(plain.join("rebase-merge")).unwrap();
+    assert_eq!(
+        rebase_in_progress(&plain),
+        None,
+        "a working-tree directory of that name is not rebase state"
+    );
+
+    // The merge backend, which is what an interrupted `git pull --rebase` and
+    // the concurrent-FOP wedge both leave behind.
+    std::fs::create_dir_all(git.join("rebase-merge")).unwrap();
+    assert_eq!(rebase_in_progress(&repo), Some(RebaseState::Merge));
+    std::fs::remove_dir_all(git.join("rebase-merge")).unwrap();
+    assert_eq!(rebase_in_progress(&repo), None);
+
+    // The apply backend, and `git am`, which leave a differently named
+    // directory and need different advice to clear.
+    std::fs::create_dir_all(git.join("rebase-apply")).unwrap();
+    assert_eq!(rebase_in_progress(&repo), Some(RebaseState::Apply));
+
+    // A file of that name is not rebase state. git keeps a directory, and
+    // tripping over a stray file would refuse to sort for no reason.
+    std::fs::remove_dir_all(git.join("rebase-apply")).unwrap();
+    std::fs::write(git.join("rebase-apply"), "not a directory\n").unwrap();
+    assert_eq!(rebase_in_progress(&repo), None);
+    std::fs::remove_file(git.join("rebase-apply")).unwrap();
+
+    // A worktree answers for its own git directory, not the main clone's.
+    let wt_git = git.join("worktrees").join("wt");
+    let wt = base.join("wt");
+    std::fs::create_dir_all(&wt_git).unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", wt_git.display())).unwrap();
+    std::fs::create_dir_all(wt_git.join("rebase-merge")).unwrap();
+    assert_eq!(rebase_in_progress(&wt), Some(RebaseState::Merge));
+    assert_eq!(
+        rebase_in_progress(&repo),
+        None,
+        "a worktree's rebase must not stop the main clone"
+    );
+
+    // And the other way round: the main clone's rebase is not the worktree's.
+    std::fs::remove_dir_all(wt_git.join("rebase-merge")).unwrap();
+    std::fs::create_dir_all(git.join("rebase-merge")).unwrap();
+    assert_eq!(rebase_in_progress(&repo), Some(RebaseState::Merge));
+    assert_eq!(
+        rebase_in_progress(&wt),
+        None,
+        "the main clone's rebase must not stop a worktree"
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+/// The push skips its own fetch only when the caller really synced.
+///
+/// A fetch costs ~2.7s against the easylist remote, where a whole sort is
+/// 0.04s, and the lists publish ~270 times a day, so repeating it spends ~12
+/// minutes a day inside the publish lock -- time two concurrent runs spend
+/// queued behind each other. It is skippable because a push rejected by
+/// something that landed since is already handled, by rebase-and-retry.
+///
+/// What must not happen is skipping it when no sync took place. Both callers
+/// discard the result of their pre-commit `fetch_and_rebase`, so the flag has
+/// to mean "it succeeded", not "it ran" -- which is what the two halves here
+/// pin down.
+#[test]
+fn test_the_push_syncs_itself_only_when_the_caller_did_not() {
+    use crate::fop_git::{pull_and_push, PushOutcome, GIT};
+
+    // already_synced = false, upstream moved on: pull_and_push fetches and
+    // rebases itself, so the push lands.
+    let (remote, clone) = remote_and_clone("pp-sync-self");
+    clone.write("list.txt", "! Title: t\n||a.com^\n");
+    clone.git(&["commit", "-qam", "mine"]);
+    push_from_elsewhere(&remote, "pp-sync-self-other", "other.txt", "y\n");
+    assert!(
+        matches!(pull_and_push(&clone.cmd(), &GIT, true, true, false), PushOutcome::Pushed),
+        "with no prior sync it must sync itself, then push"
+    );
+
+    // already_synced = true while the upstream has in fact moved on, and
+    // nothing rebased onto it: the fetch is genuinely skipped, so the push is
+    // rejected rather than silently succeeding. If the flag did not skip
+    // anything this would push, and the 12 minutes a day would still be spent.
+    let (remote2, clone2) = remote_and_clone("pp-sync-skipped");
+    clone2.write("list.txt", "! Title: t\n||a.com^\n");
+    clone2.git(&["commit", "-qam", "mine"]);
+    push_from_elsewhere(&remote2, "pp-sync-skipped-other", "other.txt", "y\n");
+    assert!(
+        matches!(pull_and_push(&clone2.cmd(), &GIT, true, true, true), PushOutcome::Rejected(_)),
+        "already_synced must actually skip the fetch, leaving the stale push to be rejected"
+    );
+
+    // And the real shape: the caller rebases, then pushes with the flag set.
+    // One fetch for the pair, and the push lands.
+    let (remote3, clone3) = remote_and_clone("pp-sync-caller");
+    clone3.write("list.txt", "! Title: t\n||a.com^\n");
+    clone3.git(&["commit", "-qam", "mine"]);
+    push_from_elsewhere(&remote3, "pp-sync-caller-other", "other.txt", "y\n");
+    clone3.git(&["fetch", "-q", "origin"]);
+    clone3.git(&["rebase", "-q", "@{upstream}"]);
+    assert!(
+        matches!(pull_and_push(&clone3.cmd(), &GIT, true, true, true), PushOutcome::Pushed),
+        "a caller that did rebase must push without a second fetch"
+    );
+}
+
+/// A sync that ran is not a sync that worked.
+///
+/// `fetch_and_rebase` returns `Ok` whenever the commands executed, carrying
+/// their exit status inside, so a failed fetch or a rebase with no upstream is
+/// still an `Ok`. Both callers discard that result except for this one bit, and
+/// reading it as `is_ok()` would mark the branch synced when nothing synced --
+/// the push would then skip its own fetch too and go out stale.
+#[test]
+fn test_a_sync_that_ran_but_failed_does_not_count_as_synced() {
+    use crate::fop_git::sync_succeeded;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+
+    let out = |code: i32| {
+        Ok(Output {
+            status: ExitStatus::from_raw(code << 8),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        })
+    };
+
+    assert!(sync_succeeded(&out(0)), "a sync that exited 0 did sync");
+    assert!(
+        !sync_succeeded(&out(1)),
+        "a command that ran and failed has not synced -- the Result is still Ok"
+    );
+    assert!(
+        !sync_succeeded(&out(128)),
+        "git's fatal exit has not synced either"
+    );
+    assert!(
+        !sync_succeeded(&Err(std::io::Error::other("git not found"))),
+        "a command that could not run has not synced"
+    );
 }

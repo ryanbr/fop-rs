@@ -60,6 +60,7 @@ mod fop_sort;
 mod fop_rules;
 mod fop_typos;
 mod fop_datestamp;
+mod fop_lock;
 
 #[cfg(test)]
 mod tests;
@@ -401,6 +402,8 @@ struct Args {
     only_sort_changed: bool,
     /// Auto rebase and retry if push fails
     rebase_on_fail: bool,
+    /// Skip the per-repository lock that serialises concurrent FOP runs
+    no_repo_lock: bool,
     /// Worker threads for the rayon pool. None means size it automatically.
     threads: Option<usize>,
     /// Mask URLs in commit messages: 1=`[.]`, 2=`(.)`, 3=` ` (space)
@@ -841,6 +844,7 @@ impl Args {
             output_changed: false,
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
             rebase_on_fail: parse_bool(&config, "rebase-on-fail", true),
+            no_repo_lock: parse_bool(&config, "no-repo-lock", false),
             // Anything not a whole number >= 1 is ignored rather than fatal:
             // a malformed config line should not stop a sort.
             threads: config
@@ -923,6 +927,7 @@ impl Args {
                 "--no-large-warning" => args.no_large_warning = true,
                 "--show-config" => args.show_config = true,
                 "--only-sort-changed" => args.only_sort_changed = true,
+                "--no-repo-lock" => args.no_repo_lock = true,
                 "--rebase-on-fail" => args.rebase_on_fail = true,
                 "--no-rebase-on-fail" => args.rebase_on_fail = false,
                 _ if arg.starts_with("--threads=") => {
@@ -1206,6 +1211,7 @@ impl Args {
         println!("        --commit-url-template=TMPL  Override 'Commit successful' URL template ({{base}}, {{sha}}); default {{base}}/commit/{{sha}}");
         println!("        --rebase-on-fail    Auto 'git pull --rebase --autostash' and retry a failed push (default: on)");
         println!("        --no-rebase-on-fail Don't auto-rebase; print the suggested command and stop");
+        println!("        --no-repo-lock  Don't serialise against another FOP in the same repository");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
@@ -1283,6 +1289,7 @@ impl Args {
         println!("  no-commit       = {}", self.no_commit);
         println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  rebase-on-fail  = {}", self.rebase_on_fail);
+        println!("  no-repo-lock    = {}", self.no_repo_lock);
         let (workers, source) = resolve_workers(self.threads);
         println!("  threads         = {} ({})", workers, source);
         println!("  commit-mask     = {}", match self.commit_mask {
@@ -2372,11 +2379,37 @@ fn process_location(
     localhost_files: &[String],
     parse_adguard_files: &[String],
     file_overrides: &ahash::AHashMap<String, FileOverrides>,
+    no_repo_lock: bool,
 ) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
         return Ok(());
     }
+
+    // Serialise against a second FOP in the same clone. Held from here until
+    // this function returns, so it spans reading the lists, rewriting them,
+    // committing and pushing -- the whole window in which a concurrent run
+    // loses an append or wedges the repository. See fop_lock for the measured
+    // failures this prevents.
+    let _repo_lock = if no_repo_lock {
+        None
+    } else {
+        match fop_lock::acquire(location, quiet) {
+            fop_lock::LockOutcome::Held(lock) => Some(lock),
+            fop_lock::LockOutcome::NotNeeded => None,
+            // Another FOP never let go. Stop rather than sort unserialised;
+            // fop_lock explains why giving up costs nothing but a deferral.
+            fop_lock::LockOutcome::TimedOut => std::process::exit(1),
+        }
+    };
+
+    // Checked after the lock, not before: a wedge the other FOP is in the middle
+    // of clearing is not this run's problem, and holding the lock means the
+    // answer cannot change under us while we sort.
+    if let Some(state) = fop_git::rebase_in_progress(location) {
+        fop_git::report_rebase_in_progress(&state, location);
+    }
+
     // Detect repository type. Needed without a commit too when the rule checks
     // are on: they read the diff to find what was added.
     let mut repository: Option<&RepoDefinition> = None;
@@ -3610,6 +3643,7 @@ fn main() {
                 &args.localhost_files,
                 &args.parse_adguard_files,
                 &args.file_overrides,
+                args.no_repo_lock,
             ) {
                 eprintln!("Error: {}", e);
             }
