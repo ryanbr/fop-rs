@@ -6363,3 +6363,232 @@ fn test_a_sync_that_ran_but_failed_does_not_count_as_synced() {
         "a command that could not run has not synced"
     );
 }
+
+#[test]
+fn test_changed_paths_reads_the_nul_format_whole() {
+    // `--porcelain -z` is used instead of the default form because the default
+    // quotes and C-escapes any path with a space or a quote in it. The parser
+    // has to keep those bytes intact and has to consume the second field a
+    // rename record carries, or every path after a rename shifts by one.
+    use crate::fop_git::changed_paths;
+    let repo = ScratchRepo::new("changed-paths");
+    repo.write("list.txt", "a\n");
+    repo.write("odd name.txt", "b\n");
+    repo.write("gone.txt", "c\n");
+    repo.write("before.txt", "d\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-qm", "init"]);
+
+    repo.write("list.txt", "a2\n");
+    repo.write("odd name.txt", "b2\n");
+    std::fs::remove_file(repo.0.join("gone.txt")).unwrap();
+    repo.git(&["mv", "before.txt", "after.txt"]);
+
+    let mut found = changed_paths(&repo.cmd()).expect("git status failed");
+    found.sort();
+    let mut want: Vec<std::path::PathBuf> = ["after.txt", "before.txt", "gone.txt", "list.txt", "odd name.txt"]
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    want.sort();
+    assert_eq!(found, want, "a rename must report both ends and a space must survive");
+}
+
+#[test]
+fn test_a_scoped_commit_leaves_everything_else_alone() {
+    // The fix for `commit -a`: a publish commits the list it changed and not
+    // whatever else happens to be dirty in the tree. 16.6 MB of fop binaries
+    // reached the easylist repository through the sweeping form.
+    use crate::fop_git::{run_commit, GIT};
+    let repo = ScratchRepo::new("scoped-commit");
+    repo.write("list.txt", "! Title: t\n||a.com^\n");
+    repo.write("fop-linux", "old binary\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-qm", "init"]);
+
+    // Both dirty, as they were when a binary was copied in mid-publish
+    repo.write("list.txt", "! Title: t\n||a.com^\n||b.com^\n");
+    repo.write("fop-linux", "new binary\n");
+
+    let list = vec![std::path::PathBuf::from("list.txt")];
+    let status = run_commit(&repo.cmd(), &GIT, "M: Update", Some(&list)).unwrap();
+    assert!(status.success(), "scoped commit failed");
+
+    let committed = repo.git(&["show", "--stat", "--format=", "HEAD"]);
+    assert!(committed.contains("list.txt"), "the list was not committed: {}", committed);
+    assert!(!committed.contains("fop-linux"), "the binary was swept in anyway: {}", committed);
+    assert_eq!(
+        repo.git(&["show", "HEAD:fop-linux"]),
+        "old binary",
+        "the committed binary must still be the old one"
+    );
+    assert!(
+        repo.git(&["status", "--porcelain", "--untracked-files=no"]).contains("fop-linux"),
+        "the binary must be left modified for its owner to deal with"
+    );
+}
+
+#[test]
+fn test_commit_all_still_sweeps_the_tree() {
+    // The escape hatch has to keep the old behaviour exactly, or `--commit-all`
+    // is not a rollback.
+    use crate::fop_git::{run_commit, GIT};
+    let repo = ScratchRepo::new("commit-all");
+    repo.write("list.txt", "! Title: t\n||a.com^\n");
+    repo.write("fop-linux", "old binary\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-qm", "init"]);
+    repo.write("list.txt", "! Title: t\n||a.com^\n||b.com^\n");
+    repo.write("fop-linux", "new binary\n");
+
+    let status = run_commit(&repo.cmd(), &GIT, "M: Update", None).unwrap();
+    assert!(status.success());
+    let committed = repo.git(&["show", "--stat", "--format=", "HEAD"]);
+    assert!(committed.contains("list.txt") && committed.contains("fop-linux"),
+        "--commit-all must still take both: {}", committed);
+}
+
+#[test]
+fn test_commit_scope_covers_what_the_sorter_covers() {
+    // The scope is the set of files FOP sorts. A dot-path never reaches the
+    // sorter (WalkDir drops it), so it must not reach the commit either --
+    // .github/workflows holds .txt files in some repositories.
+    use std::path::Path;
+    let exts = vec!["txt".to_string()];
+    let none: Vec<String> = Vec::new();
+    let includes = |p: &str| {
+        crate::commit_scope_includes(Path::new(p), &exts, &none, &none, &none, false)
+    };
+    for list in ["easylist/easylist_adservers.txt", "list.txt", "a/b/c.txt"] {
+        assert!(includes(list), "{} is a list FOP sorts", list);
+    }
+    for other in [
+        "fop-linux",
+        "README.md",
+        "FOP.py",
+        ".github/workflows/notes.txt",
+        ".fopconfig",
+        "config-clean.json.gpg",
+    ] {
+        assert!(!includes(other), "{} must be left to its owner", other);
+    }
+
+    // --ignore-all-but narrows it the same way it narrows the sort
+    let only = vec!["easylist_adservers.txt".to_string()];
+    assert!(crate::commit_scope_includes(
+        Path::new("easylist/easylist_adservers.txt"), &exts, &none, &none, &only, false));
+    assert!(!crate::commit_scope_includes(
+        Path::new("easylist/easylist_general_block.txt"), &exts, &none, &none, &only, false));
+}
+
+#[test]
+fn test_an_empty_scope_commits_nothing_at_all() {
+    // When nothing FOP manages has changed, the scope is empty -- and
+    // `git commit -m msg --` with an empty pathspec does not mean "commit
+    // nothing", it commits the index and exits 0 (measured). Staged work from
+    // somewhere else would land under FOP's message, so the empty case has to
+    // stop before git is run.
+    use crate::fop_git::{commit_changes, GIT};
+    let repo = ScratchRepo::new("empty-scope");
+    repo.write("list.txt", "! Title: t\n||a.com^\n");
+    repo.write("fop-linux", "old binary\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-qm", "init"]);
+    let before = repo.git(&["rev-parse", "HEAD"]);
+
+    // An unstaged change, so `get_diff` is non-empty and commit_changes gets
+    // as far as the scope at all; plus staged work from somewhere else, which
+    // is what an empty pathspec would commit.
+    repo.write("fop-linux", "new binary\n");
+    repo.write("staged-by-someone-else.txt", "theirs\n");
+    repo.git(&["add", "staged-by-someone-else.txt"]);
+
+    let message = Some("M: Update".to_string());
+    let no_strings: Vec<String> = Vec::new();
+    let empty: Vec<std::path::PathBuf> = Vec::new();
+    commit_changes(
+        &GIT, &repo.cmd(), false, false, true, true, true, true, false,
+        &message, &no_strings, None, &no_strings, false, &no_strings, None,
+        Some(&empty),
+    )
+    .unwrap();
+
+    assert_eq!(repo.git(&["rev-parse", "HEAD"]), before, "a commit was made from an empty scope");
+    assert!(
+        repo.git(&["status", "--porcelain"]).contains("staged-by-someone-else.txt"),
+        "someone else's staged file must be left staged, not committed"
+    );
+}
+
+#[test]
+fn test_changed_paths_reports_failure_rather_than_emptiness() {
+    // The caller falls back to the sweeping commit when this returns None, and
+    // warns while doing it. An empty Vec would mean "nothing changed" and would
+    // silently commit nothing instead, so a git that fails must not look like a
+    // clean tree.
+    use crate::fop_git::changed_paths;
+    let dir = std::env::temp_dir().join(format!("fop-test-notarepo-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let cmd = vec!["git".to_string(), "-C".to_string(), dir.display().to_string()];
+    let result = changed_paths(&cmd);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(result.is_none(), "a failing git status must be None, not Some([])");
+}
+
+#[test]
+fn test_a_pr_is_not_raised_for_an_empty_scope() {
+    // Same guard as the direct commit: with no list changed there is no PR to
+    // raise, and the branch must not be created either.
+    use crate::fop_git::{create_pull_request, GIT};
+    let repo = ScratchRepo::new("pr-empty-scope");
+    repo.write("list.txt", "! Title: t\n||a.com^\n");
+    repo.write("fop-linux", "old\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-qm", "init"]);
+    repo.write("fop-linux", "new\n");
+
+    let empty: Vec<std::path::PathBuf> = Vec::new();
+    let url = create_pull_request(
+        &GIT, &repo.cmd(), "M: Update", "origin", &None, true, false, true, Some(&empty),
+    )
+    .unwrap();
+    assert!(url.is_none(), "a PR was opened for an empty scope");
+    assert!(
+        !repo.git(&["branch", "--list", "fop-update-*"]).contains("fop-update"),
+        "a PR branch was created for an empty scope"
+    );
+    assert!(
+        repo.git(&["status", "--porcelain", "--untracked-files=no"]).contains("fop-linux"),
+        "the unmanaged file must be left alone"
+    );
+}
+
+#[test]
+fn test_a_pr_branch_carries_only_the_lists() {
+    // The PR path used `commit -a` of its own, so a PR raised while an
+    // unrelated file was dirty carried that file too -- the same defect as the
+    // direct commit, in the branch instead of on master.
+    use crate::fop_git::{create_pull_request, GIT};
+    let (_remote, clone) = remote_and_clone("pr-scope");
+    clone.write("fop-linux", "old binary\n");
+    clone.git(&["add", "fop-linux"]);
+    clone.git(&["commit", "-qm", "add a tracked binary"]);
+    let base = clone.git(&["rev-parse", "HEAD"]);
+
+    clone.write("list.txt", "! Title: t\n||a.com^\n||b.com^\n||c.com^\n");
+    clone.write("fop-linux", "new binary\n");
+
+    let scope = vec![std::path::PathBuf::from("list.txt")];
+    create_pull_request(
+        &GIT, &clone.cmd(), "M: Update", "origin", &None, true, false, true, Some(&scope),
+    )
+    .unwrap();
+
+    let branch = clone.git(&["branch", "--list", "fop-update-*", "--format=%(refname:short)"]);
+    let branch = branch.lines().next().unwrap_or_default().to_string();
+    assert!(!branch.is_empty(), "no PR branch was created");
+    let carried = clone.git(&["diff", "--name-only", &format!("{}..{}", base, branch)]);
+    assert!(carried.contains("list.txt"), "the list is missing from the PR: {}", carried);
+    assert!(!carried.contains("fop-linux"), "the PR carried an unmanaged file: {}", carried);
+}

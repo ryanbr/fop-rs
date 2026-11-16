@@ -3,7 +3,7 @@
 use owo_colors::OwoColorize;
 use regex::Regex;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use crate::fop_sort::SORT_CHANGES;
 use std::sync::LazyLock;
@@ -241,6 +241,10 @@ pub struct RepoDefinition {
     pub check_changes: &'static [&'static str],
     pub difference: &'static [&'static str],
     pub commit: &'static [&'static str],
+    /// The commit form that takes an explicit pathspec. Used with `-- <paths>`
+    /// so only the files FOP manages are committed; `commit` above sweeps the
+    /// whole tree and stays as the `--commit-all` fallback.
+    pub commit_scoped: &'static [&'static str],
     pub fetch: &'static [&'static str],
     pub rebase: &'static [&'static str],
     pub upstream: &'static str,
@@ -255,6 +259,7 @@ pub const GIT: RepoDefinition = RepoDefinition {
     check_changes: &["status", "-s", "--untracked-files=no"],
     difference: &["diff"],
     commit: &["commit", "-a", "-m"],
+    commit_scoped: &["commit", "-m"],
     fetch: &["fetch"],
     rebase: &["rebase"],
     upstream: "@{upstream}",
@@ -1297,7 +1302,15 @@ pub fn create_pull_request(
     quiet: bool,
     show_changes: bool,
     no_color: bool,
+    commit_paths: Option<&[PathBuf]>,
 ) -> io::Result<Option<String>> {
+    // Nothing FOP manages has changed, so there is no PR to raise. Checked
+    // before the branch is created, and before `git commit -- ` with an empty
+    // pathspec would commit the index instead of nothing.
+    if commit_paths.is_some_and(|paths| paths.is_empty()) {
+        println!("\nNo filter list has changed, so there is nothing to open a PR for.");
+        return Ok(None);
+    }
     // Show diff first
     let diff = match get_diff(base_cmd, repo) {
         Some(d) if !d.is_empty() => d,
@@ -1345,12 +1358,9 @@ pub fn create_pull_request(
         return Ok(None);
     }
 
-    // Commit changes
-    let status = Command::new(&base_cmd[0])
-        .args(&base_cmd[1..])
-        .args(repo.commit)
-        .arg(message)
-        .status()?;
+    // Commit changes, under the same scope a direct commit uses: a PR that
+    // carries an unrelated file is no better than a push that does.
+    let status = run_commit(base_cmd, repo, message, commit_paths)?;
     if !status.success() {
         eprintln!("Failed to commit changes");
         let _ = checkout_branch(base_cmd, &current_branch);
@@ -1403,9 +1413,94 @@ pub fn create_pull_request(
     Ok(pr_url)
 }
 
+
+/// Run the commit, limited to `paths` when the caller supplied a scope.
+///
+/// `git commit -m <msg> -- <paths>` records the working-tree content of exactly
+/// those paths and leaves everything else modified, where `commit -a` stages the
+/// whole tree. That sweep is how 16.6 MB of `fop-linux`/`fop-mac`/`fop-win.exe`
+/// reached the easylist repository inside automated "M: Update" commits: the
+/// binary was copied in while a publish script was running, and the script's
+/// commit took it along with the list it meant to update.
+///
+/// `None` keeps the old sweeping form, which is what `--commit-all` asks for.
+pub(crate) fn run_commit(
+    base_cmd: &[String],
+    repo: &RepoDefinition,
+    message: &str,
+    paths: Option<&[PathBuf]>,
+) -> io::Result<std::process::ExitStatus> {
+    let mut cmd = Command::new(&base_cmd[0]);
+    cmd.args(&base_cmd[1..]);
+    match paths {
+        Some(paths) => {
+            cmd.args(repo.commit_scoped).arg(message).arg("--").args(paths);
+        }
+        None => {
+            cmd.args(repo.commit).arg(message);
+        }
+    }
+    cmd.status()
+}
+
 // =============================================================================
 // Commit Operations
 // =============================================================================
+
+/// A path git reported as changed against HEAD, repo-relative.
+///
+/// `--porcelain -z` rather than the default form: without `-z` git quotes any
+/// path holding a space, quote or non-ASCII byte and escapes it C-style, so the
+/// text would have to be unquoted again to be handed back as an argument. `-z`
+/// emits the raw bytes with a NUL terminator and no quoting at all.
+///
+/// Rename and copy records carry two NUL-separated fields, the new path then
+/// the old one. Both are returned: committing only the new path records an
+/// addition and leaves the deletion behind, which is a worse tree than either
+/// end of the rename alone.
+pub fn changed_paths(base_cmd: &[String]) -> Option<Vec<PathBuf>> {
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["status", "--porcelain", "-z", "--untracked-files=no"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let mut paths = Vec::new();
+    let mut fields = output.stdout.split(|b| *b == 0);
+    while let Some(record) = fields.next() {
+        // "XY PATH": two status columns, a space, then the path. Anything
+        // shorter is the trailing empty field after the final NUL.
+        if record.len() < 4 {
+            continue;
+        }
+        let (x, y) = (record[0], record[1]);
+        paths.push(bytes_to_path(&record[3..]));
+        if matches!(x, b'R' | b'C') || matches!(y, b'R' | b'C') {
+            match fields.next() {
+                Some(old) if !old.is_empty() => paths.push(bytes_to_path(old)),
+                _ => break,
+            }
+        }
+    }
+    Some(paths)
+}
+
+/// git hands back path bytes, which on unix are not necessarily UTF-8. Going
+/// through `String` would replace the invalid ones and name a file that does
+/// not exist, so the bytes become an `OsStr` directly where the platform allows
+/// it.
+#[cfg(unix)]
+fn bytes_to_path(bytes: &[u8]) -> PathBuf {
+    use std::os::unix::ffi::OsStrExt;
+    PathBuf::from(std::ffi::OsStr::from_bytes(bytes))
+}
+
+#[cfg(not(unix))]
+fn bytes_to_path(bytes: &[u8]) -> PathBuf {
+    PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
+}
 
 /// What became of a pull and push.
 pub(crate) enum PushOutcome {
@@ -1931,6 +2026,7 @@ pub fn commit_changes(
     commit_mask_bare: bool,
     commit_mask_exempt_hosts: &[String],
     commit_url_template: Option<&str>,
+    commit_paths: Option<&[PathBuf]>,
 ) -> io::Result<()> {
     let git_quiet = quiet || limited_quiet;
     // Apply commit_mask only if either (a) no user allowlist is configured, or
@@ -1960,6 +2056,15 @@ pub fn commit_changes(
             return Ok(());
         }
     };
+
+    // Something changed, but nothing FOP is responsible for. Committing here
+    // would mean `git commit -- ` with an empty pathspec, which commits the
+    // index rather than nothing; stopping is both correct and what the caller
+    // has already explained to the user.
+    if commit_paths.is_some_and(|paths| paths.is_empty()) {
+        println!("\nNo filter list has changed, so there is nothing to commit.");
+        return Ok(());
+    }
 
     if !quiet {
         println!("\nThe following changes have been recorded by the repository:");
@@ -1998,11 +2103,7 @@ pub fn commit_changes(
             .unwrap_or(std::borrow::Cow::Borrowed(message.as_str()));
         let is_masked = masked.as_ref() != message.as_str();
 
-        Command::new(&base_cmd[0])
-            .args(&base_cmd[1..])
-            .args(repo.commit)
-            .arg(masked.as_ref())
-            .status()?;
+        run_commit(base_cmd, repo, masked.as_ref(), commit_paths)?;
 
         let outcome = pull_and_push(base_cmd, repo, git_quiet, quiet, synced);
         if let PushOutcome::Rejected(push_error) = &outcome {
@@ -2109,11 +2210,7 @@ pub fn commit_changes(
             let msg_label = if is_masked { "Commit message (masked):" } else { "Commit message:" };
 
             // Execute commit
-            let status = Command::new(&base_cmd[0])
-                .args(&base_cmd[1..])
-                .args(repo.commit)
-                .arg(&masked_comment)
-                .status();
+            let status = run_commit(base_cmd, repo, &masked_comment, commit_paths);
 
             if let Err(e) = status {
                 eprintln!("Unexpected error with commit: {}", e);

@@ -404,6 +404,8 @@ struct Args {
     rebase_on_fail: bool,
     /// Skip the per-repository lock that serialises concurrent FOP runs
     no_repo_lock: bool,
+    /// Commit the whole tree (`commit -a`) instead of only the lists FOP manages
+    commit_all: bool,
     /// Worker threads for the rayon pool. None means size it automatically.
     threads: Option<usize>,
     /// Mask URLs in commit messages: 1=`[.]`, 2=`(.)`, 3=` ` (space)
@@ -845,6 +847,7 @@ impl Args {
             only_sort_changed: parse_bool(&config, "only-sort-changed", false),
             rebase_on_fail: parse_bool(&config, "rebase-on-fail", true),
             no_repo_lock: parse_bool(&config, "no-repo-lock", false),
+            commit_all: parse_bool(&config, "commit-all", false),
             // Anything not a whole number >= 1 is ignored rather than fatal:
             // a malformed config line should not stop a sort.
             threads: config
@@ -928,6 +931,7 @@ impl Args {
                 "--show-config" => args.show_config = true,
                 "--only-sort-changed" => args.only_sort_changed = true,
                 "--no-repo-lock" => args.no_repo_lock = true,
+                "--commit-all" => args.commit_all = true,
                 "--rebase-on-fail" => args.rebase_on_fail = true,
                 "--no-rebase-on-fail" => args.rebase_on_fail = false,
                 _ if arg.starts_with("--threads=") => {
@@ -1212,6 +1216,7 @@ impl Args {
         println!("        --rebase-on-fail    Auto 'git pull --rebase --autostash' and retry a failed push (default: on)");
         println!("        --no-rebase-on-fail Don't auto-rebase; print the suggested command and stop");
         println!("        --no-repo-lock  Don't serialise against another FOP in the same repository");
+        println!("        --commit-all    Commit every changed file, not only the lists FOP manages");
         println!("        --no-large-warning  Disable large change warning prompt");
         println!("        --ignorefiles=  Additional files to ignore (comma-separated, partial names)");
         println!("        --abp-convert          Convert :-abp-has/:-abp-contains to :has/:has-text");
@@ -1290,6 +1295,7 @@ impl Args {
         println!("  only-sort-changed = {}", self.only_sort_changed);
         println!("  rebase-on-fail  = {}", self.rebase_on_fail);
         println!("  no-repo-lock    = {}", self.no_repo_lock);
+        println!("  commit-all      = {}", self.commit_all);
         let (workers, source) = resolve_workers(self.threads);
         println!("  threads         = {} ({})", workers, source);
         println!("  commit-mask     = {}", match self.commit_mask {
@@ -1764,6 +1770,41 @@ fn diff_path_is_filter_list(
         // The sorter restricts itself to these; the diff must not reach past
         // the files fop was actually asked to touch.
         && (ignore_all_but.is_empty() || ignore_all_but.iter().any(|f| filename.contains(f)))
+}
+
+/// Whether a changed path is one FOP may commit.
+///
+/// `diff_path_is_filter_list` is the same filter the sorter collects files
+/// with, so the two cannot drift; the extra test here is for dot-paths, which
+/// `WalkDir`'s `filter_entry` drops before that predicate ever sees them.
+/// Without it `.github/workflows/*.txt` would read as a filter list.
+fn commit_scope_includes(
+    path: &Path,
+    file_extensions: &[String],
+    ignore_files: &[String],
+    ignore_dirs: &[String],
+    ignore_all_but: &[String],
+    disable_ignored: bool,
+) -> bool {
+    if path
+        .components()
+        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+    {
+        return false;
+    }
+    let Some(text) = path.to_str() else {
+        // A path git reported but that is not UTF-8 cannot be matched against
+        // the configured names, and guessing would commit the wrong file.
+        return false;
+    };
+    diff_path_is_filter_list(
+        text,
+        file_extensions,
+        ignore_files,
+        ignore_dirs,
+        ignore_all_but,
+        disable_ignored,
+    )
 }
 
 /// Check if directory path matches any ignore pattern
@@ -2380,6 +2421,7 @@ fn process_location(
     parse_adguard_files: &[String],
     file_overrides: &ahash::AHashMap<String, FileOverrides>,
     no_repo_lock: bool,
+    commit_all: bool,
 ) -> io::Result<()> {
     if !location.is_dir() {
         eprintln!("{} does not exist or is not a folder.", location.display());
@@ -2850,6 +2892,60 @@ fn process_location(
                 }
             }
 
+            // The paths a commit may touch: what git reports as changed,
+            // narrowed to the files FOP manages. `commit -a` instead stages the
+            // whole tree, which is how a fop binary copied into the clone during
+            // a publish run ended up inside an automated "M: Update" commit.
+            //
+            // Called immediately before each commit rather than computed once
+            // here: `check_banned_domains` can rewrite files under
+            // --auto-banned-remove, and a scope taken before that would neither
+            // commit nor report whatever it dirtied.
+            let scope_now = || -> Option<Vec<PathBuf>> {
+                if commit_all {
+                    return None;
+                }
+                let Some(changed) = fop_git::changed_paths(&base_cmd) else {
+                    // Without the path list there is no scope to commit, and
+                    // the fallback is the sweeping form this exists to replace.
+                    // Doing that silently would put the old behaviour back with
+                    // nothing to show for it, so it is said plainly.
+                    eprintln!(
+                        "\nWarning: could not list changed paths (git status failed), so this commit \
+                         takes the whole tree as it did before. Check for anything dirty you did not mean to publish."
+                    );
+                    return None;
+                };
+                let (mine, theirs): (Vec<PathBuf>, Vec<PathBuf>) =
+                    changed.into_iter().partition(|path| {
+                        commit_scope_includes(
+                            path,
+                            file_extensions,
+                            ignore_files,
+                            ignore_dirs,
+                            ignore_all_but,
+                            disable_ignored,
+                        )
+                    });
+                // Said even under --quiet: a file left modified on purpose is
+                // the one thing a caller cannot infer from a clean exit, and
+                // silently skipping it is the failure this replaced.
+                if !theirs.is_empty() {
+                    eprintln!(
+                        "\nLeft uncommitted ({} not managed by FOP, commit {} by hand or pass --commit-all):",
+                        if theirs.len() == 1 { "1 path" } else { "paths" },
+                        if theirs.len() == 1 { "it" } else { "them" }
+                    );
+                    for path in theirs.iter().take(20) {
+                        eprintln!("    {}", path.display());
+                    }
+                    if theirs.len() > 20 {
+                        eprintln!("    ... and {} more", theirs.len() - 20);
+                    }
+                }
+                Some(mine)
+            };
+
             if let Some(pr_title) = create_pr {
                 // Check if user can bypass PR requirement
                 let can_direct_push = if !direct_push_users.is_empty() {
@@ -2867,7 +2963,7 @@ fn process_location(
                     if !quiet {
                         println!("Direct push authorized for user.");
                     }
-                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history, commit_mask, commit_mask_users, commit_mask_bare, commit_mask_exempt_hosts, commit_url_template)?;
+                    commit_changes(repo, &base_cmd, original_difference, no_msg_check, no_color, no_large_warning, quiet, limited_quiet, rebase_on_fail, git_message, history, commit_mask, commit_mask_users, commit_mask_bare, commit_mask_exempt_hosts, commit_url_template, scope_now().as_deref())?;
                 } else {
                 // Use provided title or prompt
                 let message = if !pr_title.is_empty() {
@@ -2897,7 +2993,7 @@ fn process_location(
                     return Ok(());
                 }
                 
-                create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, pr_show_changes, no_color)?;
+                create_pull_request(repo, &base_cmd, &message, &remote, &base_branch, quiet, pr_show_changes, no_color, scope_now().as_deref())?;
                 }
             } else {
 
@@ -2923,6 +3019,7 @@ fn process_location(
                     commit_mask_bare,
                     commit_mask_exempt_hosts,
                     commit_url_template,
+                    scope_now().as_deref(),
                 )?;
             }
         }
@@ -3508,6 +3605,21 @@ fn main() {
                     return;
                 }
 
+                // One file was named on the command line, so that file is the
+                // whole scope -- no need to ask git what else changed. Relative
+                // to the repository root, which is what a pathspec expects.
+                let single: Option<Vec<PathBuf>> = if args.commit_all {
+                    None
+                } else {
+                    fop_git::repo_root(&base_cmd)
+                        .and_then(|root| {
+                            file_path
+                                .canonicalize()
+                                .ok()
+                                .and_then(|abs| abs.strip_prefix(&root).ok().map(PathBuf::from))
+                        })
+                        .map(|rel| vec![rel])
+                };
                 if let Err(e) = fop_git::commit_changes(
                     repo,
                     &base_cmd,
@@ -3525,6 +3637,7 @@ fn main() {
                     args.commit_mask_bare,
                     &args.commit_mask_exempt_hosts,
                     args.commit_url_template.as_deref(),
+                    single.as_deref(),
                 ) {
                     eprintln!("Git error: {}", e);
                 }
@@ -3644,6 +3757,7 @@ fn main() {
                 &args.parse_adguard_files,
                 &args.file_overrides,
                 args.no_repo_lock,
+                args.commit_all,
             ) {
                 eprintln!("Error: {}", e);
             }
