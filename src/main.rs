@@ -1830,12 +1830,18 @@ fn containing_dir(file_path: &Path) -> &Path {
 /// instead makes `git commit` exit 1, and an already-sorted list while
 /// something else in the tree is dirty is an ordinary no-op, not a failure.
 ///
-/// `None` when the file cannot be placed inside the repository at all; the
-/// caller says so before falling back to the sweeping commit.
+/// The name alone is the pathspec: this mode finds a repository only when the
+/// file's own directory holds `.git`, so that directory is the work tree root
+/// and the file sits directly in it. Deriving the relative path instead --
+/// canonicalise, then strip the root `git rev-parse --show-toplevel` prints --
+/// is what broke on Windows, where `canonicalize` answers a verbatim
+/// `\\?\D:\...` path whose prefix does not match git's, so `strip_prefix`
+/// failed and every `--check-file` run there fell back to the sweeping commit.
+///
+/// `None` when the path has no file name at all; the caller says so before
+/// falling back to that sweep.
 fn single_file_scope(base_cmd: &[String], file_path: &Path) -> Option<Vec<PathBuf>> {
-    let root = fop_git::repo_root(base_cmd)?;
-    let absolute = file_path.canonicalize().ok()?;
-    let relative = absolute.strip_prefix(&root).ok()?.to_path_buf();
+    let relative = PathBuf::from(file_path.file_name()?);
     // A git that could not be asked is not a file that did not change: commit
     // the named file, which is still narrower than the whole tree.
     Some(match fop_git::path_has_changes(base_cmd, &relative) {
@@ -3654,9 +3660,9 @@ fn main() {
                         // sweeping commit this replaced, so it is never taken
                         // silently.
                         eprintln!(
-                            "\nWarning: could not place {} inside the repository, so this commit \
-                             takes the whole tree as it did before. Check for anything dirty you \
-                             did not mean to publish.",
+                            "\nWarning: {} has no file name to commit by, so this commit takes \
+                             the whole tree as it did before. Check for anything dirty you did \
+                             not mean to publish.",
                             file_path.display()
                         );
                     }

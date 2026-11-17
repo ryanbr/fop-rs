@@ -6147,13 +6147,20 @@ fn test_the_repo_lock_excludes_a_second_holder_but_not_a_non_repo() {
     // here in 1.8% of measured iterations, every one of them clearing in under
     // a millisecond. Waiting briefly keeps the assertion -- a lock that never
     // releases still fails it -- without pinning it to a race.
+    //
+    // The result is kept rather than asserted by locking a second time:
+    // `flock` on unix is idempotent for the same descriptor, but `LockFileEx`
+    // refuses a region the same handle already holds, so re-locking failed on
+    // Windows after the wait had already succeeded.
     drop(held);
     let settle = Instant::now();
-    while probe.try_lock().is_err() && settle.elapsed() < Duration::from_secs(2) {
+    let mut released = probe.try_lock().is_ok();
+    while !released && settle.elapsed() < Duration::from_secs(2) {
         std::thread::sleep(Duration::from_millis(1));
+        released = probe.try_lock().is_ok();
     }
     assert!(
-        probe.try_lock().is_ok(),
+        released,
         "the lock must release when the guard drops (waited {:?})",
         settle.elapsed()
     );
