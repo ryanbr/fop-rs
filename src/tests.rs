@@ -6371,12 +6371,30 @@ fn test_the_push_syncs_itself_only_when_the_caller_did_not() {
 #[test]
 fn test_a_sync_that_ran_but_failed_does_not_count_as_synced() {
     use crate::fop_git::sync_succeeded;
-    use std::os::unix::process::ExitStatusExt;
     use std::process::{ExitStatus, Output};
+
+    // An `ExitStatus` cannot be built portably: the trait that does it is
+    // per-platform, taking a wait status on unix and a plain exit code on
+    // Windows. Written unix-only, this stopped the test suite compiling for
+    // Windows at all, which failed the first 6.2.3 release -- that job
+    // compiles the tests before it builds anything, and the version bump had
+    // already been pushed by the job before it.
+    fn status(code: i32) -> ExitStatus {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            ExitStatus::from_raw(code << 8)
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            ExitStatus::from_raw(code as u32)
+        }
+    }
 
     let out = |code: i32| {
         Ok(Output {
-            status: ExitStatus::from_raw(code << 8),
+            status: status(code),
             stdout: Vec::new(),
             stderr: Vec::new(),
         })
