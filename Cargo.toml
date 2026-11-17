@@ -18,7 +18,7 @@ ahash = "0.8"
 base64 = "0.23"
 md5 = "0.8"
 owo-colors = "4"
-similar = "2"
+similar = "3"
 urlencoding ="2.1"
 mimalloc = { version = "0.1", default-features = false }
 
