@@ -122,6 +122,8 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--rebase-on-fail` | Auto `git pull --rebase --autostash` and retry when a push fails, up to 5 times when another push keeps landing first. Stops at a merge conflict with instructions to finish it. A commit that could not be published makes FOP exit 1. **On by default** |
 | `--threads=N` | Worker threads for the parallel pool. Defaults to the core count capped at 8; overrides `RAYON_NUM_THREADS`. |
 | `--no-rebase-on-fail` | Don't auto-rebase; print the suggested `git pull --rebase` command and stop (exit 1) |
+| `--no-repo-lock` | Don't serialise against another FOP in the same repository. FOP otherwise holds `fop.lock` inside the git directory across the span that reads, rewrites, commits and pushes, waits up to 10 minutes for another run and stops if that run does not finish. Required when the calling script already holds that same lock file, since `flock` is not reentrant and FOP would otherwise wait on its own parent |
+| `--commit-all` | Commit every changed file (`git commit -a`), not only the filter lists FOP manages. The behaviour before 6.2.3, kept as a rollback: a publish otherwise commits the lists and names anything else it left modified on stderr |
 | `--commit-mask=N` | Mask URLs in commit messages (1=`[.]`, 2=`(.)`, 3=space, 4=preserve subdomain dot, 5=Unicode lookalike `․`) |
 | `--no-commit-mask` | Disable URL masking even when `.fopconfig` sets `commit-mask` (`--commit-mask=0` cannot: 0 falls through to level 1) |
 | `--commit-mask-users=u1,u2` | Restrict `--commit-mask` to these `git config user.name` values (lowercased) |
@@ -248,6 +250,15 @@ ci = false
 # reapplies your stashed changes and can leave conflicts to resolve. Set false
 # to be told the command to run instead of having it run for you.
 rebase-on-fail = true
+
+# Serialise FOP against a second FOP in the same repository (default: on).
+# Set true to skip the lock, which is what a publish script does when it
+# already holds .git/fop.lock itself.
+no-repo-lock = false
+
+# Commit every changed file rather than only the lists FOP manages.
+# The pre-6.2.3 sweep, kept as a rollback.
+commit-all = false
 threads = 8                 # Worker threads; omit to size from the core count
 
 # Mask URLs in commit messages: 1=[.], 2=(.), 3=space, 4=preserve subdomain dot, 5=Unicode lookalike

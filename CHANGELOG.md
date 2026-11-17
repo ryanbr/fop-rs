@@ -2,6 +2,63 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [6.2.3] - 2026-11-18
+
+- A publish commits the filter lists it sorted, not whatever else the working
+  tree was holding. The commit was `git commit -a`, which stages everything:
+  16.6 MB of `fop-linux`, `fop-mac` and `fop-win.exe` reached the easylist
+  repository inside automated "M: Update" commits, a binary having been copied
+  into the clone while a publish script was running. The scope is the same
+  filter the sorter collects files with, so the two cannot drift, and anything
+  left modified is named on stderr rather than silently skipped. The PR path is
+  scoped the same way. `--commit-all` (config `commit-all`) restores the old
+  sweep exactly.
+
+- One FOP at a time per repository. The lists are sorted by a loop of scripts
+  over a single clone, two of them often at once, and nothing serialised that:
+  12 concurrent pairs produced 12 commits instead of 24, ten `index.lock`
+  collisions, nine `cannot rebase: You have unstaged changes`, three
+  repositories wedged on a stale `.git/rebase-merge`, and one appended domain
+  lost outright, swallowed by the autostash in the other run's sync. FOP now
+  holds `fop.lock` inside the git directory across the span that reads,
+  rewrites, commits and pushes, waiting up to ten minutes and stopping rather
+  than proceeding unserialised -- the rule stays in the working tree and the
+  next run commits it. `--no-repo-lock` (config `no-repo-lock`) skips it, which
+  a script that holds the same lock file must pass, since `flock` is not
+  reentrant.
+
+- An unfinished rebase is noticed before the lists are rewritten rather than
+  after a pull has failed, since an interrupted rebase can leave conflict
+  markers that sorting then writes into the lists in sorted order.
+
+- One fetch per publish instead of two. A fetch costs about 2.7s against the
+  easylist remote where a whole sort is 0.04s, and the lists publish around 270
+  times a day, so the repeat spent roughly 12 minutes a day inside the publish
+  lock.
+
+- A commit git refused is reported instead of being announced as a success.
+  `commit -a` had the whole tree to commit and so all but never failed, which
+  is why its exit status was dropped; with a pathspec it exits non-zero when
+  nothing in the scope has changed, and FOP printed "Commit successful" with the
+  previous commit's URL and exited 0. It now says what happened and exits 1.
+
+- `fop --check-file=list.txt` committed nothing at all. `Path::parent` answers
+  `Some("")` for a bare filename rather than `None`, so the empty path reached
+  `--work-tree=`, where git reports an empty diff: the run said "No changes have
+  been recorded by the repository" and stopped, while `--check-file=./list.txt`
+  committed normally.
+
+- A uBO scriptlet argument that holds its own parentheses is left as written.
+  The spacing step splits arguments on every unescaped comma and rejoins them
+  with `", "`, which is the point of it for `set, foo, true` and a rewrite of
+  the author's text for `,G=null),clearTimeout(K),!`. A `(` or `)` in the
+  arguments now means the rule passes through untouched; its domains are still
+  sorted, and quoted arguments are left alone as before.
+
+- Dependencies updated, `similar` 2.7.0 to 3.2.1 among them. It renders the
+  unified diff FOP prints and writes with `--output-diff`, and produces the
+  same diff byte for byte.
+
 ## [6.2.2] - 2026-11-02
 
 - Fixed the options table in the README, which had been broken since the
