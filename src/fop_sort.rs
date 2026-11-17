@@ -1459,12 +1459,26 @@ pub(crate) fn element_tidy(
         if selector.starts_with("+js(") && !selector.contains(['"', '\'', '`']) {
             if let Some(start) = selector.find('(') {
                 if let Some(end) = selector.rfind(')') {
-                    let args = split_unescaped_commas(&selector[start + 1..end])
-                        .into_iter()
-                        .map(str::trim)
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    return format!("{}{}{}{}", domains, separator, &selector[..start + 1], args) + &selector[end..];
+                    let inner = &selector[start + 1..end];
+                    // Only when the arguments carry no parenthesis of their
+                    // own. A `(` or `)` in there means the text is a needle or
+                    // a code fragment written byte for byte --
+                    // `+js(nostif, ,G=null),clearTimeout(K),!)` -- and
+                    // reflowing it put a space after every comma in the
+                    // author's own text, which is how that rule reached
+                    // easyprivacy_specific_uBO.txt respaced. uBO splits those
+                    // unescaped commas itself, so the spacing changes nothing
+                    // it receives; the rule as published is simply no longer
+                    // the rule that was written. Arguments that are plainly
+                    // separate (`set, foo, true`) are still spaced.
+                    if !inner.contains(['(', ')']) {
+                        let args = split_unescaped_commas(inner)
+                            .into_iter()
+                            .map(str::trim)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return format!("{}{}{}{}", domains, separator, &selector[..start + 1], args) + &selector[end..];
+                    }
                 }
             }
         }

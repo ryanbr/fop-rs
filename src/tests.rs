@@ -4647,6 +4647,39 @@ fn test_scriptlet_escaped_comma_kept() {
 }
 
 #[test]
+fn test_scriptlet_with_parens_in_its_arguments_is_left_as_written() {
+    // Reported from easyprivacy_specific_uBO.txt, where two rules arrived
+    // respaced in the same publish that added them: the spacing step
+    // splits on every unescaped comma and rejoins with ", ", which reflowed
+    // `,G=null),clearTimeout(K),!` -- the author's own text. A parenthesis in
+    // the arguments means they hold a needle or a code fragment, so the rule
+    // is left exactly as written.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    for rule in [
+        "example.com##+js(aeld, /load|error/, ,G=null),clearTimeout(K),!)",
+        "example.com##+js(nostif, ,G=null),clearTimeout(K),!)",
+        "example.com##+js(aost,document.createElement,foo(bar))",
+        "example.com##+js(nostif, /x(y)/,1000)",
+    ] {
+        assert_eq!(crate::fop_sort::tidy_rule(rule, &config), rule, "respaced: {}", rule);
+    }
+
+    // Arguments with no parenthesis of their own are still spaced, which is
+    // what the step is for
+    assert_eq!(
+        crate::fop_sort::tidy_rule("example.com##+js(set,foo,true)", &config),
+        "example.com##+js(set, foo, true)"
+    );
+
+    // Only the reflow is skipped: the domains of such a rule are still sorted
+    assert_eq!(
+        crate::fop_sort::tidy_rule("z.com,a.com##+js(nostif, ,G=null),clearTimeout(K),!)", &config),
+        "a.com,z.com##+js(nostif, ,G=null),clearTimeout(K),!)"
+    );
+}
+
+#[test]
 fn test_benchmark_sort_leaves_the_file() {
     // --benchmark times the sort alone: no comparison or diff (which on a
     // heavily reordered list took far longer than the sort), no result, and
