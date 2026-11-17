@@ -6521,6 +6521,125 @@ fn test_an_empty_scope_commits_nothing_at_all() {
 }
 
 #[test]
+fn test_a_commit_git_refused_is_not_reported_as_success() {
+    // `commit -a` had the whole tree to commit and so all but never failed,
+    // which is why its exit status was dropped. With a pathspec git exits 1
+    // when nothing in the scope has changed, and the dropped status printed
+    // "Commit successful" with the PREVIOUS commit's URL over a commit that
+    // never happened, then exited 0. Reproduced live with
+    // `fop --check-file=./easylist_adservers.txt --git-message="M: Update"`
+    // over an already-sorted list while fop-linux was dirty.
+    use crate::fop_git::{commit_changes, GIT};
+    let repo = ScratchRepo::new("commit-refused");
+    repo.write("list.txt", "! Title: t\n||a.com^\n");
+    repo.write("fop-linux", "old binary\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-qm", "init"]);
+    let before = repo.git(&["rev-parse", "HEAD"]);
+
+    // The scope is the named list, which is unchanged. Something outside it is
+    // dirty, so there is a diff and the run gets as far as the commit.
+    repo.write("fop-linux", "new binary\n");
+
+    let message = Some("M: Update".to_string());
+    let no_strings: Vec<String> = Vec::new();
+    let scope = vec![std::path::PathBuf::from("list.txt")];
+    let result = commit_changes(
+        &GIT, &repo.cmd(), false, false, true, true, true, true, false,
+        &message, &no_strings, None, &no_strings, false, &no_strings, None,
+        Some(&scope),
+    );
+
+    let err = result.expect_err("a commit git refused was reported as success");
+    assert!(
+        err.to_string().contains("nothing was committed"),
+        "the error has to say nothing was committed, not just that git failed: {}",
+        err
+    );
+    assert_eq!(repo.git(&["rev-parse", "HEAD"]), before, "HEAD moved on a refused commit");
+    assert!(
+        repo.git(&["status", "--porcelain"]).contains("fop-linux"),
+        "the change must still be in the working tree"
+    );
+}
+
+#[test]
+fn test_a_named_file_with_nothing_to_commit_is_not_a_failure() {
+    // `fop --check-file=list.txt` over a list that is already sorted, while
+    // something else in the tree is dirty, is an ordinary no-op. Scoping the
+    // commit to the named file regardless made git exit 1 on an empty pathspec,
+    // which FOP then reported as a failed commit. An empty scope instead stops
+    // at the "nothing to commit" guard, exit 0.
+    use crate::single_file_scope;
+    let repo = ScratchRepo::new("single-scope");
+    repo.write("list.txt", "! Title: t\n||a.com^\n");
+    repo.write("fop-linux", "old binary\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-qm", "init"]);
+
+    // Something outside the named file is dirty, and the file itself is not.
+    repo.write("fop-linux", "new binary\n");
+    let scope = single_file_scope(&repo.cmd(), &repo.0.join("list.txt"))
+        .expect("the file is inside the repository");
+    assert!(
+        scope.is_empty(),
+        "an unchanged file must give an empty scope, not a pathspec git refuses: {:?}",
+        scope
+    );
+
+    // Changed, and it is the whole scope -- the dirty binary stays out of it.
+    repo.write("list.txt", "! Title: t\n||a.com^\n||b.com^\n");
+    let scope = single_file_scope(&repo.cmd(), &repo.0.join("list.txt")).unwrap();
+    assert_eq!(scope, vec![std::path::PathBuf::from("list.txt")]);
+}
+
+#[test]
+fn test_path_has_changes_asks_git_about_the_one_path() {
+    // The scope decision goes through git with the path as a pathspec, so the
+    // spelling is git's own. Comparing by hand against `changed_paths` would
+    // need the path rendered the way git prints it, and a Windows `\` would
+    // read as unchanged -- a silent no-op instead of a commit.
+    use crate::fop_git::path_has_changes;
+    use std::path::Path;
+    let repo = ScratchRepo::new("path-changed");
+    repo.write("list.txt", "! Title: t\n||a.com^\n");
+    repo.write("other.txt", "other\n");
+    repo.git(&["add", "."]);
+    repo.git(&["commit", "-qm", "init"]);
+    repo.write("other.txt", "changed\n");
+
+    assert_eq!(path_has_changes(&repo.cmd(), Path::new("other.txt")), Some(true));
+    assert_eq!(path_has_changes(&repo.cmd(), Path::new("list.txt")), Some(false));
+
+    // A git that cannot answer is not an answer of "unchanged".
+    let dir = std::env::temp_dir().join(format!("fop-test-nogit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let cmd = vec!["git".to_string(), "-C".to_string(), dir.display().to_string()];
+    let answer = path_has_changes(&cmd, Path::new("list.txt"));
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(answer, None, "a failing git status must be None, not Some(false)");
+}
+
+#[test]
+fn test_a_bare_filename_still_names_its_directory() {
+    // `Path::parent` answers Some("") for a bare filename, not None, so
+    // `unwrap_or(".")` passed the empty path through to `--work-tree=`. git
+    // then reported an empty diff, so `fop --check-file=list.txt` found "no
+    // changes" and committed nothing at all, while `--check-file=./list.txt`
+    // committed normally.
+    use crate::containing_dir;
+    use std::path::Path;
+    assert_eq!(containing_dir(Path::new("list.txt")), Path::new("."));
+    assert_eq!(containing_dir(Path::new("./list.txt")), Path::new("."));
+    assert_eq!(containing_dir(Path::new("sub/list.txt")), Path::new("sub"));
+    assert_eq!(containing_dir(Path::new("/a/b/list.txt")), Path::new("/a/b"));
+    // What the empty parent would have produced, for the record: a work tree
+    // argument git reads as no work tree at all.
+    assert!(!containing_dir(Path::new("list.txt")).as_os_str().is_empty());
+}
+
+#[test]
 fn test_changed_paths_reports_failure_rather_than_emptiness() {
     // The caller falls back to the sweeping commit when this returns None, and
     // warns while doing it. An empty Vec would mean "nothing changed" and would

@@ -1807,6 +1807,43 @@ fn commit_scope_includes(
     )
 }
 
+/// The directory a named file sits in, as a path git can be pointed at.
+///
+/// `Path::parent` answers `Some("")` for a bare filename rather than `None`, so
+/// `unwrap_or(".")` left the empty path for `--check-file=list.txt` -- and an
+/// empty `--work-tree=` makes git report an empty diff, so that run found "no
+/// changes" and never committed anything, while `--check-file=./list.txt`
+/// committed normally.
+fn containing_dir(file_path: &Path) -> &Path {
+    match file_path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    }
+}
+
+/// The commit scope for one file named on the command line: that file, and
+/// nothing else in the tree.
+///
+/// Empty when git reports nothing to commit in it, so the run stops at
+/// `commit_changes`' empty-scope guard -- "No filter list has changed, so there
+/// is nothing to commit", exit 0. Handing git a pathspec with nothing in it
+/// instead makes `git commit` exit 1, and an already-sorted list while
+/// something else in the tree is dirty is an ordinary no-op, not a failure.
+///
+/// `None` when the file cannot be placed inside the repository at all; the
+/// caller says so before falling back to the sweeping commit.
+fn single_file_scope(base_cmd: &[String], file_path: &Path) -> Option<Vec<PathBuf>> {
+    let root = fop_git::repo_root(base_cmd)?;
+    let absolute = file_path.canonicalize().ok()?;
+    let relative = absolute.strip_prefix(&root).ok()?.to_path_buf();
+    // A git that could not be asked is not a file that did not change: commit
+    // the named file, which is still narrower than the whole tree.
+    Some(match fop_git::path_has_changes(base_cmd, &relative) {
+        Some(false) => Vec::new(),
+        _ => vec![relative],
+    })
+}
+
 /// Check if directory path matches any ignore pattern
 #[inline]
 fn should_ignore_dir(path: &Path, ignore_dirs: &[String]) -> bool {
@@ -2932,8 +2969,9 @@ fn process_location(
                 // silently skipping it is the failure this replaced.
                 if !theirs.is_empty() {
                     eprintln!(
-                        "\nLeft uncommitted ({} not managed by FOP, commit {} by hand or pass --commit-all):",
-                        if theirs.len() == 1 { "1 path" } else { "paths" },
+                        "\nLeft uncommitted ({} path{} not managed by FOP, commit {} by hand or pass --commit-all):",
+                        theirs.len(),
+                        if theirs.len() == 1 { "" } else { "s" },
                         if theirs.len() == 1 { "it" } else { "them" }
                     );
                     for path in theirs.iter().take(20) {
@@ -3593,7 +3631,7 @@ fn main() {
 
         // Handle git commit (unless no_commit mode)
         if !args.no_commit {
-            let parent = file_path.parent().unwrap_or(std::path::Path::new("."));
+            let parent = containing_dir(file_path);
             if let Some(repo) = REPO_TYPES
                 .iter()
                 .find(|r| parent.join(r.directory).is_dir())
@@ -3606,19 +3644,23 @@ fn main() {
                 }
 
                 // One file was named on the command line, so that file is the
-                // whole scope -- no need to ask git what else changed. Relative
-                // to the repository root, which is what a pathspec expects.
+                // whole scope.
                 let single: Option<Vec<PathBuf>> = if args.commit_all {
                     None
                 } else {
-                    fop_git::repo_root(&base_cmd)
-                        .and_then(|root| {
-                            file_path
-                                .canonicalize()
-                                .ok()
-                                .and_then(|abs| abs.strip_prefix(&root).ok().map(PathBuf::from))
-                        })
-                        .map(|rel| vec![rel])
+                    let scope = single_file_scope(&base_cmd, file_path);
+                    if scope.is_none() {
+                        // Same rule as the directory path: the fallback is the
+                        // sweeping commit this replaced, so it is never taken
+                        // silently.
+                        eprintln!(
+                            "\nWarning: could not place {} inside the repository, so this commit \
+                             takes the whole tree as it did before. Check for anything dirty you \
+                             did not mean to publish.",
+                            file_path.display()
+                        );
+                    }
+                    scope
                 };
                 if let Err(e) = fop_git::commit_changes(
                     repo,

@@ -24,12 +24,14 @@
 //! that gives up leaves the new rule in the working tree, and the next run from
 //! any script sorts and commits it. Nothing is lost, one publish is deferred.
 //!
-//! The lock file is `fop.lock` inside the git directory, deliberately not a
-//! path a wrapper script would pick. The scripts hold their own
-//! `flock` on a publish lock before they append, and `flock` is not reentrant:
-//! a child that opens the same file blocks on its parent's lock for ever. A
-//! separate path is what keeps FOP from deadlocking against the script that
-//! launched it.
+//! The lock file is `fop.lock` inside the git directory, and the publish
+//! scripts take `flock` on that same file before they append -- one lock for
+//! all three edges, so a hand-run FOP cannot commit a list a script is halfway
+//! through writing. That makes `--no-repo-lock` mandatory in those scripts, not
+//! optional: `flock` is not reentrant, so a FOP launched by a script that
+//! already holds the file waits out the whole limit on its own parent and then
+//! exits 1 having sorted nothing. If a script loses that flag, that is the
+//! symptom -- every run from it stopping after a ten-minute wait.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io;

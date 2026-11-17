@@ -1443,6 +1443,28 @@ pub(crate) fn run_commit(
     cmd.status()
 }
 
+/// A commit git refused, as an error rather than a discarded exit status.
+///
+/// `commit -a` practically never failed -- it had the whole tree to commit, so
+/// dropping its status was harmless. With a pathspec it exits non-zero whenever
+/// none of the scoped paths has anything to commit, and the discarded status
+/// then printed "Commit successful" with the previous commit's URL over a commit
+/// that never happened. Returned as an `Err` so the caller says so; each caller
+/// also marks the run unpublished, which is what makes it exit 1. The scripts
+/// read FOP's output, and a clean exit on a commit that did not happen is the
+/// one thing they cannot tell from a publish.
+fn commit_failed(status: std::process::ExitStatus) -> io::Error {
+    let how = match status.code() {
+        Some(code) => format!("exited {}", code),
+        None => "was killed by a signal".to_string(),
+    };
+    io::Error::other(format!(
+        "git commit {}: nothing was committed and nothing published, and the changes are \
+         still in the working tree",
+        how
+    ))
+}
+
 // =============================================================================
 // Commit Operations
 // =============================================================================
@@ -1485,6 +1507,26 @@ pub fn changed_paths(base_cmd: &[String]) -> Option<Vec<PathBuf>> {
         }
     }
     Some(paths)
+}
+
+/// Whether git reports anything to commit under `path`.
+///
+/// Asked of git with the path as a pathspec rather than matched against
+/// [`changed_paths`], so the comparison is git's own. Matching by hand would
+/// mean rendering the path the way git prints it -- forward slashes, repo
+/// relative -- and a `\` from a Windows `PathBuf` would read as unchanged and
+/// turn a real commit into a silent no-op.
+///
+/// `None` when git could not be asked, which the caller must not read as "no
+/// changes".
+pub fn path_has_changes(base_cmd: &[String], path: &Path) -> Option<bool> {
+    let output = Command::new(&base_cmd[0])
+        .args(&base_cmd[1..])
+        .args(["status", "--porcelain", "-z", "--untracked-files=no", "--"])
+        .arg(path)
+        .output()
+        .ok()?;
+    output.status.success().then_some(!output.stdout.is_empty())
 }
 
 /// git hands back path bytes, which on unix are not necessarily UTF-8. Going
@@ -2091,9 +2133,10 @@ pub fn commit_changes(
         // this fetch only when it did not.
         let synced = sync_succeeded(&fetch_and_rebase(base_cmd, repo, true));
 
-        // `commit -a` below stages everything in the tree. If the pull left a
-        // conflict, that is the markers -- committed and then pushed, with
-        // "Commit successful" printed over the top of it.
+        // A conflicted list is still a list, so it is inside the commit scope:
+        // if the pull left a conflict, the commit below would take the markers
+        // and push them with "Commit successful" printed over the top of it.
+        // Under --commit-all it would take every other conflicted file too.
         if has_unmerged_paths(base_cmd) {
             report_unresolved_merge(base_cmd);
         }
@@ -2103,7 +2146,11 @@ pub fn commit_changes(
             .unwrap_or(std::borrow::Cow::Borrowed(message.as_str()));
         let is_masked = masked.as_ref() != message.as_str();
 
-        run_commit(base_cmd, repo, masked.as_ref(), commit_paths)?;
+        let status = run_commit(base_cmd, repo, masked.as_ref(), commit_paths)?;
+        if !status.success() {
+            mark_unpublished();
+            return Err(commit_failed(status));
+        }
 
         let outcome = pull_and_push(base_cmd, repo, git_quiet, quiet, synced);
         if let PushOutcome::Rejected(push_error) = &outcome {
@@ -2212,9 +2259,16 @@ pub fn commit_changes(
             // Execute commit
             let status = run_commit(base_cmd, repo, &masked_comment, commit_paths);
 
-            if let Err(e) = status {
-                eprintln!("Unexpected error with commit: {}", e);
-                return Err(e);
+            match status {
+                Err(e) => {
+                    eprintln!("Unexpected error with commit: {}", e);
+                    return Err(e);
+                }
+                Ok(status) if !status.success() => {
+                    mark_unpublished();
+                    return Err(commit_failed(status));
+                }
+                Ok(_) => {}
             }
 
             // Pull and push
