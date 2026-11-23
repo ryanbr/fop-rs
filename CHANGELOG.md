@@ -4,6 +4,30 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- A PR description cut at its 1700-byte limit is cut on a character boundary.
+  `String::truncate` takes a byte index and panics unless that index is one,
+  and a rule's domains or selector may be in Cyrillic, Hebrew or CJK -- the
+  lists carry plenty -- so the cut could land inside a character and bring the
+  run down. The panic came while the change record was locked, which left the
+  lock poisoned for everything that read it afterwards.
+
+- The merge listing in a `--pr-show-changes` description is one entry per
+  merge, naming the rules that went in and the line that came out. Merging
+  runs pairwise, and the listing followed it step by step: a group of five
+  rules read as four entries, three of them naming a line the next step had
+  already consumed and which never reached the file, each repeating a domain
+  list that grew as it went. Two such groups filled the 1700 characters a
+  description is allowed and left no room for the typos, the dropped
+  subdomains or the duplicates. A merge that a later pass extends is folded
+  into the entry it extends, for the same reason. An entry names the first few
+  of its rules and counts the rest: a merge draws in every rule that shares a
+  selector, easylist has groups of fifty, and one of those printed whole is
+  1679 of the 1700 characters a description is allowed -- it would fill the
+  body by itself and cut off every merge after it. The count stays a count of
+  rules merged away, and what is left to report is now that count less the
+  rules the listed entries account for, rather than the number of entries
+  printed -- which mixed a count of groups into a count of rules.
+
 - The sort runs again on what it wrote, until the file stops changing. A
   section is ordered by selector or by pattern according to which kind of rule
   it holds more of, counted as the section is read -- and merging network

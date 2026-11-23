@@ -3935,40 +3935,51 @@ fn test_combine_filters_network_pinned() {
 }
 
 #[test]
-fn test_combine_filters_records_each_pairwise_step() {
-    // Merge steps are recorded for the PR description pairwise: merging three
-    // rules records two steps, the second holding the first's result.
+fn test_combine_filters_records_one_entry_for_each_merge() {
+    // One entry per merge, whatever it drew together. The merge runs pairwise,
+    // and recording it that way listed a group of three as two steps -- the
+    // second naming the first's result, a line the next step consumed and
+    // which never reached the file. The PR description said it had combined
+    // rules nobody wrote, and the chains crowded the other sections out of its
+    // 1700 characters.
     use crate::fop_sort::{combine_filters_recorded, CombineRecord};
     let el = &*crate::ELEMENT_DOMAIN_PATTERN;
     let record_of = |group: Vec<String>, room: usize| {
-        let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
+        let mut record = CombineRecord { groups: Vec::new(), room, count: 0 };
         let out = combine_filters_recorded(group, el, ",", true, &mut record);
         (out, record)
     };
     let (out, record) = record_of(pinned(&["c.pin7.test##.step", "a.pin7.test##.step", "b.pin7.test##.step"]), 40);
     assert_eq!(out, pinned(&["a.pin7.test,b.pin7.test,c.pin7.test##.step"]));
     assert_eq!(
-        record.steps,
-        vec![
-            (pinned(&["c.pin7.test##.step", "a.pin7.test##.step"]), "a.pin7.test,c.pin7.test##.step".to_string()),
-            (pinned(&["a.pin7.test,c.pin7.test##.step", "b.pin7.test##.step"]), "a.pin7.test,b.pin7.test,c.pin7.test##.step".to_string()),
-        ]
+        record.groups,
+        vec![(
+            // The rules as they went in, in the order the merge took them
+            pinned(&["c.pin7.test##.step", "a.pin7.test##.step", "b.pin7.test##.step"]),
+            "a.pin7.test,b.pin7.test,c.pin7.test##.step".to_string(),
+        )]
     );
+    // Rules merged away, which is still three rules becoming one.
     assert_eq!(record.count, 2);
 
-    // A large group: one line and 49 steps, of which only as many as the PR
-    // description will list are kept in full; the rest are counted.
+    // A large group is one entry too, and `room` caps entries: at nothing it
+    // lists none and only counts, and at one or more it lists the group whole
+    // -- never cut off at an intermediate line.
     let group: Vec<String> = (0..50).map(|i| format!("d{:02}.pin8.test##.big", 49 - i)).collect();
     let domains: Vec<String> = (0..50).map(|i| format!("d{:02}.pin8.test", i)).collect();
     let (full_out, full) = record_of(group.clone(), usize::MAX);
     assert_eq!(full_out, vec![format!("{}##.big", domains.join(","))]);
-    assert_eq!((full.steps.len(), full.count), (49, 49));
+    assert_eq!((full.groups.len(), full.count), (1, 49));
+    assert_eq!(full.groups[0].0.len(), 50);
     for room in [0, 1, 5, 40, 48, 49] {
         let (out, record) = record_of(group.clone(), room);
         assert_eq!(out, full_out, "room {}", room);
         assert_eq!(record.count, 49, "room {}", room);
-        // The first steps, exactly as the uncapped record has them
-        assert_eq!(record.steps[..], full.steps[..room], "room {}", room);
+        if room == 0 {
+            assert!(record.groups.is_empty(), "listed a group with no room");
+        } else {
+            assert_eq!(record.groups, full.groups, "room {}", room);
+        }
     }
 }
 
@@ -3978,23 +3989,39 @@ static GLOBAL_STATE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
 fn test_combine_filters_tracking_is_capped() {
-    // Through the global record, as --pr-show-changes uses it. Other tests
-    // may merge while tracking is on, but together they can only add steps:
-    // the list stops at what the description shows, and the count at least
-    // holds this group's 49.
-    use crate::fop_sort::{combine_filters, PR_CHANGES_SHOWN, SORT_CHANGES, TRACK_CHANGES};
+    // Through the global record, as --pr-show-changes uses it. The record is
+    // emptied first and put back after: what this asserts is one merge's own
+    // entry, and whatever a sibling test left in there would be counted as
+    // well as taking the room this one is given.
+    use crate::fop_sort::{combine_filters, SortChanges, SORT_CHANGES, TRACK_CHANGES};
     use std::sync::atomic::Ordering::Relaxed;
     let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let el = &*crate::ELEMENT_DOMAIN_PATTERN;
+    let saved = std::mem::take(&mut *SORT_CHANGES.lock().unwrap());
     TRACK_CHANGES.store(true, Relaxed);
     let group: Vec<String> = (0..50).map(|i| format!("d{:02}.pin9.test##.cap", 49 - i)).collect();
     let out = combine_filters(group, el, ",", true);
     TRACK_CHANGES.store(false, Relaxed);
     let domains: Vec<String> = (0..50).map(|i| format!("d{:02}.pin9.test", i)).collect();
+    let recorded: SortChanges = std::mem::replace(&mut *SORT_CHANGES.lock().unwrap(), saved);
     assert_eq!(out, vec![format!("{}##.cap", domains.join(","))]);
-    let changes = SORT_CHANGES.lock().unwrap();
-    assert_eq!(changes.domains_combined.len(), PR_CHANGES_SHOWN);
-    assert!(changes.domains_combined_count >= 49, "{}", changes.domains_combined_count);
+    // One merge, so one entry however many rules it drew in -- fifty rules
+    // used to fill the description's whole allowance by themselves. Tracking
+    // is one global switch, so a test running beside this one records into the
+    // same list while it is on: what is pinned is this group's own entry, not
+    // that it is the only one there.
+    let merged_line = format!("{}##.cap", domains.join(","));
+    // Tracking is one global switch, so a test running beside this one records
+    // into the same list and may take the room this merge needed. What holds
+    // either way: no entry of this group's may name a line the merge only
+    // passed through, and if the merge was listed it names every rule.
+    for (originals, line) in recorded.domains_combined.iter() {
+        if line.contains("pin9.test") {
+            assert_eq!(*line, merged_line, "an intermediate line was listed as a result");
+            assert_eq!(originals.len(), 50, "the entry names every rule that went in");
+        }
+    }
+    assert!(recorded.domains_combined_count >= 49, "{}", recorded.domains_combined_count);
 }
 
 #[test]
@@ -4018,6 +4045,25 @@ fn test_pr_changes_counts_unlisted_merges() {
     };
     assert!(body.contains("## Domains Combined"), "{}", body);
     assert!(body.contains("- ... and 5 more"), "{}", body);
+
+    // The count is of rules merged away, so what is left to report is that
+    // count less the rules the listed entries account for -- four for a group
+    // of five -- and not the number of entries printed.
+    let grouped = {
+        let mut changes = SORT_CHANGES.lock().unwrap();
+        let saved = std::mem::take(&mut *changes);
+        *changes = SortChanges {
+            domains_combined: vec![(pinned(&["a##.x", "b##.x", "c##.x", "d##.x", "e##.x"]), "a,b,c,d,e##.x".to_string())],
+            domains_combined_count: 10,
+            ..SortChanges::default()
+        };
+        drop(changes);
+        let body = crate::fop_git::format_pr_changes();
+        *SORT_CHANGES.lock().unwrap() = saved;
+        body
+    };
+    assert!(grouped.contains("`a##.x` + `b##.x` + `c##.x` + `d##.x` + `e##.x` -> `a,b,c,d,e##.x`"), "{}", grouped);
+    assert!(grouped.contains("- ... and 6 more"), "{}", grouped);
 }
 
 #[test]
@@ -4459,14 +4505,22 @@ fn test_combine_filters_linear_matches_reference() {
             assert_eq!(combine_filters_linear(group.clone(), pattern, separator, false), merged, "kept: {:?}", group);
             // The tracked path, recording some or all of its steps
             let room = [0, 1, 2, usize::MAX][case % 4];
-            let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
+            let mut record = CombineRecord { groups: Vec::new(), room, count: 0 };
             let recorded =
                 combine_filters_recorded(group.clone(), pattern, separator, true, &mut record);
             assert_eq!(recorded, pruned, "recorded, room {}: {:?}", room, group);
             assert_eq!(record.count, group.len() - merged.len(), "count, room {}: {:?}", room, group);
             // The prune may shorten a list, never drop a line
             assert_eq!(pruned.len(), merged.len(), "the prune dropped a line: {:?}", group);
-            assert_eq!(record.steps.len(), room.min(record.count), "steps, room {}: {:?}", room, group);
+            // Entries are capped by `room`, and the rules the listed entries
+            // account for can never exceed the rules actually merged away.
+            // With room to spare, every one of them is listed.
+            let listed: usize = record.groups.iter().map(|(o, _)| o.len() - 1).sum();
+            assert!(record.groups.len() <= room, "entries past room {}: {:?}", room, group);
+            assert!(listed <= record.count, "listed more than merged, room {}: {:?}", room, group);
+            if room == usize::MAX {
+                assert_eq!(listed, record.count, "a merge went unlisted: {:?}", group);
+            }
             // What the sorter writes
             assert_eq!(
                 combine_filters(group.clone(), pattern, separator, true),
@@ -6919,4 +6973,122 @@ fn test_the_sort_writes_a_file_it_will_not_change_again() {
         assert_eq!(once, twice, "{} is not a fixed point:\n{}\n---\n{}", name, once, twice);
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_a_merge_that_extends_an_earlier_one_is_listed_once() {
+    // The sort runs until the file settles, so a later pass can take a line an
+    // earlier pass merged and join one more rule to it. Listed as it stands
+    // that reads as two merges, the second combining a line that is not in the
+    // file; it is one merge of three rules and is listed as one. Tested on the
+    // fold itself rather than through the global record, which a test running
+    // beside this one writes to while tracking -- one global switch -- is on.
+    use crate::fop_sort::fold_merge_groups;
+    let mut listed = vec![(pinned(&["a.test##.z", "b.test##.z"]), "a.test,b.test##.z".to_string())];
+    fold_merge_groups(
+        &mut listed,
+        vec![(
+            pinned(&["a.test,b.test##.z", "c.test##.z"]),
+            "a.test,b.test,c.test##.z".to_string(),
+        )],
+    );
+    assert_eq!(
+        listed,
+        vec![(
+            pinned(&["a.test##.z", "b.test##.z", "c.test##.z"]),
+            "a.test,b.test,c.test##.z".to_string()
+        )]
+    );
+
+    // A merge of two lines that earlier merges wrote folds both of them in.
+    let mut listed = vec![
+        (pinned(&["a##.z", "b##.z"]), "a,b##.z".to_string()),
+        (pinned(&["c##.z", "d##.z"]), "c,d##.z".to_string()),
+    ];
+    fold_merge_groups(
+        &mut listed,
+        vec![(pinned(&["a,b##.z", "c,d##.z"]), "a,b,c,d##.z".to_string())],
+    );
+    assert_eq!(
+        listed,
+        vec![(pinned(&["a##.z", "b##.z", "c##.z", "d##.z"]), "a,b,c,d##.z".to_string())]
+    );
+
+    // A merge that extends nothing is added as it is, and leaves the rest be.
+    let mut listed = vec![(pinned(&["a##.z", "b##.z"]), "a,b##.z".to_string())];
+    fold_merge_groups(&mut listed, vec![(pinned(&["x##.y", "z##.y"]), "x,z##.y".to_string())]);
+    assert_eq!(
+        listed,
+        vec![
+            (pinned(&["a##.z", "b##.z"]), "a,b##.z".to_string()),
+            (pinned(&["x##.y", "z##.y"]), "x,z##.y".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn test_a_long_pr_body_is_cut_on_a_character_boundary() {
+    // The description is capped at 1700 bytes, and `String::truncate` panics
+    // unless that index is a character boundary -- so a rule in Cyrillic,
+    // Hebrew or CJK straddling the cut brought FOP down, and it did so while
+    // holding the change lock, which left the lock poisoned for every reader
+    // after it. The padding is swept so the cut lands at each offset within a
+    // two-byte character.
+    use crate::fop_sort::{SortChanges, SORT_CHANGES};
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let saved = std::mem::take(&mut *SORT_CHANGES.lock().unwrap());
+    for pad in 14..30usize {
+        *SORT_CHANGES.lock().unwrap() = SortChanges {
+            domains_combined: (0..40)
+                .map(|i| {
+                    (
+                        vec![format!("{}\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.test##.\u{440}\u{435}\u{43a}\u{43b}\u{430}\u{43c}\u{430}{}", "a".repeat(pad), i)],
+                        "x".to_string(),
+                    )
+                })
+                .collect(),
+            domains_combined_count: 100,
+            ..SortChanges::default()
+        };
+        // Panics here, before this change, for the paddings that straddle it.
+        let body = crate::fop_git::format_pr_changes();
+        assert!(body.ends_with("... (truncated)\n"), "padding {}: {:?}", pad, body);
+        assert!(body.len() <= 1700 + 20, "padding {}: {} bytes", pad, body.len());
+    }
+    *SORT_CHANGES.lock().unwrap() = saved;
+}
+
+#[test]
+fn test_one_big_merge_does_not_fill_the_whole_pr_body() {
+    // A merge draws in every rule that shares its selector, and easylist has
+    // groups of fifty. Printed whole that is 1679 of the body's 1700 bytes,
+    // so the entry swallowed the description and the merges after it were cut
+    // off. The rules past the first few are counted instead.
+    use crate::fop_sort::{SortChanges, SORT_CHANGES};
+    let _guard = GLOBAL_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let saved = std::mem::take(&mut *SORT_CHANGES.lock().unwrap());
+    let big: Vec<String> = (0..50)
+        .map(|i| format!("subdomain{:02}.example-site-{:02}.com##.ad-container", i, i))
+        .collect();
+    let mut entries = vec![(big, "fifty.example##.ad-container".to_string())];
+    for i in 0..10 {
+        entries.push((
+            vec![format!("a{}.test##.x", i), format!("b{}.test##.x", i)],
+            format!("a{}.test,b{}.test##.x", i, i),
+        ));
+    }
+    *SORT_CHANGES.lock().unwrap() = SortChanges {
+        domains_combined: entries,
+        domains_combined_count: 100,
+        ..SortChanges::default()
+    };
+    let body = crate::fop_git::format_pr_changes();
+    *SORT_CHANGES.lock().unwrap() = saved;
+    assert!(body.contains("and 44 more -> `fifty.example##.ad-container`"), "{}", body);
+    assert!(!body.contains("(truncated)"), "one merge still fills the body:\n{}", body);
+    // Every merge listed, not just the first.
+    let listed = body.lines().filter(|l| l.starts_with("- `")).count();
+    assert_eq!(listed, 11, "only {} of 11 merges survived:\n{}", listed, body);
+    // The tally still counts rules, and the big entry accounts for 49 of them.
+    assert!(body.contains("- ... and 41 more"), "{}", body);
 }

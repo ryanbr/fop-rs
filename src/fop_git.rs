@@ -64,11 +64,40 @@ pub fn format_pr_changes() -> String {
         }
         if !changes.domains_combined.is_empty() {
             body.push_str("## Domains Combined\n\n");
+            // A merge draws in as many rules as share its selector, and one
+            // of easylist's bigger groups runs to fifty: printed whole, a
+            // single entry filled the body's 1700 characters by itself and
+            // every merge after it was cut off. The rules past the first few
+            // are counted instead -- the entry still stands for the whole
+            // merge, which is what the tally below counts it as.
+            const MAX_RULES_SHOWN: usize = 6;
             for (originals, combined) in changes.domains_combined.iter().take(MAX_ITEMS) {
-                let _ = writeln!(body, "- `{}` -> `{}`", originals.join("` + `"), combined);
+                let head = originals
+                    .iter()
+                    .take(MAX_RULES_SHOWN)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("` + `");
+                match originals.len().checked_sub(MAX_RULES_SHOWN) {
+                    Some(rest) if rest > 0 => {
+                        let _ = writeln!(body, "- `{}` and {} more -> `{}`", head, rest, combined);
+                    }
+                    _ => {
+                        let _ = writeln!(body, "- `{}` -> `{}`", head, combined);
+                    }
+                }
             }
-            // Only the listed steps are kept; the count covers them all
-            let shown = changes.domains_combined.len().min(MAX_ITEMS);
+            // Only the listed merges are kept, and the count is of rules
+            // merged away -- a group of five counting four. So what is left to
+            // report is that count less the rules the listed groups account
+            // for, not the number of entries printed, which would mix a count
+            // of groups into a count of rules.
+            let shown: usize = changes
+                .domains_combined
+                .iter()
+                .take(MAX_ITEMS)
+                .map(|(originals, _)| originals.len().saturating_sub(1))
+                .sum();
             if changes.domains_combined_count > shown {
                 let _ = writeln!(body, "- ... and {} more", changes.domains_combined_count - shown);
             }
@@ -112,7 +141,17 @@ pub fn format_pr_changes() -> String {
 
         // Truncate if too long for URL
         if body.len() > MAX_BODY_LEN {
-            body.truncate(MAX_BODY_LEN);
+            // `truncate` takes a byte index and panics unless it falls on a
+            // character boundary. A rule's domains or selector may be in
+            // Cyrillic, Hebrew or CJK -- easylist and AdGuard's lists carry
+            // plenty -- so the cut can land inside one, and the panic comes
+            // while this call holds the change lock, leaving it poisoned for
+            // everything that reads it afterwards. Step back to a boundary.
+            let mut cut = MAX_BODY_LEN;
+            while cut > 0 && !body.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            body.truncate(cut);
             body.push_str("\n\n... (truncated)\n");
         }
         

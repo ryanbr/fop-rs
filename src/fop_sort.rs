@@ -2098,26 +2098,60 @@ pub(crate) fn combine_filters(
     let room = SORT_CHANGES
         .lock()
         .map_or(0, |changes| PR_CHANGES_SHOWN.saturating_sub(changes.domains_combined.len()));
-    let mut record = CombineRecord { steps: Vec::new(), room, count: 0 };
+    let mut record = CombineRecord { groups: Vec::new(), room, count: 0 };
     let combined =
         combine_filters_recorded(uncombined, domain_pattern, separator, drop_covered, &mut record);
     if record.count > 0 {
         with_tracked_changes(|changes| {
             // Other files may have filled it since
             let room = PR_CHANGES_SHOWN.saturating_sub(changes.domains_combined.len());
-            changes.domains_combined.extend(record.steps.into_iter().take(room));
+            fold_merge_groups(
+                &mut changes.domains_combined,
+                record.groups.into_iter().take(room),
+            );
             changes.domains_combined_count += record.count;
         });
     }
     combined
 }
 
-/// The merge steps one combine_filters call records.
+/// Add merges to the list a PR description is built from, folding each into
+/// any entry it extends.
+///
+/// A rule going into a merge may be a line an earlier merge wrote: the sort
+/// runs until the file settles, and a later pass can bring a merged line next
+/// to one more rule that shares its selector. Listed as it stands that names a
+/// line which is not in the file, and leaves the merge it came from standing
+/// beside it, so the two are reported as the one merge they amount to -- the
+/// earlier entry's rules take its place and the entry goes. The count kept
+/// beside this list is of rules merged away, and both merges did merge one, so
+/// it needs no adjusting.
+pub(crate) fn fold_merge_groups(
+    listed: &mut Vec<(Vec<String>, String)>,
+    groups: impl IntoIterator<Item = (Vec<String>, String)>,
+) {
+    for (originals, merged) in groups {
+        let mut resolved: Vec<String> = Vec::with_capacity(originals.len());
+        for rule in originals {
+            match listed.iter().position(|(_, line)| *line == rule) {
+                Some(at) => resolved.extend(listed.remove(at).0),
+                None => resolved.push(rule),
+            }
+        }
+        listed.push((resolved, merged));
+    }
+}
+
+/// What one combine_filters call records for the PR description.
 pub(crate) struct CombineRecord {
-    /// (the two rules, the merged line), at most `room` of them
-    pub steps: Vec<(Vec<String>, String)>,
+    /// (the rules that went in, the line that came out), at most `room` of
+    /// them. One entry per merge, however many rules it drew together: the
+    /// merge runs pairwise, so a group of five used to be listed as four
+    /// steps, three of them naming a line that the next step consumed and
+    /// that never reached the file.
+    pub groups: Vec<(Vec<String>, String)>,
     pub room: usize,
-    /// Every merge step, recorded or not
+    /// Rules merged away, listed or not -- so a group of five counts four.
     pub count: usize,
 }
 
@@ -2135,7 +2169,11 @@ pub(crate) fn combine_filters_recorded(
     // an input rule, pruned already when it was tidied.
     let mut merged_into = vec![false; uncombined.len()];
     for i in 0..uncombined.len() {
-        if record.steps.len() >= record.room {
+        // `!merged_into[i]` so a group is never cut in half: the line at `i`
+        // being a merge's own output means the group listed last is still
+        // open, and handing the rest to the linear path there would leave that
+        // entry naming an intermediate line as its result.
+        if record.groups.len() >= record.room && !merged_into[i] {
             // Nothing more will be listed: merge the rest in one pass. A chain
             // takes one step per rule merged away, so that is the count.
             let rest: Vec<String> = uncombined.drain(i..).collect();
@@ -2157,7 +2195,21 @@ pub(crate) fn combine_filters_recorded(
         if i + 1 < uncombined.len() {
             if let Some(merged) = combine_pair(&uncombined[i], &uncombined[i + 1], domain_pattern, separator) {
                 record.count += 1;
-                record.steps.push((vec![uncombined[i].clone(), uncombined[i + 1].clone()], merged.clone()));
+                // The line at `i` is the output of the merge recorded last
+                // exactly when that group is still open, so the rule joining
+                // it now belongs to that entry rather than to one of its own.
+                let open = merged_into[i]
+                    && record.groups.last().is_some_and(|(_, line)| *line == uncombined[i]);
+                if open {
+                    let group = record.groups.last_mut().expect("checked just above");
+                    group.0.push(uncombined[i + 1].clone());
+                    group.1 = merged.clone();
+                } else {
+                    record.groups.push((
+                        vec![uncombined[i].clone(), uncombined[i + 1].clone()],
+                        merged.clone(),
+                    ));
+                }
                 // The merged rule is tried against the next one in turn
                 uncombined[i + 1] = merged;
                 merged_into[i + 1] = true;
