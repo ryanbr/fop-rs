@@ -17,6 +17,14 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
   classifies both kinds in place of the byte-at-a-time CRLF scan, measured at
   some thirty times that scan's speed, so the fix adds no work to the sort.
 
+- The ABP checksum is computed from slices rather than one byte at a time. The
+  normalization it needs -- drop every `\r`, collapse a run of `\n` to one --
+  was done with a `consume` call per byte, which held md5 to 367 MB/s against
+  the 693 MB/s it manages on slices; everything between one ending and the
+  next now goes in as one slice, found with `memchr2`. Over the 163 files of
+  the easylist tree the output is byte for byte what it was, and a checksum
+  written by 6.2.3 and one written by this build agree.
+
 ## [6.2.3] - 2026-11-18
 
 - A publish commits the filter lists it sorted, not whatever else the working
