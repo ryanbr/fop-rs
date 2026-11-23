@@ -3341,10 +3341,16 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         if !sort_pass(pass_input.as_ref(), localhost, config, &temp_file, filename)? {
             return Ok(None);
         }
+        // A benchmark times one sort, and reading that sort's own output back
+        // is not part of it -- the read would fall inside the timing. Nothing
+        // downstream wants the bytes in that mode either: the benchmark branch
+        // below removes the temp file and returns before they are looked at.
+        if config.benchmark {
+            break Vec::new();
+        }
         let produced = fs::read(&temp_file)?;
         passes += 1;
-        // A benchmark times one sort; re-reading its own output is not that.
-        if config.benchmark || produced.as_slice() == pass_input.as_ref() {
+        if produced.as_slice() == pass_input.as_ref() {
             break produced;
         }
         if passes >= MAX_PASSES {
