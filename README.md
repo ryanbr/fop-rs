@@ -133,7 +133,7 @@ fop -n ~/easylist ~/easyprivacy ~/fanboy-addon
 | `--commit-url-template=TMPL` | Override the `Commit successful:` URL template. Placeholders: `{base}`, `{sha}`. Auto-detects Bitbucket (`/commits/`); everything else defaults to `/commit/` |
 | `--ignore-config` | Ignore .fopconfig file, use only CLI args |
 | `--output` | Output changed files with --changed suffix (no overwrite) |
-| `--check-file=FILE` | Process a single file | 
+| `--check-file[=FILE]` | Process a single file. With no file given, the whole location is checked, as a bare run does; `--check-file=` with an empty value is an error | 
 | `--output-diff=FILE` | Output changes as diff (no files modified) | 
 | `--quiet` | Limit console output, less verbose |
 | `--limited-quiet` | Suppress directory listing only |

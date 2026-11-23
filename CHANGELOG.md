@@ -4,6 +4,14 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- `--check-file` with no file given checks the whole location, as a bare run
+  does, instead of stopping at "Unknown option". It says so when it does, so a
+  run cannot widen without a word, and `--check-file=` with an empty value is
+  still refused: that form is a script expanding an unset variable, not a
+  choice. Written with a space -- `--check-file list.txt` -- the file would be
+  read as a location and reported as not a folder, so the notice names it and
+  gives the `--check-file=list.txt` form to use instead.
+
 - A filter list written with classic-Mac line endings (a bare `\r`) is read as
   the lines it actually has. `lines()` splits on `\n` alone, so such a file
   arrived as one enormous line: not a rule in it could be sorted, every `\r`

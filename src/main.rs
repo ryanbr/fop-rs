@@ -762,6 +762,20 @@ impl Args {
     fn parse() -> (Self, Option<String>) {
         // Collect args once so we don't re-iterate env::args() multiple times.
         let argv: Vec<String> = env::args().skip(1).collect();
+        // Read before the loop below consumes `argv`, and so that an argument
+        // after the one being handled still counts: see `--check-file`.
+        let quiet_requested = argv.iter().any(|a| a == "-q" || a == "--quiet");
+        // `--check-file list.txt`, written with a space, leaves the file to be
+        // read as a location -- "is not a folder" -- while the flag widens the
+        // run. Naming the file in the notice turns that into something to act
+        // on. Only when it really is a file, so a directory argument, which is
+        // what the widened run wants, says nothing.
+        let check_file_spaced = argv
+            .iter()
+            .position(|a| a == "--check-file")
+            .and_then(|i| argv.get(i + 1))
+            .filter(|next| !next.starts_with('-') && Path::new(next.as_str()).is_file())
+            .cloned();
 
         // First pass: look for --ignore-config and --config-file arguments
         let ignore_config = argv.iter().any(|arg| arg == "--ignore-config");
@@ -1072,6 +1086,24 @@ impl Args {
                 _ if arg.starts_with("--check-file=") => {
                     args.check_file = Some(cli_path("--check-file", arg.trim_start_matches("--check-file=")));
                 }
+                // No file named: check the whole location, as a bare run does.
+                // Deliberately not the same as `--check-file=`, which stays an
+                // error: that form is nearly always a script expanding an unset
+                // variable, and widening a one-file run to the repository is
+                // what the error exists to prevent. Typed without the `=`, it
+                // is a choice, and it is said out loud so it cannot widen a run
+                // unnoticed -- read from `argv`, since `args.quiet` may not be
+                // set yet when a later argument is the one that sets it.
+                "--check-file" => {
+                    if !quiet_requested {
+                        println!(
+                            "--check-file was given no file, so the whole location is checked."
+                        );
+                        if let Some(file) = &check_file_spaced {
+                            println!("  To check only that file, write --check-file={}", file);
+                        }
+                    }
+                }
                 "--quiet" | "-q" => args.quiet = true,
                 "--limited-quiet" => args.limited_quiet = true,
                 "--ci" => args.ci = true,
@@ -1249,7 +1281,7 @@ impl Args {
         println!("        --threads=N         Worker threads (default: cores, capped at 8; overrides RAYON_NUM_THREADS)");
         println!("    -q, --quiet                Suppress most output (for CI)");
         println!("        --limited-quiet        Suppress directory listing only");
-        println!("        --check-file=FILE      Process a single file");
+        println!("        --check-file[=FILE]    Process a single file (the whole location if no file is given)");
         println!("        --output-diff=FILE     Output changes as diff (no files modified)");
         println!("        --output-diff          Output individual .diff files per source file");
         println!("        --output               Output changed files with --changed suffix");
