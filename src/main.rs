@@ -2420,6 +2420,57 @@ fn remove_flagged_lines(
     Ok(removed)
 }
 
+/// Say what line endings the files turned out to have. Both counters are
+/// swapped out, so whoever reads them first reports them and a second call is
+/// silent until more files are read -- which is what keeps a `--check-file`
+/// run from repeating a directory run's tally, and the other way round.
+fn report_line_endings(quiet: bool, no_color: bool, dry_run: bool) {
+    let crlf_count = CRLF_FILES.swap(0, std::sync::atomic::Ordering::Relaxed);
+    let cr_count = CR_FILES.swap(0, std::sync::atomic::Ordering::Relaxed);
+    if quiet {
+        return;
+    }
+    use owo_colors::OwoColorize;
+    let warn = |msg: &str| {
+        if no_color {
+            println!("Warning: {}", msg);
+        } else {
+            println!("{} {}", "Warning:".yellow(), msg);
+        }
+    };
+    if crlf_count > 0 {
+        warn(&format!(
+            "{} file(s) contain Windows line endings (CRLF), converting to Unix (LF).",
+            crlf_count
+        ));
+        let tip = "Tip: Set 'git config core.autocrlf input' or add '* text eol=lf' to .gitattributes";
+        if no_color {
+            println!("  {}", tip);
+        } else {
+            println!("  {}", tip.white());
+        }
+    }
+    // Said separately from CRLF: such a file was unsortable until this run
+    // converted it, so its rules have only just been put in order, and no git
+    // setting would have prevented it.
+    if cr_count > 0 {
+        // A dry run (--output-diff, --output) read those files as lines but
+        // wrote nothing, so it has converted nothing.
+        warn(&if dry_run {
+            format!(
+                "{} file(s) use classic Mac line endings (CR); a run that writes would convert \
+                 them to Unix (LF).",
+                cr_count
+            )
+        } else {
+            format!(
+                "{} file(s) used classic Mac line endings (CR), converted to Unix (LF).",
+                cr_count
+            )
+        });
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn process_location(
     location: &Path,
@@ -2743,46 +2794,7 @@ fn process_location(
         diff_output.lock().unwrap().extend(diffs);
     }
 
-    // Warn about CRLF files
-    let crlf_count = CRLF_FILES.swap(0, std::sync::atomic::Ordering::Relaxed);
-    if crlf_count > 0 && !quiet {
-        if no_color {
-            println!("Warning: {} file(s) contain Windows line endings (CRLF), converting to Unix (LF).", crlf_count);
-            println!("  Tip: Set 'git config core.autocrlf input' or add '* text eol=lf' to .gitattributes");
-        } else {
-            use owo_colors::OwoColorize;
-            println!("{} {} file(s) contain Windows line endings (CRLF), converting to Unix (LF).",
-                "Warning:".yellow(), crlf_count);
-            println!("  {}", "Tip: Set 'git config core.autocrlf input' or add '* text eol=lf' to .gitattributes".white());
-        }
-    }
-
-    // Warn about classic-Mac line endings. Said separately from CRLF: the file
-    // was unsortable until this run converted it, so its rules have only just
-    // been put in order, and no git setting would have prevented it.
-    let cr_count = CR_FILES.swap(0, std::sync::atomic::Ordering::Relaxed);
-    if cr_count > 0 && !quiet {
-        // A dry run (--output-diff, --output-changed, --benchmark) read those
-        // files as lines but wrote nothing, so it has converted nothing.
-        let msg = if sort_config.dry_run {
-            format!(
-                "{} file(s) use classic Mac line endings (CR); a run that writes would convert \
-                 them to Unix (LF).",
-                cr_count
-            )
-        } else {
-            format!(
-                "{} file(s) used classic Mac line endings (CR), converted to Unix (LF).",
-                cr_count
-            )
-        };
-        if no_color {
-            println!("Warning: {}", msg);
-        } else {
-            use owo_colors::OwoColorize;
-            println!("{} {}", "Warning:".yellow(), msg);
-        }
-    }
+    report_line_endings(quiet, no_color, sort_config.dry_run);
 
     // Delete backup and temp files (sequential, usually few files). A symlink
     // is removed as a link, never followed, so a planted one goes too.
@@ -3653,6 +3665,11 @@ fn main() {
         if args.benchmark {
             print_benchmark(&bench_times, 1, bench_lines, bench_bytes);
         }
+
+        // The same notice a directory run gives: a single file converted from
+        // CRLF or classic-Mac endings said nothing at all before, and this is
+        // the mode a list is usually checked one file at a time in.
+        report_line_endings(args.quiet, args.no_color, check_file_config.dry_run);
 
         // Add checksum if requested (not in a dry run)
         if !check_file_config.dry_run && !args.add_checksum.is_empty() {
