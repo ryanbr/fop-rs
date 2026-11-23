@@ -2744,44 +2744,28 @@ pub(crate) fn normalize_line_endings(content: &[u8]) -> (Cow<'_, [u8]>, bool) {
     (Cow::Owned(out), false)
 }
 
+/// How many lines from the top a header line may be found on.
+const CHECK_LINES: usize = 10;
+
 /// Sort the sections of a filter file and save modifications
-pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<String>> {
-    let temp_file = filename.with_extension("temp");
-    const CHECK_LINES: usize = 10;
-
-    // Skip empty or tiny files
-    let metadata = fs::metadata(filename)?;
-    if metadata.len() < 3 {
-        return Ok(None);
-    }
-
-    // Read entire file into memory (avoids double-read for diff)
-    let Ok(original_content) = fs::read(filename) else {
-        eprintln!("Cannot open {}", filename.display());
-        return Ok(None);
-    };
-    // Detect Windows line endings, and rewrite classic-Mac ones so that every
-    // step below sees lines where the file has them.
-    let (content, had_crlf) = normalize_line_endings(&original_content);
-    if had_crlf {
-        crate::CRLF_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-    if matches!(content, Cow::Owned(_)) {
-        crate::CR_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    // `--localhost` for a file that plainly is one. The bytes are already
-    // read, so this costs no extra I/O; see looks_like_hosts_file. Reads the
-    // normalized bytes: it splits on `\n`, so a classic-Mac hosts file would
-    // otherwise be one line and no entry in it would count.
-    let localhost = config.localhost || looks_like_hosts_file(&content);
-
-    let reader = BufReader::new(Cursor::new(content.as_ref()));
-    let mut output = match create_file_no_follow(&temp_file) {
+/// One pass of the sort: read `content`, write the result to `temp_file`.
+///
+/// `Ok(false)` means the temp file could not be created and the caller has
+/// nothing to compare -- the same outcome the sort reported before, when
+/// this was inline.
+fn sort_pass(
+    content: &[u8],
+    localhost: bool,
+    config: &SortConfig,
+    temp_file: &Path,
+    filename: &Path,
+) -> io::Result<bool> {
+    let reader = BufReader::new(Cursor::new(content));
+    let mut output = match create_file_no_follow(temp_file) {
         Ok(f) => BufWriter::with_capacity(64 * 1024, f),
         Err(e) => {
             eprintln!("Cannot create temp file for {}: {}", filename.display(), e);
-            return Ok(None);
+            return Ok(false);
         }
     };
 
@@ -3250,6 +3234,84 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
     }
 
     drop(output);
+    Ok(true)
+}
+
+pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<String>> {
+    let temp_file = filename.with_extension("temp");
+
+    // Skip empty or tiny files
+    let metadata = fs::metadata(filename)?;
+    if metadata.len() < 3 {
+        return Ok(None);
+    }
+
+    // Read entire file into memory (avoids double-read for diff)
+    let Ok(original_content) = fs::read(filename) else {
+        eprintln!("Cannot open {}", filename.display());
+        return Ok(None);
+    };
+    // Detect Windows line endings, and rewrite classic-Mac ones so that every
+    // step below sees lines where the file has them.
+    let (content, had_crlf) = normalize_line_endings(&original_content);
+    if had_crlf {
+        crate::CRLF_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    if matches!(content, Cow::Owned(_)) {
+        crate::CR_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    // `--localhost` for a file that plainly is one. The bytes are already
+    // read, so this costs no extra I/O; see looks_like_hosts_file. Reads the
+    // normalized bytes: it splits on `\n`, so a classic-Mac hosts file would
+    // otherwise be one line and no entry in it would count.
+    let localhost = config.localhost || looks_like_hosts_file(&content);
+
+    // Sorting can open merges that were not there to make: a section is sorted
+    // by selector or by pattern according to which kind of line it holds more
+    // of, counted as the section is read, and merging network rules collapses
+    // many lines into one -- so the count can tip the other way and the next
+    // run sorts that section differently, bringing rules with one selector
+    // together and merging them at last. The file was therefore not its own
+    // fixed point: importing a list took two or three runs to settle, each
+    // with a diff, and a single run left a mixed section under-merged.
+    //
+    // So the pass runs again on what it wrote, until the bytes stop changing.
+    // A file already in FOP's order is unchanged by the first pass, which is
+    // the fixed point proved, so the lists FOP keeps pay nothing for this;
+    // only a file it really did rewrite is read a second time. The cap is a
+    // guard: nothing measured needed more than three, and nothing oscillated,
+    // but a cycle must not spin here.
+    const MAX_PASSES: usize = 4;
+    let mut pass_input: Cow<'_, [u8]> = Cow::Borrowed(content.as_ref());
+    let mut passes = 0usize;
+    let new_content = loop {
+        if !sort_pass(pass_input.as_ref(), localhost, config, &temp_file, filename)? {
+            return Ok(None);
+        }
+        let produced = fs::read(&temp_file)?;
+        passes += 1;
+        // A benchmark times one sort; re-reading its own output is not that.
+        if config.benchmark || produced.as_slice() == pass_input.as_ref() {
+            break produced;
+        }
+        if passes >= MAX_PASSES {
+            // Nothing measured needed more than three passes, so reaching the
+            // cap means the sort is cycling between two or more results. The
+            // file is written either way -- stopping would leave the sort
+            // half-done -- but what goes out is not settled, and the next run
+            // will change it again, so it cannot pass in silence.
+            crate::write_warning(&format!(
+                "{} was still changing after {} sorting passes: what is written is not settled \
+                 and another run will change it again.",
+                filename.display(),
+                passes
+            ));
+            break produced;
+        }
+        pass_input = Cow::Owned(produced);
+    };
+
 
     // A benchmark times the sort. Nothing reads the result, and comparing it
     // or building a diff -- which on a heavily reordered list takes far longer
@@ -3259,8 +3321,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         return Ok(None);
     }
 
-    // Compare files and replace if different
-    let new_content = fs::read(&temp_file)?;
+    // Compare with what was on disk and replace if different
 
     if original_content != new_content {
         if config.dry_run {

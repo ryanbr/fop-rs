@@ -5553,18 +5553,24 @@ fn test_combine_filters_through_the_sort() {
         sort("network.txt", &["||t.com^$script,domain=b.com", "||t.com^$script,domain=a.com", "||t.com^$image,domain=c.com"]),
         pinned(&["||t.com^$image,domain=c.com", "||t.com^$script,domain=a.com|b.com"])
     );
-    // A section takes one mode from its make-up (fop_sort's
-    // `element_lines > filter_lines`), and only that mode's rules merge.
-    // Mostly cosmetic: the network rules are carried along, never merged.
+    // A section takes one mode from its make-up (`element_lines >
+    // filter_lines` in `sort_pass`), and in a single pass only that mode's
+    // rules merge. Mostly cosmetic here, so the first pass merges those and
+    // carries the network rules along -- but merging changed the make-up, and
+    // the sort now runs again on what it wrote: the network rules are what is
+    // left to count, the second pass takes the other mode, and they merge
+    // too. One run reaches what used to take two, which is the whole point of
+    // the loop in `fop_sort`.
     assert_eq!(
         sort("mixed.txt", &["c.com##.ad", "b.com##.ad", "a.com##.x", "||t.com^$script,domain=b.com", "||t.com^$script,domain=a.com"]),
-        pinned(&["b.com,c.com##.ad", "a.com##.x", "||t.com^$script,domain=a.com", "||t.com^$script,domain=b.com"])
+        pinned(&["b.com,c.com##.ad", "a.com##.x", "||t.com^$script,domain=a.com|b.com"])
     );
-    // A tie is not `>`, so it goes the other way: network mode, where the
-    // network rules merge and the cosmetic ones do not.
+    // The same from the other side: a tie is not `>`, so the first pass runs
+    // in network mode and merges those, leaving the cosmetic rules as the
+    // majority for the pass after it.
     assert_eq!(
         sort("tie.txt", &["c.com##.ad", "b.com##.ad", "||t.com^$script,domain=b.com", "||t.com^$script,domain=a.com"]),
-        pinned(&["b.com##.ad", "c.com##.ad", "||t.com^$script,domain=a.com|b.com"])
+        pinned(&["b.com,c.com##.ad", "||t.com^$script,domain=a.com|b.com"])
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -6881,3 +6887,36 @@ fn test_a_classic_mac_hosts_file_is_still_recognized_as_one() {
     );
 }
 
+#[test]
+fn test_the_sort_writes_a_file_it_will_not_change_again() {
+    // The file FOP writes has to be its own fixed point, or every run leaves
+    // a diff for the next one to find: a section's sort mode comes from how
+    // many lines of each kind it holds, and merging changes that count, so
+    // one pass used to leave a mixed section both under-merged and about to
+    // move. Sorting the output again must change nothing -- at any of the
+    // shapes that tip the mode either way.
+    let chars = vec!["!".to_string()];
+    let config = test_sort_config(&chars);
+    let dir = std::env::temp_dir().join(format!("fop-test-fixpoint-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let cases: [(&str, &[&str]); 3] = [
+        // Cosmetic majority, network majority, and a tie.
+        ("cosmetic-heavy.txt", &["c.com##.ad", "b.com##.ad", "a.com##.x",
+                                 "||t.com^$script,domain=b.com", "||t.com^$script,domain=a.com"]),
+        ("network-heavy.txt", &["c.com##.ad", "b.com##.ad", "||t.com^$script,domain=b.com",
+                                "||t.com^$script,domain=a.com", "||u.com^$image,domain=d.com"]),
+        ("tie.txt", &["c.com##.ad", "b.com##.ad", "||t.com^$script,domain=b.com",
+                      "||t.com^$script,domain=a.com"]),
+    ];
+    for (name, lines) in cases {
+        let file = dir.join(name);
+        std::fs::write(&file, format!("! Title: pin\n{}\n", lines.join("\n"))).unwrap();
+        crate::fop_sort::fop_sort(&file, &config).unwrap();
+        let once = std::fs::read_to_string(&file).unwrap();
+        crate::fop_sort::fop_sort(&file, &config).unwrap();
+        let twice = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(once, twice, "{} is not a fixed point:\n{}\n---\n{}", name, once, twice);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

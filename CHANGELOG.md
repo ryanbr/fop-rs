@@ -4,6 +4,22 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- The sort runs again on what it wrote, until the file stops changing. A
+  section is ordered by selector or by pattern according to which kind of rule
+  it holds more of, counted as the section is read -- and merging network
+  rules collapses many lines into one, so that count could tip the other way
+  and the next run would order the section differently, bringing rules that
+  share a selector together and merging them at last. One run therefore left a
+  mixed section both under-merged and about to move: uAssets took three runs
+  to settle and AdGuard's filters two, each with a diff of its own, and the
+  last of those merged 171 AdGuard rules the first run had left apart. A file
+  already in FOP's order is unchanged by the first pass, which is the fixed
+  point proved, so the lists FOP keeps pay nothing -- 0.05s for the easylist
+  tree either way, and its 163 files come out byte for byte as before. A file
+  that really is rewritten pays once for the runs it used to take by hand:
+  AdGuard's four files, 683k lines, 0.24s against 0.49s. `--benchmark` times
+  one pass, as it did.
+
 - `--check-file` with no file given checks the whole location, as a bare run
   does, instead of stopping at "Unknown option". It says so when it does, so a
   run cannot widen without a word, and `--check-file=` with an empty value is
