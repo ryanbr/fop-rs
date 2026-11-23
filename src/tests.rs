@@ -6797,10 +6797,27 @@ fn test_classic_mac_endings_are_rewritten_so_the_lines_can_be_seen() {
     let (out, _) = normalize_line_endings(b"a\rb\r");
     assert_eq!(&*out, b"a\nb\n", "{:?}", String::from_utf8_lossy(&out));
 
-    // Both kinds in one file: the pair is left for `lines()` to strip, the
-    // lone one is rewritten, and the file counts as CRLF as well.
+    // A file that has `\n` endings keeps every byte, including a stray `\r`
+    // in the middle of a line. Splitting there would leave the tail to be
+    // tidied into a rule of its own or dropped as debris -- which is how
+    // `example.com##.zzz` quietly became `example.com##.zz`.
+    for bytes in [
+        &b"example.com##.zz\rz\nexample.com##.a\n"[..],
+        &b"a\r\nb\rc\r\n"[..],
+        &b"! comment with\rembedded CR\n"[..],
+    ] {
+        let (out, _) = normalize_line_endings(bytes);
+        assert!(
+            matches!(out, Cow::Borrowed(_)),
+            "rewrote a stray CR in a file with LF endings: {:?}",
+            String::from_utf8_lossy(bytes)
+        );
+        assert_eq!(&*out, bytes);
+    }
+
+    // The pair is still reported, and still left for `lines()` to strip.
     let (out, crlf) = normalize_line_endings(b"a\r\nb\rc\r\n");
-    assert_eq!(&*out, b"a\r\nb\nc\r\n", "{:?}", String::from_utf8_lossy(&out));
+    assert_eq!(&*out, b"a\r\nb\rc\r\n", "{:?}", String::from_utf8_lossy(&out));
     assert!(crlf, "the file does contain a CRLF pair");
 
     // Nothing to do for the two endings the reader already handles, and

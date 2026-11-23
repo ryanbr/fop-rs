@@ -11,7 +11,13 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
   notice could not find the checksum line, and the run reported `Sorted:`
   regardless. Those endings are now rewritten to `\n` before anything reads a
   line, and are reported separately from the CRLF notice, whose advice --
-  `core.autocrlf`, `.gitattributes` -- does nothing about a bare `\r`. Windows
+  `core.autocrlf`, `.gitattributes` -- does nothing about a bare `\r`. Only a
+  file with no `\n` in it at all counts as one, which is what `file` and
+  dos2unix mean by CR line terminators: where a file has `\n` endings, a stray
+  `\r` cannot be told from one, and splitting the line there would leave the
+  tail to be tidied into a rule of its own or dropped as debris, so
+  `example.com##.zzz` written with a `\r` in it would quietly become
+  `example.com##.zz`. Such a byte stays where the author put it. Windows
   `\r\n` was converted before and still is: one vectorized pass over the bytes
   (`memchr`, already in the dependency graph, so nothing more is built) now
   classifies both kinds in place of the byte-at-a-time CRLF scan, measured at

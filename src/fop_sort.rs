@@ -2712,43 +2712,36 @@ pub fn malformed_rule_reason(line: &str, ignore_minimum: bool) -> Option<&'stati
 /// it can be sorted, every `\r` survives the rewrite, and the run reports
 /// `Sorted:` regardless. Those become `\n` before anything reads a line.
 ///
-/// A raw `\r` byte is never part of a filter: `\r` inside a regex rule is the
-/// two characters `\` and `r`, so there is nothing to spare here.
+/// Only a file with no `\n` in it at all counts as one, which is what `file`
+/// and dos2unix mean by CR line terminators. In a file that has `\n` endings,
+/// a stray `\r` cannot be told from one, and guessing is not harmless: it
+/// would split the line there, leaving the tail to be tidied into a rule of
+/// its own or dropped as debris, so `example.com##.zzz` written with a `\r`
+/// in it would quietly become `example.com##.zz`. Such a byte is left exactly
+/// where the author put it, as it always was.
 ///
 /// Returns the bytes to read -- borrowed unless a `\r` had to be rewritten,
-/// which is every file in practice -- and whether the file used `\r\n`. One
-/// vectorized pass covers both, in place of the byte-at-a-time scan that only
-/// looked for CRLF, so the classification is cheaper than it was before.
+/// which is every file in practice -- and whether the file used `\r\n`. Each
+/// question is one vectorized pass, in place of the byte-at-a-time scan that
+/// only looked for CRLF, so the classification is cheaper than it was before.
 pub(crate) fn normalize_line_endings(content: &[u8]) -> (Cow<'_, [u8]>, bool) {
-    // `memchr` vectorizes the search for the only byte that matters here, so a
-    // file with no `\r` in it -- every file in practice -- costs one sweep
-    // instead of a branch per byte.
-    let mut had_crlf = false;
-    let mut first_lone_cr = None;
-    for pos in memchr::memchr_iter(b'\r', content) {
-        // A `\r` as the file's last byte has no `\n` after it, so it is one.
-        if content.get(pos + 1) == Some(&b'\n') {
-            had_crlf = true;
-        } else if first_lone_cr.is_none() {
-            first_lone_cr = Some(pos);
-        }
-        // Both kinds are accounted for; the rewrite below finds the rest.
-        if had_crlf && first_lone_cr.is_some() {
-            break;
-        }
-    }
-    let Some(first) = first_lone_cr else {
+    // A file with `\n` in it keeps every byte: its endings are already ones
+    // the reader can see, and anything else is content.
+    if memchr::memchr(b'\n', content).is_some() {
+        let had_crlf = memchr::memchr_iter(b'\r', content)
+            .any(|pos| content.get(pos + 1) == Some(&b'\n'));
         return (Cow::Borrowed(content), had_crlf);
-    };
-    let mut out = content.to_vec();
-    out[first] = b'\n';
-    for pos in memchr::memchr_iter(b'\r', &content[first + 1..]) {
-        let pos = first + 1 + pos;
-        if content.get(pos + 1) != Some(&b'\n') {
-            out[pos] = b'\n';
-        }
     }
-    (Cow::Owned(out), had_crlf)
+    // No `\n` at all: a `\r` here is the file's line ending, and there is no
+    // `\r\n` pair to report.
+    if memchr::memchr(b'\r', content).is_none() {
+        return (Cow::Borrowed(content), false);
+    }
+    let mut out = content.to_vec();
+    for pos in memchr::memchr_iter(b'\r', content) {
+        out[pos] = b'\n';
+    }
+    (Cow::Owned(out), false)
 }
 
 /// Sort the sections of a filter file and save modifications
