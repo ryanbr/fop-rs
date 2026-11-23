@@ -2705,6 +2705,52 @@ pub fn malformed_rule_reason(line: &str, ignore_minimum: bool) -> Option<&'stati
     }
 }
 
+/// Classify a file's line endings, rewriting the one kind the reader cannot
+/// see. `lines()` strips the `\r` of a `\r\n` pair itself, but it splits on
+/// `\n` alone: a file written with bare `\r` endings -- classic Mac, and what
+/// some editors still save -- arrives as one enormous line, so not a rule in
+/// it can be sorted, every `\r` survives the rewrite, and the run reports
+/// `Sorted:` regardless. Those become `\n` before anything reads a line.
+///
+/// A raw `\r` byte is never part of a filter: `\r` inside a regex rule is the
+/// two characters `\` and `r`, so there is nothing to spare here.
+///
+/// Returns the bytes to read -- borrowed unless a `\r` had to be rewritten,
+/// which is every file in practice -- and whether the file used `\r\n`. One
+/// vectorized pass covers both, in place of the byte-at-a-time scan that only
+/// looked for CRLF, so the classification is cheaper than it was before.
+pub(crate) fn normalize_line_endings(content: &[u8]) -> (Cow<'_, [u8]>, bool) {
+    // `memchr` vectorizes the search for the only byte that matters here, so a
+    // file with no `\r` in it -- every file in practice -- costs one sweep
+    // instead of a branch per byte.
+    let mut had_crlf = false;
+    let mut first_lone_cr = None;
+    for pos in memchr::memchr_iter(b'\r', content) {
+        // A `\r` as the file's last byte has no `\n` after it, so it is one.
+        if content.get(pos + 1) == Some(&b'\n') {
+            had_crlf = true;
+        } else if first_lone_cr.is_none() {
+            first_lone_cr = Some(pos);
+        }
+        // Both kinds are accounted for; the rewrite below finds the rest.
+        if had_crlf && first_lone_cr.is_some() {
+            break;
+        }
+    }
+    let Some(first) = first_lone_cr else {
+        return (Cow::Borrowed(content), had_crlf);
+    };
+    let mut out = content.to_vec();
+    out[first] = b'\n';
+    for pos in memchr::memchr_iter(b'\r', &content[first + 1..]) {
+        let pos = first + 1 + pos;
+        if content.get(pos + 1) != Some(&b'\n') {
+            out[pos] = b'\n';
+        }
+    }
+    (Cow::Owned(out), had_crlf)
+}
+
 /// Sort the sections of a filter file and save modifications
 pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<String>> {
     let temp_file = filename.with_extension("temp");
@@ -2721,16 +2767,23 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
         eprintln!("Cannot open {}", filename.display());
         return Ok(None);
     };
-    // Detect Windows line endings
-    if original_content.windows(2).any(|w| w == b"\r\n") {
+    // Detect Windows line endings, and rewrite classic-Mac ones so that every
+    // step below sees lines where the file has them.
+    let (content, had_crlf) = normalize_line_endings(&original_content);
+    if had_crlf {
         crate::CRLF_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    if matches!(content, Cow::Owned(_)) {
+        crate::CR_FILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     // `--localhost` for a file that plainly is one. The bytes are already
-    // read, so this costs no extra I/O; see looks_like_hosts_file.
-    let localhost = config.localhost || looks_like_hosts_file(&original_content);
+    // read, so this costs no extra I/O; see looks_like_hosts_file. Reads the
+    // normalized bytes: it splits on `\n`, so a classic-Mac hosts file would
+    // otherwise be one line and no entry in it would count.
+    let localhost = config.localhost || looks_like_hosts_file(&content);
 
-    let reader = BufReader::new(Cursor::new(&original_content));
+    let reader = BufReader::new(Cursor::new(content.as_ref()));
     let mut output = match create_file_no_follow(&temp_file) {
         Ok(f) => BufWriter::with_capacity(64 * 1024, f),
         Err(e) => {
@@ -3267,7 +3320,7 @@ pub fn fop_sort(filename: &Path, config: &SortConfig) -> io::Result<Option<Strin
             if !config.quiet
                 && !config.limited_quiet
                 && !config.add_checksum
-                && original_content
+                && content
                     .split(|b| *b == b'\n')
                     .take(CHECK_LINES)
                     .filter_map(|l| std::str::from_utf8(l).ok())

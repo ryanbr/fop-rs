@@ -2,6 +2,21 @@
 
 All notable changes to FOP (Filter Orderer and Preener) are documented in this file.
 
+## [Unreleased]
+
+- A filter list written with classic-Mac line endings (a bare `\r`) is read as
+  the lines it actually has. `lines()` splits on `\n` alone, so such a file
+  arrived as one enormous line: not a rule in it could be sorted, every `\r`
+  survived the rewrite, hosts detection counted no entries, the stale-checksum
+  notice could not find the checksum line, and the run reported `Sorted:`
+  regardless. Those endings are now rewritten to `\n` before anything reads a
+  line, and are reported separately from the CRLF notice, whose advice --
+  `core.autocrlf`, `.gitattributes` -- does nothing about a bare `\r`. Windows
+  `\r\n` was converted before and still is: one vectorized pass over the bytes
+  (`memchr`, already in the dependency graph, so nothing more is built) now
+  classifies both kinds in place of the byte-at-a-time CRLF scan, measured at
+  some thirty times that scan's speed, so the fix adds no work to the sort.
+
 ## [6.2.3] - 2026-11-18
 
 - A publish commits the filter lists it sorted, not whatever else the working

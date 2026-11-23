@@ -10,6 +10,7 @@ keywords = ["adblock", "easylist", "filter", "privacy"]
 categories = ["command-line-utilities"]
 
 [dependencies]
+memchr = "2"
 regex = "1.12"
 walkdir = "2.5"
 rustyline = "19"

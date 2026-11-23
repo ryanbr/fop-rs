@@ -133,6 +133,7 @@ dependencies = [
  "ahash",
  "base64",
  "md5",
+ "memchr",
  "mimalloc",
  "owo-colors",
  "rayon",

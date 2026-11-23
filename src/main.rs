@@ -87,6 +87,11 @@ pub(crate) static WARNING_TO_FILE: std::sync::atomic::AtomicBool =
 /// Counter for files with Windows line endings (CRLF)
 pub(crate) static CRLF_FILES: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
+/// Counter for files with classic-Mac line endings (a bare CR). Separate from
+/// CRLF_FILES because the two have different causes and the CRLF advice --
+/// `core.autocrlf`, `.gitattributes` -- does nothing about a bare CR.
+pub(crate) static CR_FILES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 /// Get user's home directory (cross-platform)
 fn home_dir() -> Option<PathBuf> {
@@ -2749,6 +2754,33 @@ fn process_location(
             println!("{} {} file(s) contain Windows line endings (CRLF), converting to Unix (LF).",
                 "Warning:".yellow(), crlf_count);
             println!("  {}", "Tip: Set 'git config core.autocrlf input' or add '* text eol=lf' to .gitattributes".white());
+        }
+    }
+
+    // Warn about classic-Mac line endings. Said separately from CRLF: the file
+    // was unsortable until this run converted it, so its rules have only just
+    // been put in order, and no git setting would have prevented it.
+    let cr_count = CR_FILES.swap(0, std::sync::atomic::Ordering::Relaxed);
+    if cr_count > 0 && !quiet {
+        // A dry run (--output-diff, --output-changed, --benchmark) read those
+        // files as lines but wrote nothing, so it has converted nothing.
+        let msg = if sort_config.dry_run {
+            format!(
+                "{} file(s) use classic Mac line endings (CR); a run that writes would convert \
+                 them to Unix (LF).",
+                cr_count
+            )
+        } else {
+            format!(
+                "{} file(s) used classic Mac line endings (CR), converted to Unix (LF).",
+                cr_count
+            )
+        };
+        if no_color {
+            println!("Warning: {}", msg);
+        } else {
+            use owo_colors::OwoColorize;
+            println!("{} {}", "Warning:".yellow(), msg);
         }
     }
 

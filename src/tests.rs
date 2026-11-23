@@ -1645,6 +1645,18 @@ fn test_a_rewritten_list_says_its_checksum_was_not_updated() {
     std::fs::write(&plain, "[Adblock Plus 2.0]\n! Title: t\n||zebra.com^\n||apple.com^\n").unwrap();
     assert!(!run(&plain, false, false), "warned about a list with no checksum");
 
+    // A classic-Mac list is a single line until this run splits it, so the
+    // scan for the checksum line has to read the normalized bytes -- or the
+    // one rewrite that really does invalidate a checksum passes in silence.
+    let mac = dir.join("e.txt");
+    std::fs::write(
+        &mac,
+        "[Adblock Plus 2.0]\r! Checksum: AAAAAAAAAAAAAAAAAAAAAA\r! Title: t\r\
+         ||zebra.com^\r||apple.com^\r",
+    )
+    .unwrap();
+    assert!(run(&mac, false, false), "said nothing about a classic-Mac list's checksum");
+
     WARNING_TO_FILE.store(false, Relaxed);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -6769,3 +6781,86 @@ fn test_a_pr_branch_carries_only_the_lists() {
     assert!(carried.contains("list.txt"), "the list is missing from the PR: {}", carried);
     assert!(!carried.contains("fop-linux"), "the PR carried an unmanaged file: {}", carried);
 }
+
+#[test]
+fn test_classic_mac_endings_are_rewritten_so_the_lines_can_be_seen() {
+    use crate::fop_sort::normalize_line_endings;
+    use std::borrow::Cow;
+
+    // A bare `\r` ends a line, and `lines()` splits on `\n` only, so these
+    // have to be rewritten or the whole file arrives as one line.
+    let (out, crlf) = normalize_line_endings(b"a\rb\rc\r");
+    assert_eq!(&*out, b"a\nb\nc\n", "{:?}", String::from_utf8_lossy(&out));
+    assert!(!crlf, "there is no CRLF in that file");
+
+    // A `\r` as the last byte has no `\n` after it, so it is one too.
+    let (out, _) = normalize_line_endings(b"a\rb\r");
+    assert_eq!(&*out, b"a\nb\n", "{:?}", String::from_utf8_lossy(&out));
+
+    // Both kinds in one file: the pair is left for `lines()` to strip, the
+    // lone one is rewritten, and the file counts as CRLF as well.
+    let (out, crlf) = normalize_line_endings(b"a\r\nb\rc\r\n");
+    assert_eq!(&*out, b"a\r\nb\nc\r\n", "{:?}", String::from_utf8_lossy(&out));
+    assert!(crlf, "the file does contain a CRLF pair");
+
+    // Nothing to do for the two endings the reader already handles, and
+    // nothing copied either -- these are every file in practice.
+    for (bytes, expect_crlf) in [(&b"a\nb\n"[..], false), (&b"a\r\nb\r\n"[..], true)] {
+        let (out, crlf) = normalize_line_endings(bytes);
+        assert!(matches!(out, Cow::Borrowed(_)), "copied {:?} for nothing", bytes);
+        assert_eq!(&*out, bytes);
+        assert_eq!(crlf, expect_crlf, "CRLF misread in {:?}", bytes);
+    }
+}
+
+#[test]
+fn test_a_classic_mac_file_is_sorted_and_saved_with_unix_endings() {
+    // End to end: before this, such a file was read as a single line, so no
+    // rule in it could be sorted, every `\r` survived, and the run still
+    // reported `Sorted:`. The rules below are deliberately out of order.
+    let chars = vec!["!".to_string()];
+    let dir = std::env::temp_dir().join(format!("fop-test-cr-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("list.txt");
+    std::fs::write(&file, "[Adblock Plus 2.0]\r! Title: t\rexample.com##.zzz\rexample.com##.aaa\r")
+        .unwrap();
+    crate::fop_sort::fop_sort(&file, &test_sort_config(&chars)).unwrap();
+    let saved = std::fs::read_to_string(&file).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(!saved.contains('\r'), "a carriage return survived: {:?}", saved);
+    assert_eq!(
+        saved.lines().skip(2).collect::<Vec<_>>(),
+        vec!["example.com##.aaa", "example.com##.zzz"],
+        "the rules were not sorted: {:?}",
+        saved
+    );
+}
+
+#[test]
+fn test_a_classic_mac_hosts_file_is_still_recognized_as_one() {
+    // Hosts detection splits on `\n` to count entries, so a classic-Mac file
+    // was one line -- a `#` comment at that -- and no entry in it counted.
+    // The file then sorted as filter rules, which orders it by the address
+    // instead of the host. The two orders are deliberately opposed here.
+    let chars = vec!["!".to_string()];
+    let dir = std::env::temp_dir().join(format!("fop-test-cr-hosts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("hosts.txt");
+    std::fs::write(
+        &file,
+        "# Title: hosts\r127.0.0.1 aaa.example.com\r0.0.0.0 zzz.example.com\r",
+    )
+    .unwrap();
+    crate::fop_sort::fop_sort(&file, &test_sort_config(&chars)).unwrap();
+    let saved = std::fs::read_to_string(&file).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(
+        saved.lines().skip(1).collect::<Vec<_>>(),
+        vec!["127.0.0.1 aaa.example.com", "0.0.0.0 zzz.example.com"],
+        "not sorted by host, so the file was not read as a hosts file: {:?}",
+        saved
+    );
+}
+
