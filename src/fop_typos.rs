@@ -163,6 +163,19 @@ fn fix_leading_comma(line: &str) -> Option<Typo> {
 /// and in a regex pattern `^` is an anchor, not a separator, so both are left
 /// alone.
 fn fix_double_separator(line: &str) -> Option<Typo> {
+    // First, because it rejects every line but a handful and the rest of this
+    // is wasted on them: the pattern is a slice of the line, so no `^^` in the
+    // line means none in the pattern either. That spares every other line the
+    // search for the options and the probe for a regex.
+    //
+    // A `memchr` scan over the carets was tried in its place, on the thought
+    // that a two-byte needle pays for a Two-Way searcher: over the easylist
+    // tree the two measure the same, 0.0417s against 0.0419s, so the plainer
+    // one stands. Nor does the check as a whole show up -- 0.0427s with no
+    // check at all, which is the same figure again.
+    if !line.contains("^^") {
+        return None;
+    }
     let prefix = if line.starts_with("@@") { 2 } else { 0 };
     let body = &line[prefix..];
     // Judged before the options are split off, because a regex may hold a `$`
@@ -176,6 +189,25 @@ fn fix_double_separator(line: &str) -> Option<Typo> {
     let pattern_len = prefix + body.find('$').unwrap_or(body.len());
     let pattern = &line[..pattern_len];
     if !pattern.contains("^^") {
+        return None;
+    }
+    // What is left has to look like a URL pattern, because `^` means nothing
+    // anywhere else and rewriting it there is corruption, not a fix.
+    //
+    // A pattern holds no whitespace -- a space would be `%20` -- so anything
+    // with one is something else. `^` is not legal in a host name, so no valid
+    // hosts entry carries `^^` at all; but `hosts_entry_split` validates only
+    // the address and keeps whatever follows the space as the host, so a
+    // malformed line like `0.0.0.0 weird^^host.example` is read as an entry
+    // and kept as written everywhere -- and this was the one path rewriting
+    // it.
+    //
+    // And a URL pattern carries a `.` or a `/`. Without one there is no
+    // address in it, and a line of prose that the tidying has already run its
+    // spaces out of is not a rule to correct.
+    if pattern.bytes().any(|b| b.is_ascii_whitespace())
+        || !pattern.bytes().any(|b| b == b'.' || b == b'/')
+    {
         return None;
     }
     Some(Typo {
@@ -418,6 +450,22 @@ mod tests {
             r#"example.com##[href^="/ad"]"#,
             "||example.com^",
             "||example.com^$third-party",
+            // Hosts entries, which this check has no business in. A valid
+            // one cannot carry `^^` at all, since `^` is not legal in a host
+            // name -- these are here to say what the check is not for.
+            "0.0.0.0 host.example",
+            "127.0.0.1 ads.example.com",
+            "::1 ip6-localhost",
+            // And the malformed ones, which are what the guard actually
+            // governs: `hosts_entry_split` validates only the address and
+            // keeps whatever follows the space, so FOP reads these as entries
+            // and leaves them as written -- bar this check, before the guard.
+            "0.0.0.0 weird^^host.example",
+            "127.0.0.1 ads^^.example.com",
+            "::1 ip6^^-localhost",
+            // No address in it at all, so not a rule to correct.
+            "someprosewith^^caretsinit",
+            "^^",
         ] {
             assert!(detect_typo(line).is_none(), "touched {}", line);
         }

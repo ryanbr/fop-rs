@@ -12,7 +12,14 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
   rather than a parse error, so nothing rejected it and the rule quietly
   blocked less than it read as blocking. Only the pattern is looked at: an
   option carries regexes of its own -- `$replace=`, `$header=` -- and in a
-  slash-delimited pattern `^` is an anchor, so both are left as written.
+  slash-delimited pattern `^` is an anchor, so both are left as written. What
+  is looked at also has to be a URL pattern: one holds no whitespace, and it
+  carries a `.` or a `/`, without which the line holds no address to speak of.
+  `^` is not legal in a host name, so no valid hosts entry carries `^^`; but
+  FOP's hosts check validates only the address and keeps whatever follows as
+  the host, so a malformed `0.0.0.0 weird^^host.example` is read as an entry
+  and left as written everywhere else -- the typo pass should not be the one
+  path that rewrites it.
 
 - A PR description cut at its 1700-byte limit is cut on a character boundary.
   `String::truncate` takes a byte index and panics unless that index is one,
