@@ -210,10 +210,12 @@ jobs:
 
       # x86_64-pc-windows-msvc is this runner's own host and is the only
       # x64 Windows target rustup ships a profiler runtime for -- the gnu
-      # target has none, so it cannot be instrumented at all. This builds an
-      # MSVC binary alongside the published mingw one so the two can be
-      # compared before anything switches over; install.js still fetches the
-      # mingw build.
+      # target has none, so it cannot be instrumented at all, wherever it is
+      # built. That is what this MSVC binary is for, and since v6.2.1 it is
+      # the one install.js fetches for win32-x64: 10% faster and 295 KB
+      # smaller than the mingw build it replaced, with byte-identical output.
+      # The mingw assets are still published for anyone who wants them, and
+      # being cross-compiled from the Linux job they carry no profile.
       - name: Install llvm-tools for PGO
         run: rustup component add llvm-tools-preview
 
@@ -239,9 +241,11 @@ jobs:
         run: |
           $VERSION = "${{ needs.build-linux-windows.outputs.version }}"
 
-          # Windows x86_64 MSVC + PGO, for comparison against the published
-          # mingw build. Static CRT so it needs no VCRUNTIME140.dll, as the
-          # ARM build does.
+          # Windows x86_64 MSVC + PGO: the binary install.js fetches for
+          # win32-x64. Host mode, no `--target`, which is what lets the
+          # profile apply -- see the Linux v3 build for what naming the triple
+          # costs. Static CRT so it needs no VCRUNTIME140.dll, as the ARM
+          # build does.
           $env:RUSTFLAGS = "-C target-feature=+crt-static -Cprofile-use=$env:RUNNER_TEMP\pgo-data\merged.profdata"
           cargo build --release
           Copy-Item ".\target\release\fop.exe" "fop-${VERSION}-windows-x86_64-msvc.exe"
