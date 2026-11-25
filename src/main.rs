@@ -1271,8 +1271,8 @@ impl Args {
         println!("        --git-message=  Git commit message (skip interactive prompt)");
         println!("        --create-pr[=TITLE]  Create PR branch instead of committing to master");
         println!("        --git-pr-branch=NAME   Base branch for PR (default: main/master)");
-        println!("        --fix-typos      Fix cosmetic rule typos in all files");
-        println!("        --fix-typos-on-add   Check cosmetic rule typos in git additions");
+        println!("        --fix-typos      Fix rule typos in all files (cosmetic and network)");
+        println!("        --fix-typos-on-add   Check rule typos in git additions");
         println!("        --check-rules-on-add  Check git additions for rules that cannot work");
         println!("        --remove-bad-rules    Delete defective lines instead of reporting them (advice is kept)");
         println!("        --remove-non-domain-on-add  Delete an added line that is a bare word, not a domain");

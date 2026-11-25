@@ -4,6 +4,16 @@ All notable changes to FOP (Filter Orderer and Preener) are documented in this f
 
 ## [Unreleased]
 
+- `^^` in a network rule's pattern is reported as a typo, and fixed under
+  `--fix-typos`, beside the `$$`, `,,` and `..` it already knew. `^` stands
+  for one separator character or the end of the address, so a second asks for
+  one more than the author meant: `||id5-tech.io^^` does not match
+  `https://id5-tech.io/ads.js`, which `^` alone does. It is legal syntax
+  rather than a parse error, so nothing rejected it and the rule quietly
+  blocked less than it read as blocking. Only the pattern is looked at: an
+  option carries regexes of its own -- `$replace=`, `$header=` -- and in a
+  slash-delimited pattern `^` is an anchor, so both are left as written.
+
 - A PR description cut at its 1700-byte limit is cut on a character boundary.
   `String::truncate` takes a byte index and panics unless that index is one,
   and a rule's domains or selector may be in Cyrillic, Hebrew or CJK -- the

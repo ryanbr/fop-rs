@@ -25,6 +25,9 @@ static SINGLE_HASH: LazyLock<Regex> =
 /// Double dot in cosmetic selector (##..class)
 static DOUBLE_DOT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(##)\.\.([a-zA-Z])").unwrap());
 
+/// Two or more separators in a row in a network pattern (`||example.com^^`)
+static DOUBLE_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\^\^+").unwrap());
+
 /// Double comma in domain list (domain,,domain)
 static DOUBLE_COMMA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r",,+").unwrap());
 
@@ -147,15 +150,54 @@ fn fix_leading_comma(line: &str) -> Option<Typo> {
 
 /// Check a cosmetic rule for typos
 #[inline]
+/// `^^` in a network rule's pattern.
+///
+/// `^` stands for one separator character, or the end of the address, so a
+/// second one asks for a separator that was not meant to be required:
+/// `||id5-tech.io^^` misses `https://id5-tech.io/ads.js`, where `^` alone
+/// matches. It is legal syntax rather than a parse error, which is why nothing
+/// rejects it -- the rule simply blocks less than it reads as blocking.
+///
+/// Only the pattern is looked at. An option carries regexes of its own --
+/// `$replace=`, `$header=`, `$uritransform=` -- where `^^` can be deliberate,
+/// and in a regex pattern `^` is an anchor, not a separator, so both are left
+/// alone.
+fn fix_double_separator(line: &str) -> Option<Typo> {
+    let prefix = if line.starts_with("@@") { 2 } else { 0 };
+    let body = &line[prefix..];
+    // Judged before the options are split off, because a regex may hold a `$`
+    // of its own -- `/ads\^\^$/$script` -- and splitting on the first one
+    // would cut the pattern in half and leave what looks like a typo behind.
+    // Slash-delimited is what makes a pattern a regex, so a path like
+    // `/ads/banner^^` is still a pattern and still gets fixed.
+    if body.starts_with('/') && (body.ends_with('/') || body.contains("/$")) {
+        return None;
+    }
+    let pattern_len = prefix + body.find('$').unwrap_or(body.len());
+    let pattern = &line[..pattern_len];
+    if !pattern.contains("^^") {
+        return None;
+    }
+    Some(Typo {
+        fixed: format!(
+            "{}{}",
+            DOUBLE_SEPARATOR.replace_all(pattern, "^"),
+            &line[pattern_len..]
+        ),
+        description: Cow::Borrowed("Double separator (^^ -> ^)"),
+    })
+}
+
 pub fn detect_typo(line: &str) -> Option<Typo> {
     // Skip comments, empty lines, special directives, short lines
     if line.len() < 4 || line.starts_with('!') || line.starts_with('[') || line.starts_with('%') {
         return None;
     }
 
-    // Fast reject: no trigger characters means no possible typo
-    // All patterns require at least one of: # $ , |
-    if !line.bytes().any(|b| b == b'#' || b == b'$' || b == b',' || b == b'|') {
+    // Fast reject: no trigger characters means no possible typo. `^` is here
+    // for `^^`, which a rule can carry with none of the others -- though in
+    // practice a network pattern has a `|` as well.
+    if !line.bytes().any(|b| b == b'#' || b == b'$' || b == b',' || b == b'|' || b == b'^') {
         return None;
     }
 
@@ -179,13 +221,18 @@ pub fn detect_typo(line: &str) -> Option<Typo> {
         if let Some(typo) = try_fix(line, &WRONG_DOMAIN_SEPARATOR, "$1$2|$3", "Wrong domain separator (, ? |)") {
             return Some(typo);
         }
+        if let Some(typo) = fix_double_separator(line) {
+            return Some(typo);
+        }
 
         return None; // No cosmetic typos in network rules
     }
 
-    // Skip non-cosmetic rules (no # at all)
+    // No `#`, so nothing cosmetic to look for -- but a bare substring pattern
+    // such as `id5-tech.io^^` never reaches the network branch above, and its
+    // separators are worth the same look.
     if !line.contains('#') {
-        return None;
+        return fix_double_separator(line);
     }
 
     // Check for wrong cosmetic domain separator (| instead of ,)
@@ -325,6 +372,55 @@ mod tests {
 
         let typo = detect_typo("domain#+js(aopr)").unwrap();
         assert_eq!(typo.fixed, "domain##+js(aopr)");
+    }
+
+    #[test]
+    fn test_double_separator() {
+        // `^` stands for one separator or the end of the address, so the second
+        // asks for one more than was meant: `||id5-tech.io^^` does not match
+        // `https://id5-tech.io/ads.js`, which `^` alone does.
+        for (line, want) in [
+            ("||id5-tech.io^^", "||id5-tech.io^"),
+            ("||example.com^^$third-party", "||example.com^$third-party"),
+            ("@@||allow.com^^", "@@||allow.com^"),
+            // No `||`, so it never reaches the network checks by that door.
+            ("id5-tech.io^^", "id5-tech.io^"),
+            // A path is a pattern, not a regex, slash or no slash.
+            ("/ads/banner^^$script", "/ads/banner^$script"),
+            // More than two collapse to one.
+            ("||example.com^^^", "||example.com^"),
+            ("||example.com^^/path^^", "||example.com^/path^"),
+        ] {
+            let typo = detect_typo(line).unwrap_or_else(|| panic!("missed {}", line));
+            assert_eq!(typo.fixed, want, "{}", line);
+            assert_eq!(typo.description, "Double separator (^^ -> ^)");
+            // Fixing is a fixed point: the result carries no typo of its own.
+            assert!(detect_typo(want).is_none(), "{} was fixed twice", want);
+        }
+
+        // Left exactly as written: in a regex `^` is an anchor, an option
+        // carries regexes of its own, and a cosmetic selector is not a pattern.
+        for line in [
+            // Literal `^^` inside a slash-delimited pattern: two anchors in a
+            // regex, which is the author's to write. Escaped as `\^\^` there
+            // is no `^^` to find at all, so these are the cases that prove the
+            // regex is left alone.
+            "/^^ads/$script",
+            "@@/^^ads/",
+            "/ads^^/",
+            r"/^https?:\/\/ads\^\^/$script",
+            // The regex holds a `$`, so splitting on the first one would cut
+            // the pattern in half and leave what looks like a typo behind.
+            r"/^https?:\/\/ads\^\^$/$script",
+            r"@@/^ads\^\^/$script",
+            r"||x.com^$replace=/a\^\^/b/",
+            r"||x.com^$header=etag:/\^\^/",
+            r#"example.com##[href^="/ad"]"#,
+            "||example.com^",
+            "||example.com^$third-party",
+        ] {
+            assert!(detect_typo(line).is_none(), "touched {}", line);
+        }
     }
 
     #[test]
