@@ -108,10 +108,26 @@ jobs:
           RUSTFLAGS="-Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release
           cp target/release/fop "fop-${VERSION}-linux-x86_64"
 
-          # Optimized for ~2015+ CPUs (AVX2) + PGO
+          # Optimized for ~2015+ CPUs (AVX2) + PGO.
+          #
+          # No `--target`, even though the triple is the runner's own: naming
+          # it puts the target into every crate's metadata hash, so the symbol
+          # names stop matching the ones the instrumented build recorded the
+          # profile under and LLVM uses none of it. Measured with
+          # `-Cllvm-args=-pgo-warn-missing-function`: 933 functions unmatched
+          # with `--target`, `tidy_all` and `run_rule_checks` among them,
+          # against 0 without it. The sizes say the same -- PGO takes this
+          # binary from 3.58 MB to 3.36 MB, and the `--target` build came out
+          # at 3.70 MB, larger than the unoptimised one. So the v3 asset was
+          # shipping with no PGO at all, which is why it benchmarked level with
+          # a plain build and behind the baseline asset.
+          #
+          # `target-cpu` reaches the build scripts this way, since they are
+          # compiled for the same triple. Every x86_64 runner GitHub offers has
+          # AVX2, so they still run.
           cargo clean
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3 -Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release --target x86_64-unknown-linux-gnu
-          cp target/x86_64-unknown-linux-gnu/release/fop "fop-${VERSION}-linux-x86_64-v3"
+          RUSTFLAGS="-C target-cpu=x86-64-v3 -Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release
+          cp target/release/fop "fop-${VERSION}-linux-x86_64-v3"
 
 
           # Linux x86 32-bit
@@ -299,23 +315,31 @@ jobs:
         run: |
           VERSION=${{ needs.build-linux-windows.outputs.version }}
 
-          # macOS x86_64 (Intel) + PGO. The profile is gathered on the ARM
-          # runner, which is why this build went without one -- but an
-          # instrumentation profile is branch and call counts keyed to the IR,
-          # applied before codegen, and FOP has no `cfg(target_arch)` anywhere,
-          # so the IR it describes is the same shape for either target. A
-          # function the profile does not cover just falls back to the default
-          # heuristics; it is not an error.
+          # macOS x86_64 (Intel), without PGO. The profile is gathered on the
+          # ARM runner, and this is a cross build, so `--target` is not
+          # optional here -- which is precisely what stops the profile being
+          # used: the target goes into each crate's metadata hash and the
+          # symbol names no longer match what the profile was recorded under.
+          # Measured on Linux with the same flags, that is 933 functions
+          # unmatched, so `-Cprofile-use` bought nothing but hidden warnings
+          # and is gone. The earlier note here reasoned that the IR is the same
+          # shape for either target, which is true and beside the point: the
+          # profile is matched by symbol name, not by shape.
           #
           # No `target-cpu`: this is the baseline Intel binary and has to run
           # on anything x86_64.
-          RUSTFLAGS="-Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release --target x86_64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
           cp target/x86_64-apple-darwin/release/fop "fop-${VERSION}-macos-x86_64"
 
-          # macOS ARM64 (Apple Silicon - optimized for M1+) + PGO
+          # macOS ARM64 (Apple Silicon - optimized for M1+) + PGO.
+          #
+          # No `--target`: this is the runner's own triple -- the profile step
+          # above reads llvm-profdata out of the `aarch64-apple-darwin` sysroot
+          # -- and naming it would put the target into the metadata hash and
+          # leave the profile unmatched, as it did for the Linux v3 asset.
           cargo clean
-          RUSTFLAGS="-C target-cpu=apple-m1 -Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release --target aarch64-apple-darwin
-          cp target/aarch64-apple-darwin/release/fop "fop-${VERSION}-macos-arm64"
+          RUSTFLAGS="-C target-cpu=apple-m1 -Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release
+          cp target/release/fop "fop-${VERSION}-macos-arm64"
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v6
